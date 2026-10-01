@@ -8,6 +8,7 @@ import { SsoCallbackComponent } from './pages/auth/callback/sso-callback.compone
 import { NoBusinessComponent } from './pages/no-business/no-business.component';
 import { OverviewComponent } from './pages/overview/overview.component';
 import { PlaceholderComponent } from './pages/placeholder/placeholder.component';
+import { BusinessProfileComponent } from './pages/business/business-profile.component';
 
 export const routes: Routes = [
   // Public Auth Routes
@@ -45,8 +46,7 @@ export const routes: Routes = [
       },
       {
         path: 'business',
-        component: PlaceholderComponent,
-        data: { module: 'business' },
+        component: BusinessProfileComponent,
       },
       {
         path: 'posts',

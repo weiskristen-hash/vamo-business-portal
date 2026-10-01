@@ -329,8 +329,10 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
       justify-content: space-between;
       align-items: center;
       padding: 28px 32px;
-      background: linear-gradient(135deg, rgba(254, 57, 127, 0.08) 0%, rgba(22, 22, 46, 0.9) 60%);
-      border: 1px solid var(--vamo-border-glass-strong);
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
+      box-shadow: var(--vamo-shadow-sm);
     }
 
     .header-left {
@@ -344,8 +346,8 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
       height: 58px;
       border-radius: 14px;
       overflow: hidden;
-      background: var(--vamo-bg-surface);
-      border: 2px solid var(--vamo-pink-border);
+      background: var(--vamo-surface-subtle);
+      border: 2px solid var(--vamo-border);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -359,7 +361,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
     }
 
     .avatar-fallback {
-      background: var(--vamo-gradient-accent);
+      background: var(--vamo-gradient-brand);
       color: #ffffff;
       font-size: 1.3rem;
       font-weight: 800;
@@ -376,7 +378,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
       font-size: 1.65rem;
       font-weight: 800;
       letter-spacing: -0.02em;
-      color: #ffffff;
+      color: var(--vamo-text);
       line-height: 1.2;
     }
 
@@ -390,7 +392,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
 
     .business-name-badge {
       font-weight: 700;
-      color: #ffffff;
+      color: var(--vamo-primary);
     }
 
     .subtext-divider {
@@ -414,14 +416,17 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
       justify-content: space-between;
       gap: 16px;
       padding: 22px;
-      background: var(--vamo-bg-card);
-      border: 1px solid var(--vamo-border-glass);
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
+      box-shadow: var(--vamo-shadow-sm);
       transition: all 0.18s ease;
     }
 
     .summary-card:hover {
-      border-color: var(--vamo-border-glass-strong);
+      border-color: var(--vamo-border-hover);
       transform: translateY(-2px);
+      box-shadow: var(--vamo-shadow-md);
     }
 
     .summary-header {
@@ -454,7 +459,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
     .summary-value {
       font-size: 2.2rem;
       font-weight: 800;
-      color: #ffffff;
+      color: var(--vamo-text);
       letter-spacing: -0.02em;
       line-height: 1;
     }
@@ -462,7 +467,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
     .tier-value {
       font-size: 1.45rem;
       letter-spacing: -0.01em;
-      color: var(--vamo-pink);
+      color: var(--vamo-primary);
     }
 
     .summary-footer {
@@ -490,7 +495,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
     .section-title {
       font-size: 1.2rem;
       font-weight: 800;
-      color: #ffffff;
+      color: var(--vamo-text);
       letter-spacing: -0.01em;
     }
 
@@ -512,33 +517,35 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
       padding: 20px;
       text-decoration: none;
       color: inherit;
-      background: var(--vamo-bg-card);
-      border: 1px solid var(--vamo-border-glass);
-      border-radius: 12px;
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
+      box-shadow: var(--vamo-shadow-sm);
       transition: all 0.18s ease;
     }
 
     .action-card:hover {
-      background: var(--vamo-bg-card-hover);
+      background: var(--vamo-surface-subtle);
       border-color: var(--vamo-border-hover);
       transform: translateY(-2px);
+      box-shadow: var(--vamo-shadow-md);
     }
 
     .action-card-highlight {
-      border-color: rgba(254, 57, 127, 0.25);
-      background: rgba(254, 57, 127, 0.04);
+      border-color: rgba(124, 58, 237, 0.3);
+      background: rgba(124, 58, 237, 0.03);
     }
 
     .action-card-highlight:hover {
-      background: rgba(254, 57, 127, 0.08);
-      border-color: var(--vamo-pink);
+      background: rgba(124, 58, 237, 0.08);
+      border-color: var(--vamo-primary);
     }
 
     .action-icon {
       width: 42px;
       height: 42px;
       border-radius: 10px;
-      background: var(--vamo-bg-surface);
+      background: var(--vamo-surface-subtle);
       color: var(--vamo-text-secondary);
       display: flex;
       align-items: center;
@@ -546,8 +553,8 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
     }
 
     .icon-pink {
-      background: var(--vamo-pink-light);
-      color: var(--vamo-pink);
+      background: rgba(124, 58, 237, 0.1);
+      color: var(--vamo-primary);
     }
 
     .action-meta {
@@ -559,7 +566,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
     .action-title {
       font-size: 0.95rem;
       font-weight: 700;
-      color: #ffffff;
+      color: var(--vamo-text);
     }
 
     .action-desc {
@@ -576,6 +583,10 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
       flex-direction: column;
       align-items: center;
       gap: 12px;
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
+      box-shadow: var(--vamo-shadow-sm);
     }
 
     .empty-icon {
@@ -586,7 +597,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
     .empty-title {
       font-size: 1.15rem;
       font-weight: 700;
-      color: #ffffff;
+      color: var(--vamo-text);
     }
 
     .empty-desc {
@@ -599,6 +610,10 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
     .posts-table-card {
       padding: 0;
       overflow: hidden;
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
+      box-shadow: var(--vamo-shadow-sm);
     }
 
     .posts-list {
@@ -610,7 +625,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
       display: flex;
       align-items: center;
       padding: 16px 24px;
-      border-bottom: 1px solid var(--vamo-border-glass);
+      border-bottom: 1px solid var(--vamo-border);
       gap: 18px;
       transition: background 0.15s ease;
     }
@@ -620,7 +635,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
     }
 
     .post-row:hover {
-      background: var(--vamo-bg-glass);
+      background: var(--vamo-surface-subtle);
     }
 
     .post-thumb {
@@ -628,7 +643,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
       height: 52px;
       border-radius: 8px;
       overflow: hidden;
-      background: var(--vamo-bg-surface);
+      background: var(--vamo-surface-subtle);
       flex-shrink: 0;
     }
 
@@ -644,7 +659,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--vamo-bg-surface);
+      background: var(--vamo-surface-subtle);
       color: var(--vamo-text-dim);
       font-size: 0.7rem;
       font-weight: 800;
@@ -662,7 +677,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
     .post-title {
       font-size: 0.95rem;
       font-weight: 700;
-      color: #ffffff;
+      color: var(--vamo-text);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;

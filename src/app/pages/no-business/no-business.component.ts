@@ -59,12 +59,12 @@ import { AuthService } from '../../core/services/auth.service';
     .no-business-card {
       width: 100%;
       max-width: 580px;
-      background: var(--vamo-bg-card);
-      border: 1px solid var(--vamo-border-glass-strong);
-      border-radius: 16px;
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
       padding: 40px;
       text-align: center;
-      box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
+      box-shadow: var(--vamo-shadow-md);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -74,9 +74,9 @@ import { AuthService } from '../../core/services/auth.service';
       width: 72px;
       height: 72px;
       border-radius: 50%;
-      background: rgba(254, 57, 127, 0.1);
-      border: 1px solid rgba(254, 57, 127, 0.25);
-      color: var(--vamo-pink);
+      background: rgba(236, 72, 153, 0.1);
+      border: 1px solid rgba(236, 72, 153, 0.25);
+      color: var(--vamo-secondary);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -86,7 +86,7 @@ import { AuthService } from '../../core/services/auth.service';
     .card-title {
       font-size: 1.45rem;
       font-weight: 700;
-      color: #ffffff;
+      color: var(--vamo-text);
       line-height: 1.3;
       margin-bottom: 14px;
     }
@@ -94,18 +94,18 @@ import { AuthService } from '../../core/services/auth.service';
     .card-description {
       font-size: 0.95rem;
       line-height: 1.6;
-      color: var(--vamo-text-secondary);
+      color: var(--vamo-text-muted);
       margin-bottom: 28px;
     }
 
     .card-description strong {
-      color: #ffffff;
+      color: var(--vamo-text);
     }
 
     .action-box {
       width: 100%;
-      background: var(--vamo-bg-surface);
-      border: 1px solid var(--vamo-border-glass);
+      background: var(--vamo-surface-subtle);
+      border: 1px solid var(--vamo-border);
       border-radius: 12px;
       padding: 20px;
       margin-bottom: 24px;

@@ -78,20 +78,21 @@ interface ModuleConfig {
     .module-title {
       font-size: 1.8rem;
       font-weight: 800;
-      color: #ffffff;
+      color: var(--vamo-text);
       letter-spacing: -0.02em;
     }
 
     .module-desc {
       font-size: 1rem;
-      color: var(--vamo-text-secondary);
+      color: var(--vamo-text-muted);
       line-height: 1.5;
     }
 
     .module-preview-card {
-      background: var(--vamo-bg-card);
-      border: 1px solid var(--vamo-border-glass-strong);
-      border-radius: 14px;
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
+      box-shadow: var(--vamo-shadow-sm);
       padding: 32px;
       display: flex;
       flex-direction: column;
@@ -105,9 +106,9 @@ interface ModuleConfig {
       width: fit-content;
       font-size: 0.8rem;
       font-weight: 600;
-      color: #60a5fa;
-      background: rgba(96, 165, 250, 0.1);
-      border: 1px solid rgba(96, 165, 250, 0.25);
+      color: var(--vamo-primary);
+      background: rgba(124, 58, 237, 0.1);
+      border: 1px solid rgba(124, 58, 237, 0.25);
       padding: 4px 10px;
       border-radius: 6px;
     }
@@ -115,7 +116,7 @@ interface ModuleConfig {
     .preview-heading {
       font-size: 1.05rem;
       font-weight: 700;
-      color: #ffffff;
+      color: var(--vamo-text);
     }
 
     .feature-list {
@@ -130,11 +131,11 @@ interface ModuleConfig {
       align-items: center;
       gap: 12px;
       font-size: 0.92rem;
-      color: var(--vamo-text-secondary);
+      color: var(--vamo-text-muted);
     }
 
     .bullet {
-      color: var(--vamo-pink);
+      color: var(--vamo-primary);
       font-weight: 800;
       font-size: 0.95rem;
     }

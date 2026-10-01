@@ -162,7 +162,7 @@ export class ShellComponent implements OnInit {
   private updatePageTitle(url: string): void {
     const cleanUrl = url.split('?')[0];
     if (cleanUrl.includes('/app/overview')) this.pageTitle = 'Overview';
-    else if (cleanUrl.includes('/app/business')) this.pageTitle = 'My Business';
+    else if (cleanUrl.includes('/app/business')) this.pageTitle = 'Business Profile';
     else if (cleanUrl.includes('/app/posts')) this.pageTitle = 'My Posts';
     else if (cleanUrl.includes('/app/create')) this.pageTitle = 'Create Post';
     else if (cleanUrl.includes('/app/promotions')) this.pageTitle = 'Promotions';
