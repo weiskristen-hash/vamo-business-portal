@@ -85,3 +85,27 @@ Compiled production bundles are output to `dist/vamo-business-portal/browser`.
 - **STRICTLY READ-ONLY Reference Application**: Isla-Labs-DR/vamo-app is reference only.
 - **Zero Schema Mutations**: No Directus schema or collection alterations.
 - **Zero Production Deploys**: Local and feature branch development only. All production releases require Kristen's explicit approval.
+
+---
+
+## Deployment (Cloudflare Workers Builds)
+
+The portal deploys to Cloudflare Workers Builds as a static asset application serving `business.vamo-app.com`.
+
+### Cloudflare Build Settings
+
+In Cloudflare Dashboard > Workers & Pages > Builds:
+- **Production branch**: `main`
+- **Build command**: `npm run build`
+- **Deploy command**: `npm run deploy`
+- **Root directory**: `/`
+
+### Architecture & Routing Notes
+
+- **Wrangler Configuration**: Defined in [`wrangler.jsonc`](file:///c:/Users/bryew/Downloads/business_vamo-app.com/wrangler.jsonc) at the repository root.
+- **Angular Build Output**: Angular outputs the compiled browser application to `dist/vamo-business-portal/browser`.
+- **SPA Fallback**: Configured via `"not_found_handling": "single-page-application"` in `wrangler.jsonc`. Requests to client routes (e.g., `/overview`, `/login`, `/no-business`) serve `index.html` seamlessly without 404s.
+- **Directus API Traffic**: The portal communicates directly with `https://api.vamo-app.com` via client-side requests. No worker API proxies or route rewrites interfere with API calls.
+- **Custom Domain**: `business.vamo-app.com` is configured and managed directly in Cloudflare.
+- **Production Approval**: Production deployments require explicit approval from Kristen before merging or releasing.
+
