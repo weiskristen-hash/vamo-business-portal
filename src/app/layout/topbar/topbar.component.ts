@@ -95,8 +95,8 @@ import { BusinessService } from '../../core/services/business.service';
       justify-content: space-between;
       height: var(--vamo-topbar-height);
       padding: 0 28px;
-      background: var(--vamo-bg-secondary);
-      border-bottom: 1px solid var(--vamo-border-glass);
+      background: var(--vamo-surface);
+      border-bottom: 1px solid var(--vamo-border);
       position: sticky;
       top: 0;
       z-index: 20;
@@ -111,23 +111,23 @@ import { BusinessService } from '../../core/services/business.service';
     .hamburger-btn {
       display: none;
       background: transparent;
-      border: 1px solid var(--vamo-border-glass);
-      color: var(--vamo-text-secondary);
+      border: 1px solid var(--vamo-border);
+      color: var(--vamo-text);
       padding: 7px;
       border-radius: 8px;
       cursor: pointer;
     }
 
     .hamburger-btn:hover {
-      color: #ffffff;
-      background: var(--vamo-bg-glass);
+      color: var(--vamo-primary);
+      background: var(--vamo-surface-subtle);
     }
 
     .page-title {
       font-size: 1.25rem;
       font-weight: 700;
       letter-spacing: -0.01em;
-      color: #ffffff;
+      color: var(--vamo-text);
     }
 
     .topbar-right {
@@ -140,16 +140,17 @@ import { BusinessService } from '../../core/services/business.service';
       gap: 12px;
       padding: 6px 14px 6px 6px;
       border-radius: 999px;
-      background: var(--vamo-bg-card);
-      border: 1px solid var(--vamo-border-glass);
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      box-shadow: var(--vamo-shadow-sm);
       cursor: pointer;
       transition: all 0.15s ease;
       user-select: none;
     }
 
     .business-pill:hover {
-      background: var(--vamo-bg-card-hover);
-      border-color: var(--vamo-border-glass-strong);
+      background: var(--vamo-surface-subtle);
+      border-color: var(--vamo-border-hover);
     }
 
     .business-avatar {
@@ -157,7 +158,7 @@ import { BusinessService } from '../../core/services/business.service';
       height: 36px;
       border-radius: 50%;
       overflow: hidden;
-      background: var(--vamo-bg-surface);
+      background: var(--vamo-surface-subtle);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -170,7 +171,7 @@ import { BusinessService } from '../../core/services/business.service';
     }
 
     .business-avatar-text {
-      background: var(--vamo-gradient-accent);
+      background: var(--vamo-gradient-brand);
       color: #ffffff;
       font-weight: 700;
       font-size: 0.85rem;
@@ -185,7 +186,7 @@ import { BusinessService } from '../../core/services/business.service';
     .business-name {
       font-size: 0.88rem;
       font-weight: 700;
-      color: #ffffff;
+      color: var(--vamo-text);
       max-width: 180px;
       white-space: nowrap;
       overflow: hidden;
@@ -223,10 +224,10 @@ import { BusinessService } from '../../core/services/business.service';
       top: calc(100% + 8px);
       right: 0;
       width: 230px;
-      background: var(--vamo-bg-card);
-      border: 1px solid var(--vamo-border-glass-strong);
-      border-radius: 12px;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
+      box-shadow: var(--vamo-shadow-md);
       padding: 8px;
       display: flex;
       flex-direction: column;
@@ -247,7 +248,7 @@ import { BusinessService } from '../../core/services/business.service';
     .dropdown-user-name {
       font-size: 0.88rem;
       font-weight: 700;
-      color: #ffffff;
+      color: var(--vamo-text);
     }
 
     .dropdown-user-email {
@@ -260,7 +261,7 @@ import { BusinessService } from '../../core/services/business.service';
 
     .dropdown-divider {
       height: 1px;
-      background: var(--vamo-border-glass);
+      background: var(--vamo-border);
       margin: 4px 0;
     }
 
@@ -270,7 +271,7 @@ import { BusinessService } from '../../core/services/business.service';
       gap: 10px;
       padding: 8px 12px;
       border-radius: 6px;
-      color: var(--vamo-text-secondary);
+      color: var(--vamo-text);
       text-decoration: none;
       font-size: 0.84rem;
       font-weight: 500;
@@ -284,12 +285,12 @@ import { BusinessService } from '../../core/services/business.service';
     }
 
     .dropdown-item:hover {
-      background: var(--vamo-bg-glass);
-      color: #ffffff;
+      background: var(--vamo-surface-subtle);
+      color: var(--vamo-primary);
     }
 
     .dropdown-item-danger:hover {
-      background: rgba(239, 68, 68, 0.12);
+      background: rgba(239, 68, 68, 0.08);
       color: #ef4444;
     }
 

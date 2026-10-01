@@ -335,17 +335,17 @@ import { environment } from '../../../../environments/environment';
       align-items: center;
       justify-content: center;
       padding: 40px 60px;
-      background: var(--vamo-bg-base);
+      background: var(--vamo-background);
     }
 
     .login-card {
       width: 100%;
       max-width: 440px;
-      background: var(--vamo-bg-card);
-      border: 1px solid var(--vamo-border-glass);
-      border-radius: 16px;
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
       padding: 36px;
-      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+      box-shadow: var(--vamo-shadow-md);
     }
 
     .login-card-header {
@@ -355,7 +355,7 @@ import { environment } from '../../../../environments/environment';
     .card-title {
       font-size: 1.4rem;
       font-weight: 700;
-      color: #ffffff;
+      color: var(--vamo-text);
       margin-bottom: 6px;
     }
 

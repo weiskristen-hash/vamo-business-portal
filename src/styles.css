@@ -1,35 +1,57 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+/* ==========================================================================
+   VAMO Business Portal — Design System Tokens & Global Stylesheet
+   Aligned with VAMO Visual Language (https://web2.vamo-app.com)
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-  /* VAMO Palette */
-  --vamo-bg-base: #0d0d1e;
-  --vamo-bg-secondary: #131326;
-  --vamo-bg-card: #16162e;
-  --vamo-bg-card-hover: #1c1c38;
-  --vamo-bg-surface: #191933;
-  --vamo-bg-input: #111124;
-  --vamo-bg-glass: rgba(255, 255, 255, 0.04);
-  --vamo-bg-glass-strong: rgba(255, 255, 255, 0.08);
+  /* ── VAMO Exact Brand Tokens ─────────────────────────────────────────── */
+  --vamo-primary: #7c3aed;          /* Vibrant Violet */
+  --vamo-primary-hover: #6d28d9;
+  --vamo-secondary: #ec4899;        /* Hot Pink */
+  --vamo-secondary-hover: #db2777;
+  --vamo-accent: #06b6d4;           /* Caribbean Cyan */
+  --vamo-accent-hover: #0891b2;
+  --vamo-dark: #0f172a;             /* Deep Slate */
 
-  --vamo-border-glass: rgba(255, 255, 255, 0.08);
-  --vamo-border-glass-strong: rgba(255, 255, 255, 0.16);
-  --vamo-border-hover: rgba(255, 255, 255, 0.22);
+  /* ── Surfaces & Backgrounds ──────────────────────────────────────────── */
+  --vamo-background: #f8fafc;       /* Off-White Canvas */
+  --vamo-surface: #ffffff;          /* Pure White Card */
+  --vamo-card-bg: #ffffff;          /* Card Background */
+  --vamo-surface-subtle: #f1f5f9;   /* Subtle Grey Tile / Hover */
+  --vamo-surface-sidebar: #0f172a;  /* Deep Slate Desktop Command Sidebar */
 
-  --vamo-pink: #fe397f;
-  --vamo-pink-hover: #e0286d;
-  --vamo-pink-active: #c51c5b;
-  --vamo-pink-light: rgba(254, 57, 127, 0.12);
-  --vamo-pink-border: rgba(254, 57, 127, 0.35);
+  /* ── Typography & Text Colors ────────────────────────────────────────── */
+  --vamo-font-heading: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --vamo-font-body: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-family-sans: var(--vamo-font-body);
 
-  --vamo-gradient-bg: linear-gradient(160deg, #0d0d1e 0%, #1a0812 60%, #0d0d1e 100%);
-  --vamo-gradient-accent: linear-gradient(135deg, #fe397f 0%, #d81b60 100%);
+  --vamo-text: #0f172a;             /* Primary Heading & Body Text */
+  --vamo-text-primary: #0f172a;
+  --vamo-text-muted: #475569;       /* Readable Slate Grey */
+  --vamo-text-secondary: #475569;
+  --vamo-text-dim: #94a3b8;         /* Subtle Muted / Placeholder */
+  --vamo-text-inverse: #ffffff;     /* White on Dark */
 
-  --vamo-text-primary: #ffffff;
-  --vamo-text-secondary: rgba(255, 255, 255, 0.76);
-  --vamo-text-muted: rgba(255, 255, 255, 0.52);
-  --vamo-text-dim: rgba(255, 255, 255, 0.36);
+  /* ── Borders & Dividers ──────────────────────────────────────────────── */
+  --vamo-border: #e2e8f0;           /* Subtle Outline */
+  --vamo-border-hover: #cbd5e1;     /* Interactive Hover */
+  --vamo-border-focus: #7c3aed;     /* Primary Focus Outline */
+  --vamo-border-glass: #e2e8f0;
+  --vamo-border-glass-strong: #cbd5e1;
 
-  /* Status Colors */
+  /* ── Functional / Status Colors ──────────────────────────────────────── */
+  --vamo-success: #10b981;
+  --vamo-success-bg: rgba(16, 185, 129, 0.1);
+  --vamo-warning: #f59e0b;
+  --vamo-warning-bg: rgba(245, 158, 11, 0.1);
+  --vamo-error: #ef4444;
+  --vamo-error-bg: rgba(239, 68, 68, 0.1);
+  --vamo-info: #06b6d4;
+  --vamo-info-bg: rgba(6, 182, 212, 0.1);
+
+  /* Status Tokens */
   --vamo-status-published: #10b981;
   --vamo-status-published-bg: rgba(16, 185, 129, 0.12);
   --vamo-status-draft: #f59e0b;
@@ -39,14 +61,50 @@
   --vamo-status-error: #ef4444;
   --vamo-status-error-bg: rgba(239, 68, 68, 0.12);
 
-  /* Layout */
+  /* ── Gradients ───────────────────────────────────────────────────────── */
+  --vamo-gradient-brand: linear-gradient(135deg, var(--vamo-secondary), var(--vamo-accent));
+  --vamo-gradient-cta: linear-gradient(135deg, var(--vamo-primary), var(--vamo-accent));
+  --vamo-gradient-violet: linear-gradient(135deg, var(--vamo-primary), #a855f7);
+  --vamo-gradient-dark: linear-gradient(180deg, rgba(15, 23, 42, 0.55) 0%, rgba(15, 23, 42, 0.75) 100%);
+  --vamo-gradient-accent: var(--vamo-gradient-brand);
+  --vamo-gradient-bg: var(--vamo-background);
+
+  /* ── Shadows & Radii ─────────────────────────────────────────────────── */
+  --vamo-shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  --vamo-shadow-md: 0 12px 28px -5px rgba(15, 23, 42, 0.09);
+  --vamo-shadow-lg: 0 20px 35px -10px rgba(124, 58, 237, 0.18);
+  --vamo-shadow-brand: 0 4px 14px rgba(236, 72, 153, 0.3);
+
+  --vamo-radius-xs: 6px;
+  --vamo-radius-sm: 8px;
+  --vamo-radius-md: 14px;
+  --vamo-radius-lg: 22px;
+  --vamo-radius-full: 9999px;
+
+  /* ── Layout Conventions ──────────────────────────────────────────────── */
   --vamo-sidebar-width: 260px;
   --vamo-topbar-height: 68px;
+  --vamo-container-max: 1200px;
 
-  /* Typography */
-  --font-family-sans: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* ── Backward-compatible Aliases ─────────────────────────────────────── */
+  --vamo-bg-base: var(--vamo-background);
+  --vamo-bg-secondary: #0f172a;
+  --vamo-bg-card: var(--vamo-surface);
+  --vamo-bg-card-hover: #f8fafc;
+  --vamo-bg-surface: var(--vamo-surface);
+  --vamo-bg-input: #ffffff;
+  --vamo-bg-glass: rgba(15, 23, 42, 0.03);
+  --vamo-bg-glass-strong: rgba(15, 23, 42, 0.06);
+  --vamo-pink: var(--vamo-secondary);
+  --vamo-pink-hover: var(--vamo-secondary-hover);
+  --vamo-pink-active: #be185d;
+  --vamo-pink-light: rgba(236, 72, 153, 0.12);
+  --vamo-pink-border: rgba(236, 72, 153, 0.35);
 }
 
+/* ==========================================================================
+   Base Reset & Typography
+   ========================================================================== */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -56,20 +114,35 @@
 html, body {
   height: 100%;
   width: 100%;
-  background-color: var(--vamo-bg-base);
-  color: var(--vamo-text-primary);
-  font-family: var(--font-family-sans);
+  background-color: var(--vamo-background);
+  color: var(--vamo-text);
+  font-family: var(--vamo-font-body);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   overflow-x: hidden;
-  background-image: var(--vamo-gradient-bg);
-  background-attachment: fixed;
-  background-size: cover;
+  background-color: var(--vamo-background);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--vamo-font-heading);
+  color: var(--vamo-text);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+
+h1 { font-size: 1.85rem; font-weight: 800; }
+h2 { font-size: 1.45rem; }
+h3 { font-size: 1.2rem; }
+h4 { font-size: 1.05rem; }
+
+p {
+  color: var(--vamo-text-muted);
 }
 
 /* Accessibility Focus States */
@@ -78,175 +151,413 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--vamo-pink);
+  outline: 2px solid var(--vamo-primary);
   outline-offset: 2px;
 }
 
-/* Common Button Styles */
+/* ==========================================================================
+   Buttons (VAMO Brand & Application Styles)
+   ========================================================================== */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 18px;
-  font-size: 0.9rem;
+  padding: 10px 20px;
+  font-size: 0.92rem;
   font-weight: 600;
-  border-radius: 8px;
+  border-radius: var(--vamo-radius-full);
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.18s ease-in-out;
+  transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
   text-decoration: none;
   font-family: inherit;
   white-space: nowrap;
+  user-select: none;
 }
 
-.btn:disabled {
+.btn:disabled, .btn[disabled] {
   opacity: 0.55;
   cursor: not-allowed;
   pointer-events: none;
+  transform: none !important;
+  box-shadow: none !important;
 }
 
-.btn-primary {
-  background: var(--vamo-gradient-accent);
+/* Primary Brand Gradient Button */
+.btn-brand, .btn-primary {
+  background: var(--vamo-gradient-brand);
   color: #ffffff;
-  box-shadow: 0 4px 14px rgba(254, 57, 127, 0.35);
+  box-shadow: var(--vamo-shadow-brand);
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #e0286d 0%, #be124e 100%);
-  box-shadow: 0 6px 18px rgba(254, 57, 127, 0.45);
-  transform: translateY(-1px);
+.btn-brand:hover:not(:disabled), .btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px -4px rgba(236, 72, 153, 0.45);
 }
 
-.btn-secondary {
-  background: var(--vamo-bg-glass-strong);
-  color: var(--vamo-text-primary);
-  border: 1px solid var(--vamo-border-glass-strong);
+/* Violet CTA Button */
+.btn-violet {
+  background: var(--vamo-primary);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.3);
 }
 
-.btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
+.btn-violet:hover:not(:disabled) {
+  background: var(--vamo-primary-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -3px rgba(124, 58, 237, 0.4);
+}
+
+/* Secondary / Outline Button */
+.btn-secondary, .btn-outline {
+  background: #ffffff;
+  color: var(--vamo-text);
+  border: 1px solid var(--vamo-border);
+  box-shadow: var(--vamo-shadow-sm);
+}
+
+.btn-secondary:hover:not(:disabled), .btn-outline:hover:not(:disabled) {
+  background: var(--vamo-surface-subtle);
   border-color: var(--vamo-border-hover);
+  color: var(--vamo-primary);
   transform: translateY(-1px);
 }
 
+/* Ghost Button */
 .btn-ghost {
   background: transparent;
-  color: var(--vamo-text-secondary);
+  color: var(--vamo-text-muted);
+  border-color: transparent;
 }
 
 .btn-ghost:hover:not(:disabled) {
-  background: var(--vamo-bg-glass);
-  color: var(--vamo-text-primary);
+  background: var(--vamo-surface-subtle);
+  color: var(--vamo-text);
+}
+
+/* Danger Button */
+.btn-danger {
+  background: var(--vamo-error);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+  transform: translateY(-1px);
 }
 
 .btn-sm {
-  padding: 6px 12px;
+  padding: 6px 14px;
   font-size: 0.82rem;
-  border-radius: 6px;
+  border-radius: var(--vamo-radius-full);
 }
 
-/* Form Controls */
+.btn-lg {
+  padding: 13px 28px;
+  font-size: 1rem;
+}
+
+/* ==========================================================================
+   Form Controls & Inputs
+   ========================================================================== */
 .form-group {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .form-label {
-  font-size: 0.85rem;
+  font-size: 0.86rem;
   font-weight: 600;
-  color: var(--vamo-text-secondary);
+  color: var(--vamo-text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.form-input {
+.form-label .required-star {
+  color: var(--vamo-secondary);
+  font-weight: 700;
+}
+
+.form-control, .form-input, .form-select, .form-textarea {
   width: 100%;
   padding: 11px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--vamo-border-glass-strong);
-  background: var(--vamo-bg-input);
-  color: #ffffff;
+  border-radius: var(--vamo-radius-sm);
+  border: 1px solid var(--vamo-border);
+  background: var(--vamo-surface);
+  color: var(--vamo-text);
   font-family: inherit;
   font-size: 0.92rem;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  line-height: 1.5;
 }
 
-.form-input:focus {
+.form-control:focus, .form-input:focus, .form-select:focus, .form-textarea:focus {
   outline: none;
-  border-color: var(--vamo-pink);
-  box-shadow: 0 0 0 3px rgba(254, 57, 127, 0.2);
+  border-color: var(--vamo-primary);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+  background: #ffffff;
 }
 
-.form-input::placeholder {
+.form-control::placeholder, .form-input::placeholder, .form-textarea::placeholder {
   color: var(--vamo-text-dim);
 }
 
-.form-error {
-  font-size: 0.8rem;
-  color: #f87171;
-  margin-top: 4px;
+.form-control:disabled, .form-input:disabled, .form-select:disabled, .form-textarea:disabled {
+  background: var(--vamo-surface-subtle);
+  color: var(--vamo-text-muted);
+  cursor: not-allowed;
 }
 
-/* Cards & Surfaces */
+.form-control.is-invalid, .form-input.is-invalid {
+  border-color: var(--vamo-error);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+.form-textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.form-hint {
+  font-size: 0.8rem;
+  color: var(--vamo-text-muted);
+  line-height: 1.4;
+}
+
+.form-error {
+  font-size: 0.82rem;
+  color: var(--vamo-error);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ==========================================================================
+   Cards & Surfaces
+   ========================================================================== */
 .card {
-  background: var(--vamo-bg-card);
-  border: 1px solid var(--vamo-border-glass);
-  border-radius: 12px;
-  padding: 22px;
-  transition: border-color 0.18s ease;
+  background: var(--vamo-card-bg);
+  border: 1px solid var(--vamo-border);
+  border-radius: var(--vamo-radius-md);
+  padding: 24px;
+  box-shadow: var(--vamo-shadow-sm);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .card:hover {
-  border-color: var(--vamo-border-glass-strong);
+  border-color: var(--vamo-border-hover);
 }
 
-/* Status Badges */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--vamo-border);
+}
+
+.card-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--vamo-text);
+}
+
+.card-desc {
+  font-size: 0.88rem;
+  color: var(--vamo-text-muted);
+  margin-top: 4px;
+}
+
+/* ==========================================================================
+   Badges & Status Indicators
+   ========================================================================== */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 0.75rem;
+  padding: 4px 12px;
+  border-radius: var(--vamo-radius-full);
+  font-size: 0.78rem;
   font-weight: 700;
-  text-transform: capitalize;
   letter-spacing: 0.02em;
+  background: var(--vamo-surface-subtle);
+  border: 1px solid var(--vamo-border);
+  color: var(--vamo-text);
 }
 
-.badge-published {
+.badge-brand {
+  background: var(--vamo-gradient-brand);
+  color: #ffffff;
+  border: none;
+  box-shadow: 0 2px 8px rgba(236, 72, 153, 0.25);
+}
+
+.badge-primary {
+  background: rgba(124, 58, 237, 0.1);
+  color: var(--vamo-primary);
+  border-color: rgba(124, 58, 237, 0.25);
+}
+
+.badge-success, .badge-published {
   background: var(--vamo-status-published-bg);
   color: var(--vamo-status-published);
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.25);
 }
 
-.badge-draft {
+.badge-warning, .badge-draft {
   background: var(--vamo-status-draft-bg);
   color: var(--vamo-status-draft);
-  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-color: rgba(245, 158, 11, 0.25);
 }
 
 .badge-archived {
   background: var(--vamo-status-archived-bg);
   color: var(--vamo-status-archived);
-  border: 1px solid rgba(156, 163, 175, 0.25);
+  border-color: rgba(156, 163, 175, 0.25);
 }
 
-/* Scrollbars */
-::-webkit-scrollbar {
-  width: 8px;
+.badge-error {
+  background: var(--vamo-status-error-bg);
+  color: var(--vamo-status-error);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  background: currentColor;
+}
+
+/* ==========================================================================
+   Alerts & Notifications
+   ========================================================================== */
+.alert {
+  padding: 14px 18px;
+  border-radius: var(--vamo-radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-bottom: 20px;
+  border: 1px solid transparent;
+}
+
+.alert-success {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #065f46;
+}
+
+.alert-error {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #991b1b;
+}
+
+.alert-warning {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #92400e;
+}
+
+.alert-info {
+  background: rgba(6, 182, 212, 0.08);
+  border-color: rgba(6, 182, 212, 0.3);
+  color: #155e75;
+}
+
+/* ==========================================================================
+   Loading & Empty States
+   ========================================================================== */
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+.spinner-primary {
+  border-color: rgba(124, 58, 237, 0.2);
+  border-top-color: var(--vamo-primary);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.empty-state-icon {
+  font-size: 2.5rem;
+  margin-bottom: 14px;
+  display: inline-block;
+}
+
+.empty-state-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--vamo-text);
+  margin-bottom: 6px;
+}
+
+.empty-state-desc {
+  font-size: 0.9rem;
+  color: var(--vamo-text-muted);
+  max-width: 440px;
+  margin: 0 auto 20px auto;
+}
+
+/* ==========================================================================
+   Progress Bar
+   ========================================================================== */
+.progress-track {
+  width: 100%;
   height: 8px;
+  background: var(--vamo-border);
+  border-radius: var(--vamo-radius-full);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--vamo-gradient-brand);
+  border-radius: var(--vamo-radius-full);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ==========================================================================
+   Custom Scrollbar
+   ========================================================================== */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
+  background: #f1f5f9;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: #cbd5e1;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: #94a3b8;
 }
