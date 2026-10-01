@@ -39,6 +39,10 @@ testem.log
 /typings
 __screenshots__/
 
+# Cloudflare
+.wrangler/
+
 # System files
 .DS_Store
 Thumbs.db
+

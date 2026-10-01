@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vamo-business-portal",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist/vamo-business-portal/browser",
+    "not_found_handling": "single-page-application"
+  }
+}
