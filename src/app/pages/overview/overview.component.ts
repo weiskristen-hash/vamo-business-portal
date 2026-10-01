@@ -55,13 +55,13 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
           </div>
 
           <div class="header-right">
-            <a routerLink="/app/create" class="btn btn-primary create-cta">
+            <a routerLink="/app/listings/create" class="btn btn-primary create-cta">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="12" y1="8" x2="12" y2="16"></line>
                 <line x1="8" y1="12" x2="16" y2="12"></line>
               </svg>
-              <span>Create Post</span>
+              <span>Create Listing</span>
             </a>
           </div>
         </header>
@@ -142,7 +142,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
               </div>
             </a>
 
-            <a routerLink="/app/posts" class="action-card card">
+            <a routerLink="/app/listings" class="action-card card">
               <div class="action-icon">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -152,12 +152,12 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
                 </svg>
               </div>
               <div class="action-meta">
-                <strong class="action-title">View All Posts</strong>
+                <strong class="action-title">Manage Listings</strong>
                 <span class="action-desc">Manage existing event listings and schedules</span>
               </div>
             </a>
 
-            <a routerLink="/app/create" class="action-card card action-card-highlight">
+            <a routerLink="/app/listings/create" class="action-card card action-card-highlight">
               <div class="action-icon icon-pink">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
@@ -166,7 +166,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
                 </svg>
               </div>
               <div class="action-meta">
-                <strong class="action-title">Create Post</strong>
+                <strong class="action-title">Create Listing</strong>
                 <span class="action-desc">Broadcast a new event to travelers and locals</span>
               </div>
             </a>
@@ -194,8 +194,8 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
               <h2 class="section-title">Recent Posts</h2>
               <span class="section-subtitle">Latest listings for {{ provider?.name }}</span>
             </div>
-            <a routerLink="/app/posts" class="btn btn-ghost btn-sm" *ngIf="recentEvents.length > 0">
-              View all posts →
+            <a routerLink="/app/listings" class="btn btn-ghost btn-sm" *ngIf="recentEvents.length > 0">
+              View all listings →
             </a>
           </div>
 
@@ -206,8 +206,8 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
             <p class="empty-desc">
               Your business does not have any active posts or events on VAMO yet. Create your first post to reach customers in your area.
             </p>
-            <a routerLink="/app/create" class="btn btn-primary">
-              ✦ Create Your First Post
+            <a routerLink="/app/listings/create" class="btn btn-primary">
+              ✦ Create Your First Listing
             </a>
           </div>
 

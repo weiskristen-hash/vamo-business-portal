@@ -163,8 +163,9 @@ export class ShellComponent implements OnInit {
     const cleanUrl = url.split('?')[0];
     if (cleanUrl.includes('/app/overview')) this.pageTitle = 'Overview';
     else if (cleanUrl.includes('/app/business')) this.pageTitle = 'Business Profile';
-    else if (cleanUrl.includes('/app/posts')) this.pageTitle = 'My Posts';
-    else if (cleanUrl.includes('/app/create')) this.pageTitle = 'Create Post';
+    else if (cleanUrl.includes('/app/listings/create') || cleanUrl.includes('/app/create')) this.pageTitle = 'Create Listing';
+    else if (cleanUrl.includes('/app/listings/edit')) this.pageTitle = 'Edit Listing';
+    else if (cleanUrl.includes('/app/listings') || cleanUrl.includes('/app/posts')) this.pageTitle = 'Listings';
     else if (cleanUrl.includes('/app/promotions')) this.pageTitle = 'Promotions';
     else if (cleanUrl.includes('/app/insights')) this.pageTitle = 'Insights';
     else if (cleanUrl.includes('/app/billing')) this.pageTitle = 'Billing';
