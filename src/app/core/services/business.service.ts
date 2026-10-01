@@ -1,9 +1,9 @@
 import { Injectable, inject } from '@angular/core';
-import { readItem, readItems, updateItem, uploadFiles } from '@directus/sdk';
+import { createItem, deleteItem, readItem, readItems, updateItem, uploadFiles } from '@directus/sdk';
 import { directusClient } from '../directus/directus-client';
 import { runtimeConfig } from '../config/runtime-config';
 import { Provider } from '../models/provider.model';
-import { VamoEvent, ProviderEventStats } from '../models/event.model';
+import { VamoEvent, ProviderEventStats, Area } from '../models/event.model';
 import { AuthService } from './auth.service';
 
 @Injectable({
@@ -252,6 +252,43 @@ export class BusinessService {
   }
 
   /**
+   * Returns current Dominican Republic date as YYYY-MM-DD.
+   */
+  drTodayStr(): string {
+    const drNow = new Date(Date.now() - 4 * 60 * 60 * 1000);
+    return drNow.toISOString().split('T')[0];
+  }
+
+  /**
+   * Checks whether a single or multi-day event is upcoming or ongoing in the DR timezone.
+   */
+  isEventUpcomingOrOngoing(event: { startDate?: Date | string | null; endDate?: Date | string | null }): boolean {
+    const last = event.endDate || event.startDate;
+    if (!last) return false;
+    const str = typeof last === 'string' ? last.split('T')[0] : last.toISOString().split('T')[0];
+    return str >= this.drTodayStr();
+  }
+
+  /**
+   * Normalizes raw Directus event object (parses recurring JSON, formats dates).
+   */
+  normalizeEvent(e: any): VamoEvent {
+    if (!e) return e;
+    const event: VamoEvent = { ...e };
+    if (typeof event.recurring === 'string') {
+      try {
+        event.recurring = JSON.parse(event.recurring);
+      } catch {
+        event.recurring = { days: [] };
+      }
+    }
+    if (!event.recurring || !Array.isArray((event.recurring as any).days)) {
+      event.recurring = { days: [] };
+    }
+    return event;
+  }
+
+  /**
    * Loads events scoped strictly to the specified provider ID.
    * Never queries all events or unscoped data.
    */
@@ -268,16 +305,37 @@ export class BusinessService {
             'status',
             'name',
             'description',
+            'category',
             'startDate',
             'endDate',
             'from',
             'to',
             'mode',
             'allDay',
+            'openEnd',
+            'recurring',
+            'isFree',
+            'contactForPrice',
+            'price',
+            'currency',
+            'hasPromotion',
+            'promoText',
+            'promotionStart',
+            'location_point',
+            'address',
+            'is_main_banner',
+            'is_whats_hot',
+            'boost_expires_at',
+            'addon_expires_at',
             'date_created',
             'date_updated',
             'images.id',
             'images.directus_files_id',
+            'areas.id',
+            'areas.areas_id.*',
+            'provider.id',
+            'provider.name',
+            'provider.logo.id',
           ] as any,
           filter: {
             provider: {
@@ -287,7 +345,329 @@ export class BusinessService {
           sort: ['-date_created', '-startDate'] as any,
         })
       );
-      return items || [];
+      return (items || []).map((ev) => this.normalizeEvent(ev));
+    });
+  }
+
+  /**
+   * Loads a single event by ID with expanded images, areas, and provider details.
+   */
+  async getEventById(id: string): Promise<VamoEvent> {
+    if (!id) throw new Error('Event ID is required');
+
+    return this.authService.safeRequest(async () => {
+      const event = await directusClient.request<VamoEvent>(
+        readItem('events', id, {
+          fields: [
+            '*',
+            'images.id',
+            'images.directus_files_id.*',
+            'areas.id',
+            'areas.areas_id.*',
+            'provider.id',
+            'provider.name',
+            'provider.logo.*',
+            'provider.location',
+            'provider.address',
+            'provider.subscription_tier',
+          ] as any,
+        })
+      );
+      return this.normalizeEvent(event);
+    });
+  }
+
+  /**
+   * Uploads multiple event images using client-side compression.
+   */
+  async uploadEventImages(files: File[]): Promise<string[]> {
+    if (!files || files.length === 0) return [];
+    const uploadedIds: string[] = [];
+    for (const file of files) {
+      const id = await this.uploadFile(file, true);
+      if (id) uploadedIds.push(id);
+    }
+    return uploadedIds;
+  }
+
+  /**
+   * Creates a new event/listing for the provider in Directus.
+   */
+  async createEvent(
+    providerId: string,
+    data: Partial<VamoEvent>,
+    files: File[] = [],
+    areaIds: string[] = []
+  ): Promise<VamoEvent> {
+    if (!providerId) throw new Error('Provider ID is required');
+
+    return this.authService.safeRequest(async () => {
+      const payload: Record<string, any> = {
+        provider: providerId,
+        status: data.status || 'draft',
+        name: data.name?.trim(),
+        description: data.description?.trim(),
+        category: data.category || 'other',
+        mode: data.mode || 'single',
+        startDate: data.startDate || null,
+        endDate: data.endDate || null,
+        from: data.from || null,
+        to: data.to || null,
+        allDay: !!data.allDay,
+        openEnd: !!data.openEnd,
+        recurring: typeof data.recurring === 'object' && data.recurring !== null
+          ? JSON.stringify(data.recurring)
+          : (data.recurring || null),
+        isFree: !!data.isFree,
+        contactForPrice: !!data.contactForPrice,
+        price: data.price ?? 0,
+        currency: data.currency || 'USD',
+        hasPromotion: !!data.hasPromotion,
+        promoText: data.promoText?.trim() || null,
+        promotionStart: data.promotionStart || null,
+        location_point: data.location_point || null,
+        address: data.address?.trim() || null,
+      };
+
+      const created = await directusClient.request<any>(createItem('events', payload as any));
+      if (!created?.id) throw new Error('Failed to create event in Directus');
+
+      // Upload and attach images if any
+      if (files.length > 0) {
+        const fileIds = await this.uploadEventImages(files);
+        if (fileIds.length > 0) {
+          await directusClient.request(updateItem('events', created.id, {
+            images: {
+              create: fileIds.map((fid) => ({ directus_files_id: fid, events_id: created.id })),
+              update: [],
+              delete: [],
+            },
+          } as any));
+        }
+      }
+
+      // Attach areas if any
+      if (areaIds.length > 0) {
+        await directusClient.request(updateItem('events', created.id, {
+          areas: {
+            create: areaIds.map((aid) => ({ areas_id: aid, events_id: created.id })),
+            update: [],
+            delete: [],
+          },
+        } as any));
+      }
+
+      return this.getEventById(created.id);
+    });
+  }
+
+  /**
+   * Updates an existing event in Directus.
+   */
+  async updateEvent(
+    eventId: string,
+    data: Partial<VamoEvent>,
+    files: File[] = [],
+    removedImageJunctionIds: (number | string)[] = [],
+    areaIds?: string[],
+    existingAreaJunctionIds: (number | string)[] = []
+  ): Promise<VamoEvent> {
+    if (!eventId) throw new Error('Event ID is required');
+
+    return this.authService.safeRequest(async () => {
+      const payload: Record<string, any> = {};
+
+      if (data.status !== undefined) payload['status'] = data.status;
+      if (data.name !== undefined) payload['name'] = data.name.trim();
+      if (data.description !== undefined) payload['description'] = data.description.trim();
+      if (data.category !== undefined) payload['category'] = data.category;
+      if (data.mode !== undefined) payload['mode'] = data.mode;
+      if (data.startDate !== undefined) payload['startDate'] = data.startDate;
+      if (data.endDate !== undefined) payload['endDate'] = data.endDate;
+      if (data.from !== undefined) payload['from'] = data.from;
+      if (data.to !== undefined) payload['to'] = data.to;
+      if (data.allDay !== undefined) payload['allDay'] = data.allDay;
+      if (data.openEnd !== undefined) payload['openEnd'] = data.openEnd;
+      if (data.recurring !== undefined) {
+        payload['recurring'] = typeof data.recurring === 'object' && data.recurring !== null
+          ? JSON.stringify(data.recurring)
+          : data.recurring;
+      }
+      if (data.isFree !== undefined) payload['isFree'] = data.isFree;
+      if (data.contactForPrice !== undefined) payload['contactForPrice'] = data.contactForPrice;
+      if (data.price !== undefined) payload['price'] = data.price;
+      if (data.currency !== undefined) payload['currency'] = data.currency;
+      if (data.hasPromotion !== undefined) payload['hasPromotion'] = data.hasPromotion;
+      if (data.promoText !== undefined) payload['promoText'] = data.promoText ? data.promoText.trim() : null;
+      if (data.promotionStart !== undefined) payload['promotionStart'] = data.promotionStart;
+      if (data.location_point !== undefined) payload['location_point'] = data.location_point;
+      if (data.address !== undefined) payload['address'] = data.address ? data.address.trim() : null;
+
+      // Handle image updates
+      const newFileIds = files.length > 0 ? await this.uploadEventImages(files) : [];
+      if (newFileIds.length > 0 || removedImageJunctionIds.length > 0) {
+        payload['images'] = {
+          create: newFileIds.map((fid) => ({ directus_files_id: fid, events_id: eventId })),
+          update: [],
+          delete: removedImageJunctionIds,
+        };
+      }
+
+      // Handle area updates
+      if (areaIds !== undefined) {
+        payload['areas'] = {
+          create: areaIds.map((aid) => ({ areas_id: aid, events_id: eventId })),
+          update: [],
+          delete: existingAreaJunctionIds,
+        };
+      }
+
+      await directusClient.request(updateItem('events', eventId, payload as any));
+      return this.getEventById(eventId);
+    });
+  }
+
+  /**
+   * Deletes an event permanently from Directus.
+   */
+  async deleteEvent(eventId: string): Promise<void> {
+    if (!eventId) throw new Error('Event ID is required');
+
+    return this.authService.safeRequest(async () => {
+      await directusClient.request(deleteItem('events', eventId));
+    });
+  }
+
+  /**
+   * Pauses an active event (sets status to 'draft').
+   */
+  async pauseEvent(eventId: string): Promise<void> {
+    if (!eventId) throw new Error('Event ID is required');
+
+    return this.authService.safeRequest(async () => {
+      await directusClient.request(updateItem('events', eventId, { status: 'draft' } as any));
+    });
+  }
+
+  /**
+   * Publishes a draft event (sets status to 'published').
+   */
+  async publishEvent(eventId: string): Promise<void> {
+    if (!eventId) throw new Error('Event ID is required');
+
+    return this.authService.safeRequest(async () => {
+      await directusClient.request(updateItem('events', eventId, { status: 'published' } as any));
+    });
+  }
+
+  /**
+   * Duplicates an existing event as a draft, preserving images and categories without re-uploading.
+   */
+  async duplicateEventAsDraft(event: VamoEvent, providerId: string): Promise<string> {
+    if (!providerId) throw new Error('Provider ID is required');
+
+    return this.authService.safeRequest(async () => {
+      const payload: Record<string, any> = {
+        status: 'draft',
+        provider: providerId,
+        name: event.name ? `${event.name} (Copy)` : 'Untitled Copy',
+        description: event.description || '',
+        category: event.category || 'other',
+        mode: event.mode || 'single',
+        startDate: event.startDate || null,
+        endDate: event.endDate || null,
+        from: event.from || null,
+        to: event.to || null,
+        allDay: !!event.allDay,
+        openEnd: !!event.openEnd,
+        recurring: typeof event.recurring === 'object' && event.recurring !== null
+          ? JSON.stringify(event.recurring)
+          : (event.recurring || null),
+        isFree: !!event.isFree,
+        contactForPrice: !!event.contactForPrice,
+        price: event.price ?? 0,
+        currency: event.currency || 'USD',
+        hasPromotion: !!event.hasPromotion,
+        promoText: event.promoText || null,
+        promotionStart: event.promotionStart || null,
+        location_point: event.location_point || null,
+        address: event.address || null,
+      };
+
+      const newEvent = await directusClient.request<any>(createItem('events', payload as any));
+      if (!newEvent?.id) throw new Error('Duplicate failed to create event.');
+
+      // Copy existing image links without re-uploading
+      const fileIds = (event.images || [])
+        .map((img: any) => {
+          const f = img.directus_files_id;
+          return typeof f === 'string' ? f : f?.id;
+        })
+        .filter(Boolean);
+
+      if (fileIds.length > 0) {
+        await directusClient.request(updateItem('events', newEvent.id, {
+          images: {
+            create: fileIds.map((fileId: string) => ({
+              directus_files_id: fileId,
+              events_id: newEvent.id,
+            })),
+            update: [],
+            delete: [],
+          },
+        } as any));
+      }
+
+      // Copy existing areas
+      const areaIds = (event.areas || [])
+        .map((a: any) => {
+          const aid = a.areas_id;
+          return typeof aid === 'string' ? aid : aid?.id;
+        })
+        .filter(Boolean);
+
+      if (areaIds.length > 0) {
+        await directusClient.request(updateItem('events', newEvent.id, {
+          areas: {
+            create: areaIds.map((areaId: string) => ({
+              areas_id: areaId,
+              events_id: newEvent.id,
+            })),
+            update: [],
+            delete: [],
+          },
+        } as any));
+      }
+
+      return newEvent.id;
+    });
+  }
+
+  /**
+   * Fetches published areas from Directus with reliable fallback.
+   */
+  async getAreas(): Promise<Area[]> {
+    return this.authService.safeRequest(async () => {
+      try {
+        const areas = await directusClient.request<Area[]>(
+          readItems('areas', {
+            filter: { status: { _eq: 'published' } },
+            sort: ['sort', 'name'] as any,
+            fields: ['id', 'name', 'slug', 'emoji', 'latitude', 'longitude'] as any,
+          })
+        );
+        return areas || [];
+      } catch (err) {
+        console.warn('[BusinessService] getAreas fallback:', err);
+        return [
+          { id: '88adabdb-66ba-4168-92e7-155e27ef4fb1', name: 'Las Terrenas/Samana', slug: 'las_terrenas', emoji: '🏖️', latitude: 19.31, longitude: -69.5444 },
+          { id: '2ae214bc-f4de-40c6-b7b4-2524c5d79165', name: 'Punta Cana', slug: 'punta_cana', emoji: '🌴', latitude: 18.5622, longitude: -68.4044 },
+          { id: 'fe593396-d157-4d46-b7ab-9cb922f72387', name: 'Santo Domingo', slug: 'santo_domingo', emoji: '🏙️', latitude: 18.4861, longitude: -69.9312 },
+          { id: '6f4ed55f-f46c-44e2-b1f1-4e8a856a22f1', name: 'Puerto Plata', slug: 'puerto_plata', emoji: '⛵', latitude: 19.7938, longitude: -70.6918 },
+          { id: 'e711a086-dbb1-41b1-a503-5cb5fa02a865', name: 'Cabarete', slug: 'cabarete', emoji: '🏊', latitude: 19.7521, longitude: -70.4074 },
+          { id: '2ec5078a-f43d-4a1c-93d6-ab3eebf6eb95', name: 'Santiago', slug: 'santiago', emoji: '🌆', latitude: 19.4517, longitude: -70.697 },
+        ];
+      }
     });
   }
 

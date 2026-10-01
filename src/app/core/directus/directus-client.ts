@@ -3,12 +3,13 @@ import { runtimeConfig } from '../config/runtime-config';
 import { createBrowserAuthStorage } from './browser-auth.storage';
 import { VamoUser } from '../models/user.model';
 import { Provider } from '../models/provider.model';
-import { VamoEvent } from '../models/event.model';
+import { VamoEvent, Area } from '../models/event.model';
 
 export interface VamoSchema {
   directus_users: VamoUser[];
   providers: Provider[];
   events: VamoEvent[];
+  areas: Area[];
 }
 
 export const directusClient = createDirectus<VamoSchema>(runtimeConfig.directusUrl)

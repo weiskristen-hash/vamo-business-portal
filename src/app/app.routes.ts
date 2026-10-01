@@ -9,6 +9,8 @@ import { NoBusinessComponent } from './pages/no-business/no-business.component';
 import { OverviewComponent } from './pages/overview/overview.component';
 import { PlaceholderComponent } from './pages/placeholder/placeholder.component';
 import { BusinessProfileComponent } from './pages/business/business-profile.component';
+import { ListingsComponent } from './pages/listings/listings.component';
+import { ListingEditorComponent } from './pages/listings/listing-editor/listing-editor.component';
 
 export const routes: Routes = [
   // Public Auth Routes
@@ -49,14 +51,26 @@ export const routes: Routes = [
         component: BusinessProfileComponent,
       },
       {
+        path: 'listings',
+        component: ListingsComponent,
+      },
+      {
+        path: 'listings/create',
+        component: ListingEditorComponent,
+      },
+      {
+        path: 'listings/edit/:id',
+        component: ListingEditorComponent,
+      },
+      {
         path: 'posts',
-        component: PlaceholderComponent,
-        data: { module: 'posts' },
+        redirectTo: 'listings',
+        pathMatch: 'full',
       },
       {
         path: 'create',
-        component: PlaceholderComponent,
-        data: { module: 'create' },
+        redirectTo: 'listings/create',
+        pathMatch: 'full',
       },
       {
         path: 'promotions',
