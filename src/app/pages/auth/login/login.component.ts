@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
+import { CustomerErrorService } from '../../../core/services/customer-error.service';
 import { environment } from '../../../../environments/environment';
 
 @Component({
@@ -563,6 +564,7 @@ import { environment } from '../../../../environments/environment';
 })
 export class LoginComponent implements OnInit {
   private authService = inject(AuthService);
+  private customerErrorService = inject(CustomerErrorService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
 
@@ -603,14 +605,11 @@ export class LoginComponent implements OnInit {
         await this.router.navigate(['/no-business']);
       }
     } catch (err: any) {
-      console.error('[LoginComponent] Login error:', err);
       const code = err?.errors?.[0]?.extensions?.code;
       if (code === 'INVALID_CREDENTIALS') {
         this.errorMessage = 'Invalid email or password. Please check your credentials and try again.';
-      } else if (err?.message === 'OFFLINE') {
-        this.errorMessage = 'You are currently offline. Please check your internet connection.';
       } else {
-        this.errorMessage = err?.message || 'Authentication failed. Please verify your connection or try again later.';
+        this.errorMessage = this.customerErrorService.toCustomerMessage(err, 'auth');
       }
     } finally {
       this.loading = false;
@@ -638,7 +637,7 @@ export class LoginComponent implements OnInit {
       this.showForgotModal = false;
       this.successMessage = `A password reset link has been dispatched to ${this.forgotEmail}. Please check your inbox.`;
     } catch (err: any) {
-      this.forgotError = err?.message || 'Could not dispatch password reset link. Please check the email address.';
+      this.forgotError = this.customerErrorService.toCustomerMessage(err, 'save', 'Could not dispatch password reset link. Please check the email address.');
     } finally {
       this.forgotLoading = false;
     }

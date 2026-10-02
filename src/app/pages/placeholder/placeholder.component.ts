@@ -167,7 +167,7 @@ export class PlaceholderComponent implements OnInit {
       description: 'Review, manage, filter, and schedule your business events and happenings.',
       features: [
         'Comprehensive post table with status filtering (published, draft, archived)',
-        'Rich preview of active posts with Directus image previews',
+        'Rich preview of active listings with image previews',
         'Quick actions: pause, duplicate, or archive existing posts',
         'Recurring event schedule viewer',
       ],
@@ -180,7 +180,7 @@ export class PlaceholderComponent implements OnInit {
         'High-resolution promotional banner upload & image cropper',
         'Date & time pickers with single and recurring cadence rules',
         'Multi-area targeting across Las Terrenas, Samaná, and the Dominican Republic',
-        'Directus draft saving and live preview',
+        'Draft saving and live preview',
       ],
     },
     promotions: {
@@ -233,7 +233,7 @@ export class PlaceholderComponent implements OnInit {
     title: 'Future Module',
     phase: 'Phase 1B Roadmap',
     description: 'This feature is part of upcoming development phases.',
-    features: ['Desktop optimization', 'Directus data integration'],
+    features: ['Desktop optimization', 'Seamless data integration'],
   };
 
   ngOnInit(): void {

@@ -155,22 +155,32 @@ describe('BusinessProfileComponent', () => {
       expect.objectContaining({
         name: 'Updated Oasis Name',
         city: 'Las Terrenas',
-      })
+      }),
+      expect.anything()
     );
     expect(component.saveSuccess()).toBe(true);
     expect(component.isDirty()).toBe(false);
   });
 
-  it('should display error message when updateProvider throws', async () => {
+  it('should display customer-safe error message and retain unsaved form state when updateProvider throws', async () => {
     await fixture.whenStable();
-    businessServiceSpy.updateProvider.mockRejectedValueOnce(new Error('Network failure'));
+    businessServiceSpy.updateProvider.mockRejectedValueOnce(
+      new Error("You don't have permission to update collection providers")
+    );
 
     component.form.update((f) => ({ ...f, name: 'Failed Save Test' }));
     component.markDirty();
 
     await component.saveProfile();
 
-    expect(component.saveError()).toBe('Network failure');
+    // Verify technical details are NEVER leaked
+    expect(component.saveError()).not.toContain('Directus');
+    expect(component.saveError()).not.toContain('collection');
+    expect(component.saveError()).not.toContain('providers');
+    expect(component.saveError()).toBe("We couldn't make that change. This action is not available for your account.");
+
+    // Verify unsaved state is retained for retry
+    expect(component.form().name).toBe('Failed Save Test');
     expect(component.saveSuccess()).toBe(false);
   });
 });

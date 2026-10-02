@@ -323,4 +323,27 @@ describe('ListingEditorComponent', () => {
     bottomButtons[2].click();
     expect(publishSpy).toHaveBeenCalled();
   });
+
+  it('should display customer-safe error without leaking Directus details when save fails', async () => {
+    fixture = TestBed.createComponent(ListingEditorComponent);
+    component = fixture.componentInstance;
+    await component.ngOnInit();
+    fixture.detectChanges();
+
+    businessServiceSpy.createEvent.mockRejectedValueOnce(
+      new Error("You don't have permission to access fields 'boost_expires_at' in collection 'events'")
+    );
+
+    component.draft.name = 'Test Name';
+    component.draft.category = 'sports';
+    component.draft.description = 'Test Description for Volleyball';
+
+    await component.saveDraft();
+
+    expect(component.errorMessage).not.toContain('Directus');
+    expect(component.errorMessage).not.toContain('collection');
+    expect(component.errorMessage).not.toContain('events');
+    expect(component.errorMessage).not.toContain('boost_expires_at');
+    expect(component.errorMessage).toBe("We couldn't make that change. This action is not available for your account.");
+  });
 });

@@ -186,15 +186,24 @@ export class AuthService {
   // 🔹 CURRENT USER LOADER
   // ======================================================
 
+  readonly sessionFields = [
+    'id',
+    'first_name',
+    'last_name',
+    'email',
+    'role.id',
+    'role.name',
+    'provider_link.id',
+    'provider_link.name',
+    'provider_link.subscription_tier',
+    'provider_link.logo.id',
+    'provider_link.status',
+  ] as const;
+
   async loadCurrentUser(): Promise<VamoUser> {
     return directusClient.request<VamoUser>(
       readMe({
-        fields: [
-          '*',
-          'provider_link.*',
-          'provider_link.logo.*',
-          'provider_link.images.directus_files_id.*',
-        ] as any,
+        fields: this.sessionFields as any,
       })
     );
   }

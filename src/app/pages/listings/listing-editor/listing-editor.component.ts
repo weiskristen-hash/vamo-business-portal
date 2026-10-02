@@ -4,6 +4,7 @@ import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../../core/services/auth.service';
 import { BusinessService } from '../../../core/services/business.service';
+import { CustomerErrorService } from '../../../core/services/customer-error.service';
 import { VamoEvent, Area, EVENT_CATEGORIES, EventCategory } from '../../../core/models/event.model';
 
 export interface ExistingImage {
@@ -1777,6 +1778,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   private router = inject(Router);
   private authService = inject(AuthService);
   private businessService = inject(BusinessService);
+  private customerErrorService = inject(CustomerErrorService);
   private cdr = inject(ChangeDetectorRef);
 
   categories: EventCategory[] = EVENT_CATEGORIES;
@@ -2453,8 +2455,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       this.isDirty = false;
       this.router.navigate(['/app/listings']);
     } catch (err: any) {
-      console.error('[ListingEditor] save failed:', err);
-      this.errorMessage = err?.message || 'Could not save listing. Please try again.';
+      this.errorMessage = this.customerErrorService.toCustomerMessage(err, 'save');
     } finally {
       this.submitting = false;
       this.cdr.markForCheck();

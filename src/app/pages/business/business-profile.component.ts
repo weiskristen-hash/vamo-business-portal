@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
+import { CustomerErrorService } from '../../core/services/customer-error.service';
 import { Provider, OpeningHour } from '../../core/models/provider.model';
 
 export interface BusinessTypeOption {
@@ -27,7 +28,7 @@ export interface OfferingOption {
       <div *ngIf="loading()" class="state-card" role="status" aria-live="polite">
         <div class="spinner spinner-primary"></div>
         <h3 class="state-title">Loading Business Profile…</h3>
-        <p class="state-desc">Retrieving your business records from VAMO Directus Cloud.</p>
+        <p class="state-desc">Loading your business profile…</p>
       </div>
 
       <!-- ── Error State ───────────────────────────────────────────────── -->
@@ -1871,6 +1872,7 @@ export interface OfferingOption {
 export class BusinessProfileComponent implements OnInit {
   authService = inject(AuthService);
   businessService = inject(BusinessService);
+  customerErrorService = inject(CustomerErrorService);
 
   loading = signal(true);
   saving = signal(false);
@@ -2080,8 +2082,7 @@ export class BusinessProfileComponent implements OnInit {
 
       this.populateForm(fullProvider);
     } catch (err: any) {
-      console.error('[BusinessProfile] Error loading profile:', err);
-      this.loadError.set(err?.message || 'Failed to load business profile.');
+      this.loadError.set(this.customerErrorService.toCustomerMessage(err, 'load'));
     } finally {
       this.loading.set(false);
     }
@@ -2217,7 +2218,7 @@ export class BusinessProfileComponent implements OnInit {
       this.form.update((f) => ({ ...f, logo: { id: fileId } }));
       this.markDirty();
     } catch (err: any) {
-      this.saveError.set('Logo upload failed: ' + (err?.message || 'Unknown error'));
+      this.saveError.set(this.customerErrorService.toCustomerMessage(err, 'upload'));
     } finally {
       this.uploadingLogo.set(false);
       input.value = '';
@@ -2250,7 +2251,7 @@ export class BusinessProfileComponent implements OnInit {
       }
       this.markDirty();
     } catch (err: any) {
-      this.saveError.set('Gallery upload failed: ' + (err?.message || 'Unknown error'));
+      this.saveError.set(this.customerErrorService.toCustomerMessage(err, 'upload'));
     } finally {
       this.uploadingGallery.set(false);
       input.value = '';
@@ -2270,7 +2271,7 @@ export class BusinessProfileComponent implements OnInit {
       try {
         await this.businessService.removeProviderImage(this.form().id, fid, junctionId);
       } catch (err) {
-        console.warn('[BusinessProfile] Directus image removal error:', err);
+        this.saveError.set(this.customerErrorService.toCustomerMessage(err, 'delete'));
       }
     }
   }
@@ -2380,24 +2381,28 @@ export class BusinessProfileComponent implements OnInit {
 
     try {
       const f = this.form();
-      const updated = await this.businessService.updateProvider(f.id, {
-        name: f.name,
-        business_type: f.business_type,
-        description: f.description,
-        address: f.address,
-        city: f.city,
-        phone: f.phone,
-        wa_number: f.wa_number,
-        email: f.email,
-        website: f.website,
-        facebook: f.facebook,
-        instagram: f.instagram,
-        google_business_link: f.google_business_link,
-        location: f.location,
-        offerings: f.offerings,
-        opening_times: f.opening_times,
-        logo: f.logo,
-      });
+      const updated = await this.businessService.updateProvider(
+        f.id,
+        {
+          name: f.name,
+          business_type: f.business_type,
+          description: f.description,
+          address: f.address,
+          city: f.city,
+          phone: f.phone,
+          wa_number: f.wa_number,
+          email: f.email,
+          website: f.website,
+          facebook: f.facebook,
+          instagram: f.instagram,
+          google_business_link: f.google_business_link,
+          location: f.location,
+          offerings: f.offerings,
+          opening_times: f.opening_times,
+          logo: f.logo,
+        },
+        this.provider() ?? undefined
+      );
 
       this.provider.set(updated);
       this.populateForm(updated);
@@ -2409,8 +2414,7 @@ export class BusinessProfileComponent implements OnInit {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (err: any) {
-      console.error('[BusinessProfile] Save error:', err);
-      this.saveError.set(err?.message || 'Could not save profile changes. Please try again.');
+      this.saveError.set(this.customerErrorService.toCustomerMessage(err, 'save'));
     } finally {
       this.saving.set(false);
     }

@@ -4,6 +4,7 @@ import { RouterModule, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
+import { CustomerErrorService } from '../../core/services/customer-error.service';
 import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/event.model';
 
 @Component({
@@ -1082,6 +1083,7 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
 export class ListingsComponent implements OnInit {
   private authService = inject(AuthService);
   private businessService = inject(BusinessService);
+  private customerErrorService = inject(CustomerErrorService);
   private router = inject(Router);
   private cdr = inject(ChangeDetectorRef);
 
@@ -1133,8 +1135,7 @@ export class ListingsComponent implements OnInit {
       this.updateStats();
       this.applyFilters();
     } catch (err: any) {
-      console.error('[ListingsComponent] loadEvents error:', err);
-      this.error = err?.message || 'Failed to load listings. Please try again.';
+      this.error = this.customerErrorService.toCustomerMessage(err, 'load');
     } finally {
       this.loading = false;
       this.cdr.markForCheck();
@@ -1332,8 +1333,7 @@ export class ListingsComponent implements OnInit {
       const newId = await this.businessService.duplicateEventAsDraft(event, providerId);
       this.router.navigate(['/app/listings/create'], { queryParams: { eventId: newId } });
     } catch (err: any) {
-      console.error('[ListingsComponent] Duplicate error:', err);
-      this.error = err?.message || 'Failed to duplicate listing.';
+      this.error = this.customerErrorService.toCustomerMessage(err, 'save');
     } finally {
       this.actionInProgressId = null;
       this.cdr.markForCheck();
@@ -1349,8 +1349,7 @@ export class ListingsComponent implements OnInit {
       this.actionSuccessMessage = `"${event.name}" was paused and moved to Drafts.`;
       await this.loadEvents();
     } catch (err: any) {
-      console.error('[ListingsComponent] Pause error:', err);
-      this.error = err?.message || 'Failed to pause listing.';
+      this.error = this.customerErrorService.toCustomerMessage(err, 'save');
     } finally {
       this.actionInProgressId = null;
       this.cdr.markForCheck();
@@ -1366,8 +1365,7 @@ export class ListingsComponent implements OnInit {
       this.actionSuccessMessage = `"${event.name}" is now live and published!`;
       await this.loadEvents();
     } catch (err: any) {
-      console.error('[ListingsComponent] Publish error:', err);
-      this.error = err?.message || 'Failed to publish listing.';
+      this.error = this.customerErrorService.toCustomerMessage(err, 'save');
     } finally {
       this.actionInProgressId = null;
       this.cdr.markForCheck();
@@ -1397,8 +1395,7 @@ export class ListingsComponent implements OnInit {
       this.deletingEvent = null;
       await this.loadEvents();
     } catch (err: any) {
-      console.error('[ListingsComponent] Delete error:', err);
-      this.error = err?.message || 'Failed to delete listing.';
+      this.error = this.customerErrorService.toCustomerMessage(err, 'delete');
     } finally {
       this.actionInProgressId = null;
       this.cdr.markForCheck();

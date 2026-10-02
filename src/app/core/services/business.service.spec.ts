@@ -134,4 +134,104 @@ describe('BusinessService', () => {
     expect(fallback.id).toBe('fallback-id');
     expect(fallback.openEnd).toBe(true);
   });
+
+  describe('Provider Permissions & Payload Hardening', () => {
+    it('should maintain an explicit providerReadFields allowlist without wildcards', () => {
+      const fields = service.providerReadFields as readonly string[];
+      expect(fields.includes('*')).toBe(false);
+      expect(fields.includes('logo.*')).toBe(false);
+      expect(fields.includes('images.directus_files_id.*')).toBe(false);
+      expect(fields.includes('id')).toBe(true);
+      expect(fields.includes('name')).toBe(true);
+      expect(fields.includes('business_type')).toBe(true);
+      expect(fields.includes('description')).toBe(true);
+      expect(fields.includes('address')).toBe(true);
+      expect(fields.includes('city')).toBe(true);
+      expect(fields.includes('location')).toBe(true);
+      expect(fields.includes('logo.id')).toBe(true);
+      expect(fields.includes('images.id')).toBe(true);
+      expect(fields.includes('images.directus_files_id.id')).toBe(true);
+    });
+
+    it('should define protected provider fields that must never be modified by business users', () => {
+      const protectedFields = service.protectedProviderFields as readonly string[];
+      expect(protectedFields.includes('id')).toBe(true);
+      expect(protectedFields.includes('status')).toBe(true);
+      expect(protectedFields.includes('subscription_tier')).toBe(true);
+      expect(protectedFields.includes('bookmarkCount')).toBe(true);
+      expect(protectedFields.includes('translations')).toBe(true);
+      expect(protectedFields.includes('translation_status')).toBe(true);
+      expect(protectedFields.includes('internal_provider_data')).toBe(true);
+      expect(protectedFields.includes('user_created')).toBe(true);
+      expect(protectedFields.includes('date_created')).toBe(true);
+      expect(protectedFields.includes('user_updated')).toBe(true);
+      expect(protectedFields.includes('date_updated')).toBe(true);
+    });
+
+    it('should strip protected fields and build a safe provider payload', () => {
+      const maliciousOrBroadData: any = {
+        id: 'hacked-id',
+        status: 'published',
+        subscription_tier: 'advanced',
+        user_created: 'admin-user',
+        name: '  Safe Beach Bar  ',
+        business_type: 'bar',
+        description: 'Great place',
+        address: 'Calle Principal 12',
+        city: 'Las Terrenas',
+        email: 'bar@terrenas.com',
+        phone: '18095551234',
+        wa_number: '18095551234',
+        website: 'https://bar.com',
+      };
+
+      const safePayload = service.buildSafeProviderPayload(maliciousOrBroadData);
+
+      // Verify protected fields were stripped
+      expect(safePayload['id']).toBeUndefined();
+      expect(safePayload['status']).toBeUndefined();
+      expect(safePayload['subscription_tier']).toBeUndefined();
+      expect(safePayload['user_created']).toBeUndefined();
+
+      // Verify editable fields were preserved and sanitized
+      expect(safePayload['name']).toBe('Safe Beach Bar');
+      expect(safePayload['business_type']).toBe('bar');
+      expect(safePayload['city']).toBe('Las Terrenas');
+      expect(safePayload['website']).toBe('https://bar.com');
+    });
+
+    it('should diff payload against original to send only changed fields', () => {
+      const original: any = {
+        name: 'Current Bar Name',
+        business_type: 'bar',
+        city: 'Las Terrenas',
+      };
+
+      const updatedData: any = {
+        name: 'New Bar Name',
+        business_type: 'bar', // unchanged
+        city: 'Las Terrenas', // unchanged
+      };
+
+      const diffedPayload = service.buildSafeProviderPayload(updatedData, original);
+
+      expect(diffedPayload['name']).toBe('New Bar Name');
+      expect(diffedPayload['business_type']).toBeUndefined();
+      expect(diffedPayload['city']).toBeUndefined();
+    });
+
+    it('should preserve intentional field clearing in payload', () => {
+      const dataWithClearing: any = {
+        website: '   ',
+        facebook: '',
+        city: '   ',
+      };
+
+      const payload = service.buildSafeProviderPayload(dataWithClearing);
+
+      expect(payload['website']).toBeNull();
+      expect(payload['facebook']).toBeNull();
+      expect(payload['city']).toBeNull();
+    });
+  });
 });

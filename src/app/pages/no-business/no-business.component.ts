@@ -22,7 +22,7 @@ import { AuthService } from '../../core/services/auth.service';
         <h1 class="card-title">This VAMO account is not currently linked to a business.</h1>
 
         <p class="card-description">
-          You are currently signed in as <strong>{{ (authService.user$ | async)?.email }}</strong>. The VAMO Business Portal is dedicated exclusively to verified business providers, venues, and event organizers.
+          You are currently signed in as <strong>{{ (authService.user$ | async)?.email }}</strong>. The VAMO Business Portal is dedicated exclusively to verified businesses, venues, and event organizers.
         </p>
 
         <div class="action-box">
