@@ -40,7 +40,7 @@ import { environment } from '../../../../environments/environment';
               <div class="feature-item">
                 <span class="feature-icon">✦</span>
                 <div class="feature-text">
-                  <strong>Directus Cloud Integration</strong>
+                  <strong>Live Platform Sync</strong>
                   <span>Instantly synced with the VAMO mobile app and discovery engine.</span>
                 </div>
               </div>

@@ -710,7 +710,6 @@ export class BusinessService {
     return this.authService.safeRequest(async () => {
       const payload: Record<string, any> = {
         status: 'draft',
-        provider: providerId,
         name: event.name ? `${event.name} (Copy)` : 'Untitled Copy',
         description: event.description || '',
         category: event.category || 'other',
