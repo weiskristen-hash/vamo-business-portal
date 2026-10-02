@@ -183,4 +183,19 @@ describe('BusinessProfileComponent', () => {
     expect(component.form().name).toBe('Failed Save Test');
     expect(component.saveSuccess()).toBe(false);
   });
+
+  it('should display customer-safe error message when profile loading fails', async () => {
+    businessServiceSpy.getProviderById.mockRejectedValueOnce(
+      new Error("You don't have permission to access field 'website' in collection 'providers' or it does not exist.")
+    );
+
+    await component.loadProfile();
+
+    expect(component.loadError()).not.toContain('Directus');
+    expect(component.loadError()).not.toContain('collection');
+    expect(component.loadError()).not.toContain('providers');
+    expect(component.loadError()).not.toContain('website');
+    expect(component.loadError()).toBe("We couldn't load your business profile. Please refresh the page.");
+    expect(component.loading()).toBe(false);
+  });
 });

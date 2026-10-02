@@ -94,12 +94,12 @@ describe('CustomerErrorService', () => {
   });
 
   describe('Information Disclosure Prevention', () => {
-    it('should NEVER leak Directus collection or field permission error text', () => {
+    it('should NEVER leak Directus collection or field permission error text on save', () => {
       const directusRawError = new Error(
         "You don't have permission to access fields 'boost_expires_at', 'website' in collection 'events' or they do not exist. Queried in root."
       );
 
-      const msg = service.toCustomerMessage(directusRawError, 'load');
+      const msg = service.toCustomerMessage(directusRawError, 'save');
 
       expect(msg).not.toContain('Directus');
       expect(msg).not.toContain('collection');
@@ -110,6 +110,22 @@ describe('CustomerErrorService', () => {
       expect(msg).not.toContain('permission');
 
       expect(msg).toBe("We couldn't make that change. This action is not available for your account.");
+    });
+
+    it('should return safe load message when permission or non-existent field error occurs during load', () => {
+      const directusRawError = new Error(
+        "You don't have permission to access field 'website' in collection 'providers' or it does not exist. Queried in root."
+      );
+
+      const msg = service.toCustomerMessage(directusRawError, 'load');
+
+      expect(msg).not.toContain('Directus');
+      expect(msg).not.toContain('collection');
+      expect(msg).not.toContain('providers');
+      expect(msg).not.toContain('website');
+      expect(msg).not.toContain('Queried in root');
+      expect(msg).not.toContain('permission');
+      expect(msg).toBe("We couldn't load your business profile. Please refresh the page.");
     });
 
     it('should sanitize technical leaks in custom validation messages', () => {

@@ -39,7 +39,6 @@ export class BusinessService {
     'phone',
     'wa_number',
     'email',
-    'website',
     'facebook',
     'instagram',
     'google_business_link',
@@ -64,7 +63,6 @@ export class BusinessService {
     'phone',
     'wa_number',
     'email',
-    'website',
     'facebook',
     'instagram',
     'google_business_link',
@@ -126,9 +124,6 @@ export class BusinessService {
     }
     if (data.wa_number !== undefined) {
       payload['wa_number'] = data.wa_number?.trim() || null;
-    }
-    if (data.website !== undefined) {
-      payload['website'] = data.website?.trim() || null;
     }
     if (data.facebook !== undefined) {
       payload['facebook'] = data.facebook?.trim() || null;
