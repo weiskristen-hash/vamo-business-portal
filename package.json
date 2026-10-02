@@ -10,7 +10,6 @@
     "deploy": "wrangler deploy"
   },
   "private": true,
-  "packageManager": "npm@11.17.0",
   "dependencies": {
     "@angular/common": "^21.2.0",
     "@angular/compiler": "^21.2.0",
