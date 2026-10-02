@@ -518,7 +518,6 @@ export class BusinessService {
 
     return this.authService.safeRequest(async () => {
       const payload: Record<string, any> = {
-        provider: providerId,
         status: data.status || 'draft',
         name: data.name?.trim(),
         description: data.description?.trim(),
@@ -578,6 +577,7 @@ export class BusinessService {
         return this.normalizeEvent({
           ...payload,
           id: created.id,
+          provider: { id: providerId } as any,
           date_created: new Date().toISOString(),
           date_updated: new Date().toISOString(),
         } as VamoEvent);
