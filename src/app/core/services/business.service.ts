@@ -72,6 +72,7 @@ export class BusinessService {
     'offerings',
     'opening_times',
     'logo',
+    'images',
   ] as const;
 
   /**
@@ -159,6 +160,9 @@ export class BusinessService {
         typeof data.logo === 'object' && data.logo !== null
           ? (data.logo as any).id
           : data.logo;
+    }
+    if (data.images !== undefined) {
+      payload['images'] = data.images;
     }
 
     // If original is provided, omit unchanged fields to minimize mutation surface
