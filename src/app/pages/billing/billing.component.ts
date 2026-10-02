@@ -187,7 +187,8 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
       </div>
 
       <!-- Plan Cards Grid -->
-      <div class="plans-grid">
+      <!-- Plan Cards Grid -->
+      <div *ngIf="plans().length > 0" class="plans-grid">
         <div
           *ngFor="let plan of plans()"
           class="card plan-card"
@@ -234,6 +235,12 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             </button>
           </div>
         </div>
+      </div>
+
+      <!-- Empty Plans Fallback Notice -->
+      <div *ngIf="plans().length === 0" class="alert alert-warning empty-plans-alert">
+        <span class="alert-icon">⚠️</span>
+        <span class="alert-text">We couldn't load current plan pricing. Please try again later.</span>
       </div>
 
       <!-- Downgrade Warning Notice -->
@@ -1564,8 +1571,9 @@ export class BillingComponent implements OnInit, OnDestroy {
     try {
       const plans = await this.stripeService.getPlans();
       this.plans.set(plans);
-    } catch (err) {
-      this.errorMessage.set(this.errorService.toCustomerMessage(err, 'load'));
+    } catch {
+      this.plans.set([]);
+      this.errorMessage.set("We couldn't load current plan pricing. Please try again.");
     }
   }
 
@@ -1649,6 +1657,10 @@ export class BillingComponent implements OnInit, OnDestroy {
     const plan = this.selectedPlan();
     const user = this.authService.currentUser;
     if (!plan || !user?.email) return;
+    if (this.plans().length === 0) {
+      this.errorMessage.set("We couldn't load current plan pricing. Please try again.");
+      return;
+    }
 
     this.isProcessingPayment.set(true);
     this.errorMessage.set(null);

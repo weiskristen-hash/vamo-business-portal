@@ -1,7 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { loadStripe } from '@stripe/stripe-js';
 import type { Stripe, StripeElements } from '@stripe/stripe-js';
-import { environment } from '../../../environments/environment';
 import { runtimeConfig } from '../config/runtime-config';
 import { AuthService } from './auth.service';
 
@@ -105,8 +104,9 @@ export class StripeService {
   private activeElements: StripeElements | null = null;
 
   getStripe(): Promise<Stripe | null> {
-    if (!this.stripePromise && environment.STRIPE_PUBLISHABLE_KEY) {
-      this.stripePromise = loadStripe(environment.STRIPE_PUBLISHABLE_KEY);
+    const pubKey = runtimeConfig.stripePublishableKey;
+    if (!this.stripePromise && pubKey) {
+      this.stripePromise = loadStripe(pubKey);
     }
     return this.stripePromise ?? Promise.resolve(null);
   }
@@ -143,73 +143,45 @@ export class StripeService {
   }
 
   async getPlans(): Promise<StripePlan[]> {
-    if (environment.STRIPE_GET_PRICES_FLOW) {
-      const res = await this.flowPost(environment.STRIPE_GET_PRICES_FLOW, {});
-      const stripeBody = res?.data ?? res;
-      const prices = (stripeBody?.data ?? stripeBody ?? [])
-        .filter((price: any) => price.active && price.unit_amount > 0)
-        .sort((a: any, b: any) => a.unit_amount - b.unit_amount);
-
-      if (prices.length > 0) {
-        return prices.map((price: any) => {
-          const name = price.product?.name ?? price.nickname ?? 'Plan';
-          const tier = this.tierFromProductName(name) ?? 'starter';
-          const meta = CANONICAL_TIER_FEATURES[tier];
-          return {
-            id: price.id,
-            name,
-            description: price.product?.description ?? '',
-            amount: price.unit_amount ?? 0,
-            currency: price.currency ?? 'usd',
-            interval: price.recurring?.interval ?? 'month',
-            tier,
-            maxPosts: meta.maxPosts,
-            features: meta.features,
-          };
-        });
-      }
+    const flowId = runtimeConfig.stripeGetPricesFlow;
+    if (!flowId) {
+      throw new Error("We couldn't load current plan pricing. Please try again.");
     }
 
-    // Default canonical plans representing verified VAMO plans
-    return [
-      {
-        id: 'price_starter_plan',
-        name: 'Starter Plan',
-        description: 'Ideal for single-event promoters and small venues.',
-        amount: 2900,
-        currency: 'usd',
-        interval: 'month',
-        tier: 'starter',
-        maxPosts: CANONICAL_TIER_FEATURES.starter.maxPosts,
-        features: CANONICAL_TIER_FEATURES.starter.features,
-      },
-      {
-        id: 'price_basic_plan',
-        name: 'Basic Plan',
-        description: 'For active businesses with weekly offerings.',
-        amount: 4900,
-        currency: 'usd',
-        interval: 'month',
-        tier: 'basic',
-        maxPosts: CANONICAL_TIER_FEATURES.basic.maxPosts,
-        features: CANONICAL_TIER_FEATURES.basic.features,
-      },
-      {
-        id: 'price_advanced_plan',
-        name: 'Advanced Plan',
-        description: 'Maximum reach and high-volume scheduling.',
-        amount: 8900,
-        currency: 'usd',
-        interval: 'month',
-        tier: 'advanced',
-        maxPosts: CANONICAL_TIER_FEATURES.advanced.maxPosts,
-        features: CANONICAL_TIER_FEATURES.advanced.features,
-      },
-    ];
+    const res = await this.flowPost(flowId, {});
+    const stripeBody = res?.data ?? res;
+    const prices = (stripeBody?.data ?? stripeBody ?? [])
+      .filter((price: any) => price.active && price.unit_amount > 0)
+      .sort((a: any, b: any) => a.unit_amount - b.unit_amount);
+
+    if (prices.length === 0) {
+      throw new Error("We couldn't load current plan pricing. Please try again.");
+    }
+
+    return prices.map((price: any) => {
+      const name = price.product?.name ?? price.nickname ?? 'Plan';
+      const tier = this.tierFromProductName(name) ?? 'starter';
+      const meta = CANONICAL_TIER_FEATURES[tier];
+      return {
+        id: price.id,
+        name,
+        description: price.product?.description ?? '',
+        amount: price.unit_amount ?? 0,
+        currency: price.currency ?? 'usd',
+        interval: price.recurring?.interval ?? 'month',
+        tier,
+        maxPosts: meta.maxPosts,
+        features: meta.features,
+      };
+    });
   }
 
   async validatePromoCode(code: string): Promise<PromoResult> {
-    const data = await this.flowPost(environment.STRIPE_VALIDATE_PROMO_FLOW, { code });
+    const flowId = runtimeConfig.stripeValidatePromoFlow;
+    if (!flowId) {
+      return { valid: false };
+    }
+    const data = await this.flowPost(flowId, { code });
     return data?.extract_promo ?? data ?? { valid: false };
   }
 
@@ -219,7 +191,14 @@ export class StripeService {
     priceId: string,
     promotionCode?: string,
   ): Promise<{ clientSecret: string | null; subscriptionId: string; requiresSetup: boolean }> {
-    const data = await this.flowPost(environment.STRIPE_CREATE_SUBSCRIPTION_FLOW, {
+    if (!priceId || !priceId.startsWith('price_')) {
+      throw new Error('Invalid plan selection. Please select an active plan.');
+    }
+    const flowId = runtimeConfig.stripeCreateSubscriptionFlow;
+    if (!flowId) {
+      throw new Error('Subscription creation flow is not configured.');
+    }
+    const data = await this.flowPost(flowId, {
       email,
       name,
       priceId,
@@ -312,15 +291,20 @@ export class StripeService {
   }
 
   async getSubscription(email: string): Promise<StripeSubscription | null> {
-    if (!environment.STRIPE_GET_SUBSCRIPTION_FLOW) {
+    const flowId = runtimeConfig.stripeGetSubscriptionFlow;
+    if (!flowId) {
       return null;
     }
-    const data = await this.flowPost(environment.STRIPE_GET_SUBSCRIPTION_FLOW, { email });
+    const data = await this.flowPost(flowId, { email });
     return data?.subscription ?? null;
   }
 
   async cancelSubscription(subscriptionId: string, cancelAtPeriodEnd = true): Promise<void> {
-    await this.flowPost(environment.STRIPE_CANCEL_SUBSCRIPTION_FLOW, {
+    const flowId = runtimeConfig.stripeCancelSubscriptionFlow;
+    if (!flowId) {
+      throw new Error('Cancel subscription flow is not configured.');
+    }
+    await this.flowPost(flowId, {
       subscriptionId,
       cancelAtPeriodEnd,
     });
@@ -336,7 +320,11 @@ export class StripeService {
     currentPeriodEnd: number,
     currentPriceId: string,
   ): Promise<void> {
-    await this.flowPost(environment.STRIPE_CHANGE_SUBSCRIPTION_FLOW, {
+    const flowId = runtimeConfig.stripeChangeSubscriptionFlow;
+    if (!flowId) {
+      throw new Error('Change subscription flow is not configured.');
+    }
+    await this.flowPost(flowId, {
       subscriptionId,
       subscriptionItemId,
       newPriceId,
@@ -349,23 +337,29 @@ export class StripeService {
   }
 
   async releaseSchedule(scheduleId: string): Promise<void> {
-    await this.flowPost(environment.STRIPE_RELEASE_SCHEDULE_FLOW, { scheduleId });
+    const flowId = runtimeConfig.stripeReleaseScheduleFlow;
+    if (!flowId) {
+      throw new Error('Release schedule flow is not configured.');
+    }
+    await this.flowPost(flowId, { scheduleId });
   }
 
   async getBillingHistory(): Promise<BillingHistoryItem[]> {
-    if (!environment.STRIPE_GET_BILLING_HISTORY_FLOW) {
+    const flowId = runtimeConfig.stripeGetBillingHistoryFlow;
+    if (!flowId) {
       return [];
     }
-    const res = await this.flowPost(environment.STRIPE_GET_BILLING_HISTORY_FLOW, {});
+    const res = await this.flowPost(flowId, {});
     return res?.history ?? [];
   }
 
   async getSavedPaymentMethods(): Promise<SavedPaymentMethod[]> {
-    if (!environment.STRIPE_GET_PAYMENT_METHODS_FLOW) {
+    const flowId = runtimeConfig.stripeGetPaymentMethodsFlow;
+    if (!flowId) {
       return [];
     }
     try {
-      const res = await this.flowPost(environment.STRIPE_GET_PAYMENT_METHODS_FLOW, {});
+      const res = await this.flowPost(flowId, {});
       return res?.paymentMethods ?? [];
     } catch {
       return [];
@@ -373,18 +367,24 @@ export class StripeService {
   }
 
   async detachPaymentMethod(paymentMethodId: string): Promise<void> {
-    await this.flowPost(environment.STRIPE_DETACH_PAYMENT_METHOD_FLOW, { paymentMethodId });
+    const flowId = runtimeConfig.stripeDetachPaymentMethodFlow;
+    if (!flowId) {
+      throw new Error('Detach payment method flow is not configured.');
+    }
+    await this.flowPost(flowId, { paymentMethodId });
   }
 
   async setProviderTier(tier: 'starter' | 'basic' | 'advanced' | null): Promise<void> {
-    if (!environment.SET_PROVIDER_TIER_FLOW) return;
-    await this.flowPost(environment.SET_PROVIDER_TIER_FLOW, { tier });
+    const flowId = runtimeConfig.setProviderTierFlow;
+    if (!flowId) return;
+    await this.flowPost(flowId, { tier });
   }
 
   async getExtraPosts(): Promise<number> {
-    if (!environment.PROVIDER_GET_QUOTA_FLOW) return 0;
+    const flowId = runtimeConfig.providerGetQuotaFlow;
+    if (!flowId) return 0;
     try {
-      const res = await this.flowPost(environment.PROVIDER_GET_QUOTA_FLOW, {});
+      const res = await this.flowPost(flowId, {});
       return res?.extra_posts ?? 0;
     } catch {
       return 0;

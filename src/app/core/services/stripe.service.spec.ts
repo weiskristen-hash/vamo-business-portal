@@ -1,13 +1,15 @@
 import { TestBed } from '@angular/core/testing';
 import { StripeService, StripePlan } from './stripe.service';
 import { AuthService } from './auth.service';
-import { environment } from '../../../environments/environment';
+import { runtimeConfig } from '../config/runtime-config';
 
 describe('StripeService', () => {
   let service: StripeService;
   let authServiceSpy: any;
 
   beforeEach(() => {
+    runtimeConfig.reset();
+
     authServiceSpy = {
       getToken: vi.fn().mockResolvedValue('test-jwt-token'),
       currentUser: { email: 'business@example.com' },
@@ -24,6 +26,7 @@ describe('StripeService', () => {
   });
 
   afterEach(() => {
+    runtimeConfig.reset();
     vi.restoreAllMocks();
   });
 
@@ -87,57 +90,70 @@ describe('StripeService', () => {
   });
 
   describe('getPlans', () => {
-    it('should return default canonical plans with verified features when flow is unconfigured', async () => {
-      const originalFlow = environment.STRIPE_GET_PRICES_FLOW;
-      (environment as any).STRIPE_GET_PRICES_FLOW = '';
+    it('should throw safe customer error when flow is unconfigured and never return fake fallbacks', async () => {
+      runtimeConfig.updateConfig({ stripeGetPricesFlow: '' });
 
-      const plans = await service.getPlans();
-      expect(plans.length).toBe(3);
-      expect(plans[0].tier).toBe('starter');
-      expect(plans[0].maxPosts).toBe(1);
-      expect(plans[0].features.length).toBeGreaterThan(0);
-
-      expect(plans[1].tier).toBe('basic');
-      expect(plans[1].maxPosts).toBe(4);
-
-      expect(plans[2].tier).toBe('advanced');
-      expect(plans[2].maxPosts).toBe(8);
-
-      (environment as any).STRIPE_GET_PRICES_FLOW = originalFlow;
+      await expect(service.getPlans()).rejects.toThrow(
+        "We couldn't load current plan pricing. Please try again."
+      );
     });
 
-    it('should map flow prices into StripePlan objects with entitlements when flow is configured', async () => {
-      const originalFlow = environment.STRIPE_GET_PRICES_FLOW;
-      (environment as any).STRIPE_GET_PRICES_FLOW = 'flow-prices';
+    it('should throw safe customer error when flow returns no active prices', async () => {
+      runtimeConfig.updateConfig({ stripeGetPricesFlow: 'flow-prices' });
+
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        data: [
+          { id: 'price-inactive', active: false, unit_amount: 1000 },
+          { id: 'price-zero', active: true, unit_amount: 0 },
+        ],
+      });
+
+      await expect(service.getPlans()).rejects.toThrow(
+        "We couldn't load current plan pricing. Please try again."
+      );
+    });
+
+    it('should map flow prices into StripePlan objects with canonical entitlements when flow is configured', async () => {
+      runtimeConfig.updateConfig({ stripeGetPricesFlow: 'flow-prices' });
 
       vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
         data: [
           {
-            id: 'price-1',
+            id: 'price_starter_live',
             active: true,
             unit_amount: 2900,
             currency: 'usd',
             recurring: { interval: 'month' },
             product: { name: 'Starter Plan', description: 'Desc 1' },
           },
+          {
+            id: 'price_basic_live',
+            active: true,
+            unit_amount: 5900,
+            currency: 'usd',
+            recurring: { interval: 'month' },
+            product: { name: 'Basic Plan', description: 'Desc 2' },
+          },
         ],
       });
 
       const plans = await service.getPlans();
-      expect(plans.length).toBe(1);
-      expect(plans[0].id).toBe('price-1');
+      expect(plans.length).toBe(2);
+      expect(plans[0].id).toBe('price_starter_live');
       expect(plans[0].tier).toBe('starter');
       expect(plans[0].amount).toBe(2900);
       expect(plans[0].maxPosts).toBe(1);
 
-      (environment as any).STRIPE_GET_PRICES_FLOW = originalFlow;
+      expect(plans[1].id).toBe('price_basic_live');
+      expect(plans[1].tier).toBe('basic');
+      expect(plans[1].amount).toBe(5900);
+      expect(plans[1].maxPosts).toBe(4);
     });
   });
 
   describe('validatePromoCode', () => {
-    it('should send code to STRIPE_VALIDATE_PROMO_FLOW and return promo result', async () => {
-      const originalFlow = environment.STRIPE_VALIDATE_PROMO_FLOW;
-      (environment as any).STRIPE_VALIDATE_PROMO_FLOW = 'flow-promo';
+    it('should send code to stripeValidatePromoFlow and return promo result', async () => {
+      runtimeConfig.updateConfig({ stripeValidatePromoFlow: 'flow-promo' });
 
       vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
         extract_promo: {
@@ -150,15 +166,24 @@ describe('StripeService', () => {
       const res = await service.validatePromoCode('SUMMER2026');
       expect(res.valid).toBe(true);
       expect(res.percentOff).toBe(20);
+    });
 
-      (environment as any).STRIPE_VALIDATE_PROMO_FLOW = originalFlow;
+    it('should return valid: false if flow is unconfigured', async () => {
+      runtimeConfig.updateConfig({ stripeValidatePromoFlow: '' });
+      const res = await service.validatePromoCode('SUMMER2026');
+      expect(res.valid).toBe(false);
     });
   });
 
   describe('createSubscription', () => {
-    it('should call STRIPE_CREATE_SUBSCRIPTION_FLOW and return clientSecret and subscriptionId', async () => {
-      const originalFlow = environment.STRIPE_CREATE_SUBSCRIPTION_FLOW;
-      (environment as any).STRIPE_CREATE_SUBSCRIPTION_FLOW = 'flow-create-sub';
+    it('should reject invalid or fake price IDs not starting with price_', async () => {
+      await expect(
+        service.createSubscription('business@example.com', 'Acme Cafe', 'fake_plan_id')
+      ).rejects.toThrow('Invalid plan selection. Please select an active plan.');
+    });
+
+    it('should call stripeCreateSubscriptionFlow and return clientSecret and subscriptionId', async () => {
+      runtimeConfig.updateConfig({ stripeCreateSubscriptionFlow: 'flow-create-sub' });
 
       vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
         extract_result: {
@@ -171,20 +196,17 @@ describe('StripeService', () => {
       const res = await service.createSubscription(
         'business@example.com',
         'Acme Cafe',
-        'price_basic'
+        'price_12345'
       );
       expect(res.clientSecret).toBe('pi_test_secret');
       expect(res.subscriptionId).toBe('sub_test_123');
       expect(res.requiresSetup).toBe(false);
-
-      (environment as any).STRIPE_CREATE_SUBSCRIPTION_FLOW = originalFlow;
     });
   });
 
   describe('cancelSubscription and changeSubscriptionPlan', () => {
     it('should call cancel flow with subscriptionId and cancelAtPeriodEnd flag', async () => {
-      const originalFlow = environment.STRIPE_CANCEL_SUBSCRIPTION_FLOW;
-      (environment as any).STRIPE_CANCEL_SUBSCRIPTION_FLOW = 'flow-cancel';
+      runtimeConfig.updateConfig({ stripeCancelSubscriptionFlow: 'flow-cancel' });
 
       const postSpy = vi.spyOn(service, 'flowPost').mockResolvedValueOnce({});
       await service.cancelSubscription('sub_999', true);
@@ -193,13 +215,10 @@ describe('StripeService', () => {
         subscriptionId: 'sub_999',
         cancelAtPeriodEnd: true,
       });
-
-      (environment as any).STRIPE_CANCEL_SUBSCRIPTION_FLOW = originalFlow;
     });
 
     it('should call change plan flow with proration metadata', async () => {
-      const originalFlow = environment.STRIPE_CHANGE_SUBSCRIPTION_FLOW;
-      (environment as any).STRIPE_CHANGE_SUBSCRIPTION_FLOW = 'flow-change';
+      runtimeConfig.updateConfig({ stripeChangeSubscriptionFlow: 'flow-change' });
 
       const postSpy = vi.spyOn(service, 'flowPost').mockResolvedValueOnce({});
       await service.changeSubscriptionPlan(
@@ -223,22 +242,17 @@ describe('StripeService', () => {
         currentPeriodEnd: 1702500000,
         currentPriceId: 'price_basic',
       });
-
-      (environment as any).STRIPE_CHANGE_SUBSCRIPTION_FLOW = originalFlow;
     });
   });
 
   describe('setProviderTier', () => {
-    it('should call SET_PROVIDER_TIER_FLOW with new tier', async () => {
-      const originalFlow = environment.SET_PROVIDER_TIER_FLOW;
-      (environment as any).SET_PROVIDER_TIER_FLOW = 'flow-set-tier';
+    it('should call setProviderTierFlow with new tier', async () => {
+      runtimeConfig.updateConfig({ setProviderTierFlow: 'flow-set-tier' });
 
       const postSpy = vi.spyOn(service, 'flowPost').mockResolvedValueOnce({});
       await service.setProviderTier('basic');
 
       expect(postSpy).toHaveBeenCalledWith('flow-set-tier', { tier: 'basic' });
-
-      (environment as any).SET_PROVIDER_TIER_FLOW = originalFlow;
     });
   });
 });

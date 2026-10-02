@@ -38,7 +38,7 @@ describe('BillingComponent', () => {
     currentPeriodStart: 1700000000,
     currentPeriodEnd: 1702500000,
     plan: {
-      priceId: 'price_basic_plan',
+      priceId: 'price_1TcqJhGWvZAV5mbnzpBnUhoX',
       productName: 'Basic Plan',
       amount: 4900,
       currency: 'usd',
@@ -48,7 +48,7 @@ describe('BillingComponent', () => {
 
   const mockPlans: StripePlan[] = [
     {
-      id: 'price_starter_plan',
+      id: 'price_1TcqK3GWvZAV5mbnBLpijcYO',
       name: 'Starter Plan',
       description: '1 active post',
       amount: 2900,
@@ -59,7 +59,7 @@ describe('BillingComponent', () => {
       features: ['1 active post', 'Search discovery'],
     },
     {
-      id: 'price_basic_plan',
+      id: 'price_1TcqJhGWvZAV5mbnzpBnUhoX',
       name: 'Basic Plan',
       description: 'Up to 4 active posts',
       amount: 4900,
@@ -70,7 +70,7 @@ describe('BillingComponent', () => {
       features: ['Up to 4 active posts', 'Basic analytics'],
     },
     {
-      id: 'price_advanced_plan',
+      id: 'price_1TcqJ0GWvZAV5mbnaBgaMp4Y',
       name: 'Advanced Plan',
       description: 'Up to 8 active posts',
       amount: 8900,
@@ -235,7 +235,7 @@ describe('BillingComponent', () => {
       expect(stripeServiceSpy.createSubscription).toHaveBeenCalledWith(
         'sofia@restaurant.com',
         'Sofia Hernandez',
-        'price_starter_plan',
+        mockPlans[0].id,
         undefined
       );
       expect(component.clientSecret()).toBe('pi_test_secret');
@@ -283,12 +283,12 @@ describe('BillingComponent', () => {
       expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledWith(
         'sub_123',
         'si_456',
-        'price_advanced_plan',
+        mockPlans[2].id,
         true,
         'Advanced Plan',
         1700000000,
         1702500000,
-        'price_basic_plan'
+        mockSubscription.plan.priceId
       );
       expect(stripeServiceSpy.setProviderTier).toHaveBeenCalledWith('advanced');
       expect(component.successMessage()).toContain('upgraded to Advanced Plan');
@@ -309,12 +309,12 @@ describe('BillingComponent', () => {
       expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledWith(
         'sub_123',
         'si_456',
-        'price_starter_plan',
+        mockPlans[0].id,
         false,
         'Starter Plan',
         1700000000,
         1702500000,
-        'price_basic_plan'
+        mockSubscription.plan.priceId
       );
     });
 
@@ -376,6 +376,27 @@ describe('BillingComponent', () => {
       expect(component.errorMessage()).not.toContain('collection');
       expect(component.errorMessage()).not.toContain('stripe_subscriptions');
       expect(component.errorMessage()).not.toContain('filter');
+    });
+
+    it('should display friendly error and empty plans array when plan loading fails', async () => {
+      stripeServiceSpy.getPlans.mockRejectedValueOnce(
+        new Error("We couldn't load current plan pricing. Please try again.")
+      );
+
+      await component.loadPlans();
+
+      expect(component.plans().length).toBe(0);
+      expect(component.errorMessage()).toBe("We couldn't load current plan pricing. Please try again.");
+    });
+
+    it('should prevent proceeding to payment when plans are empty', async () => {
+      component.plans.set([]);
+      component.selectedPlan.set(mockPlans[0]);
+
+      await component.proceedToPayment();
+
+      expect(stripeServiceSpy.createSubscription).not.toHaveBeenCalled();
+      expect(component.errorMessage()).toBe("We couldn't load current plan pricing. Please try again.");
     });
   });
 });
