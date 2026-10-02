@@ -160,6 +160,10 @@ export class AuthService {
     }
   }
 
+  async getToken(): Promise<string | null> {
+    return directusClient.getToken();
+  }
+
   // ======================================================
   // 🔹 SESSION RESTORATION
   // ======================================================

@@ -11,6 +11,7 @@ import { PlaceholderComponent } from './pages/placeholder/placeholder.component'
 import { BusinessProfileComponent } from './pages/business/business-profile.component';
 import { ListingsComponent } from './pages/listings/listings.component';
 import { ListingEditorComponent } from './pages/listings/listing-editor/listing-editor.component';
+import { BillingComponent } from './pages/billing/billing.component';
 
 export const routes: Routes = [
   // Public Auth Routes
@@ -84,8 +85,7 @@ export const routes: Routes = [
       },
       {
         path: 'billing',
-        component: PlaceholderComponent,
-        data: { module: 'billing' },
+        component: BillingComponent,
       },
       {
         path: 'settings',
