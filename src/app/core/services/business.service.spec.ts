@@ -153,6 +153,13 @@ describe('BusinessService', () => {
       expect(fields.includes('images.directus_files_id.id')).toBe(true);
     });
 
+    it('should include images in editableProviderFields allowlist for gallery management', () => {
+      const editable = service.editableProviderFields as readonly string[];
+      expect(editable.includes('images')).toBe(true);
+      expect(editable.includes('name')).toBe(true);
+      expect(editable.includes('logo')).toBe(true);
+    });
+
     it('should define protected provider fields that must never be modified by business users', () => {
       const protectedFields = service.protectedProviderFields as readonly string[];
       expect(protectedFields.includes('id')).toBe(true);

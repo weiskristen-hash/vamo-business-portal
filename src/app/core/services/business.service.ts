@@ -72,6 +72,7 @@ export class BusinessService {
     'offerings',
     'opening_times',
     'logo',
+    'images',
   ] as const;
 
   /**
@@ -159,6 +160,9 @@ export class BusinessService {
         typeof data.logo === 'object' && data.logo !== null
           ? (data.logo as any).id
           : data.logo;
+    }
+    if (data.images !== undefined) {
+      payload['images'] = data.images;
     }
 
     // If original is provided, omit unchanged fields to minimize mutation surface
@@ -514,7 +518,6 @@ export class BusinessService {
 
     return this.authService.safeRequest(async () => {
       const payload: Record<string, any> = {
-        provider: providerId,
         status: data.status || 'draft',
         name: data.name?.trim(),
         description: data.description?.trim(),
@@ -574,6 +577,7 @@ export class BusinessService {
         return this.normalizeEvent({
           ...payload,
           id: created.id,
+          provider: { id: providerId } as any,
           date_created: new Date().toISOString(),
           date_updated: new Date().toISOString(),
         } as VamoEvent);
