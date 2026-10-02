@@ -271,7 +271,7 @@ export class BusinessService {
 
   /**
    * Safe, explicit list of Directus event fields matching read permissions.
-   * Excludes non-existent 'openEnd' and restricted root 'provider' object expansion.
+   * Excludes non-existent 'openEnd', restricted root 'provider' expansion, and unauthorized boost/addon metadata.
    */
   readonly eventFields = [
     'id',
@@ -292,15 +292,10 @@ export class BusinessService {
     'currency',
     'hasPromotion',
     'promoText',
-    'promotionStart',
     'location_point',
     'address',
     'is_main_banner',
     'is_whats_hot',
-    'boost_expires_at',
-    'boost_scheduled_start',
-    'boost_scheduled_type',
-    'addon_expires_at',
     'date_created',
     'date_updated',
     'images.id',

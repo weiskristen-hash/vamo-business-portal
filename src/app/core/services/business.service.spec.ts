@@ -102,12 +102,20 @@ describe('BusinessService', () => {
     expect(normalized.openEnd).toBe(false);
   });
 
-  it('should maintain a permission-safe eventFields list without openEnd or provider root', () => {
-    expect((service.eventFields as readonly string[]).includes('openEnd')).toBe(false);
-    expect((service.eventFields as readonly string[]).includes('provider')).toBe(false);
-    expect((service.eventFields as readonly string[]).includes('provider.id')).toBe(false);
-    expect((service.eventFields as readonly string[]).includes('id')).toBe(true);
-    expect((service.eventFields as readonly string[]).includes('name')).toBe(true);
+  it('should maintain a permission-safe eventFields list without openEnd, provider root, or boost/addon fields', () => {
+    const fields = service.eventFields as readonly string[];
+    expect(fields.includes('openEnd')).toBe(false);
+    expect(fields.includes('provider')).toBe(false);
+    expect(fields.includes('provider.id')).toBe(false);
+    expect(fields.includes('boost_expires_at')).toBe(false);
+    expect(fields.includes('boost_scheduled_start')).toBe(false);
+    expect(fields.includes('boost_scheduled_type')).toBe(false);
+    expect(fields.includes('addon_expires_at')).toBe(false);
+    expect(fields.includes('promotionStart')).toBe(false);
+    expect(fields.includes('id')).toBe(true);
+    expect(fields.includes('name')).toBe(true);
+    expect(fields.includes('status')).toBe(true);
+    expect(fields.includes('location_point')).toBe(true);
   });
 
   it('should return synthesized event if post-create getEventById throws', async () => {
