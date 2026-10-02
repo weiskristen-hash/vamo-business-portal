@@ -250,4 +250,77 @@ describe('ListingEditorComponent', () => {
     component.confirmDiscardAndExit();
     expect(router.navigate).toHaveBeenCalledWith(['/app/listings']);
   });
+
+  it('should copy business coordinates and address when useBusinessLocation is called', async () => {
+    fixture = TestBed.createComponent(ListingEditorComponent);
+    component = fixture.componentInstance;
+    await component.ngOnInit();
+    fixture.detectChanges();
+
+    // Reset coordinates first
+    component.clearLocation();
+    expect(component.lat).toBeNull();
+    expect(component.lng).toBeNull();
+    expect(component.draft.location_point).toBeNull();
+
+    component.useBusinessLocation();
+    expect(component.lat).toBe(19.7521);
+    expect(component.lng).toBe(-70.4074);
+    expect(component.draft.location_point?.coordinates).toEqual([-70.4074, 19.7521]);
+    expect(component.draft.address).toBe('Calle Principal 10');
+  });
+
+  it('should clear coordinates and reset location_point when clearLocation is called', async () => {
+    fixture = TestBed.createComponent(ListingEditorComponent);
+    component = fixture.componentInstance;
+    await component.ngOnInit();
+    fixture.detectChanges();
+
+    component.setCoordinates(18.5, -69.9);
+    expect(component.lat).toBe(18.5);
+    expect(component.draft.location_point?.coordinates).toEqual([-69.9, 18.5]);
+
+    component.clearLocation();
+    expect(component.lat).toBeNull();
+    expect(component.lng).toBeNull();
+    expect(component.draft.location_point).toBeNull();
+  });
+
+  it('should update location_point coordinates on manual coordinate change', async () => {
+    fixture = TestBed.createComponent(ListingEditorComponent);
+    component = fixture.componentInstance;
+    await component.ngOnInit();
+    fixture.detectChanges();
+
+    component.lat = 19.318554;
+    component.lng = -69.539809;
+    component.onCoordChange();
+
+    expect(component.draft.location_point?.coordinates).toEqual([-69.539809, 19.318554]);
+  });
+
+  it('should render synchronized bottom action buttons and wire click events', async () => {
+    fixture = TestBed.createComponent(ListingEditorComponent);
+    component = fixture.componentInstance;
+    await component.ngOnInit();
+    fixture.detectChanges();
+
+    const bottomActionsEl = fixture.nativeElement.querySelector('.bottom-actions');
+    expect(bottomActionsEl).toBeTruthy();
+
+    const bottomButtons = bottomActionsEl.querySelectorAll('button');
+    expect(bottomButtons.length).toBe(3); // Cancel, Save as Draft, Publish
+
+    const cancelSpy = vi.spyOn(component, 'onCancel');
+    bottomButtons[0].click();
+    expect(cancelSpy).toHaveBeenCalled();
+
+    const draftSpy = vi.spyOn(component, 'saveDraft').mockImplementation(async () => {});
+    bottomButtons[1].click();
+    expect(draftSpy).toHaveBeenCalled();
+
+    const publishSpy = vi.spyOn(component, 'publishListing').mockImplementation(async () => {});
+    bottomButtons[2].click();
+    expect(publishSpy).toHaveBeenCalled();
+  });
 });

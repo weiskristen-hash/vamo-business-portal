@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, AfterViewInit, OnDestroy, ViewChild, ElementRef, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -391,47 +391,130 @@ export interface ExistingImage {
                 />
               </div>
 
-              <!-- Coordinates -->
-              <div class="coordinates-box">
-                <div class="coords-title-row">
-                  <span class="coords-label">Coordinates (Latitude & Longitude)</span>
-                  <a
-                    *ngIf="lat && lng"
-                    [href]="getGoogleMapsUrl()"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="btn btn-sm btn-ghost map-preview-link"
-                  >
-                    View on Google Maps ↗
-                  </a>
-                </div>
-                <div class="form-row">
-                  <div class="form-group flex-1">
-                    <label for="coord-lat" class="form-label">Latitude</label>
-                    <input
-                      id="coord-lat"
-                      type="number"
-                      step="0.000001"
-                      class="form-control"
-                      placeholder="e.g. 19.318554"
-                      [(ngModel)]="lat"
-                      (ngModelChange)="onCoordChange()"
-                    />
+              <!-- Interactive Visual Map & Pin Location Picker -->
+              <div class="location-picker-box">
+                <div class="lp-header-row">
+                  <div>
+                    <label class="form-label mb-1">Event Location Pin</label>
+                    <p class="lp-subhint">Click anywhere on the map or drag the purple pin to set the exact venue location.</p>
                   </div>
-                  <div class="form-group flex-1">
-                    <label for="coord-lng" class="form-label">Longitude</label>
-                    <input
-                      id="coord-lng"
-                      type="number"
-                      step="0.000001"
-                      class="form-control"
-                      placeholder="e.g. -69.539809"
-                      [(ngModel)]="lng"
-                      (ngModelChange)="onCoordChange()"
-                    />
+                  <div class="lp-quick-actions">
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-secondary"
+                      *ngIf="providerLat !== null && providerLng !== null"
+                      (click)="useBusinessLocation()"
+                      title="Use business profile address and coordinates"
+                    >
+                      🏢 Use Business Location
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-secondary"
+                      (click)="detectCurrentLocation()"
+                      [disabled]="detectingLocation"
+                      title="Use device GPS location"
+                    >
+                      <span *ngIf="detectingLocation" class="spinner-inline mr-1"></span>
+                      <span>📍 Use My Location</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-ghost"
+                      *ngIf="lat !== null && lng !== null"
+                      (click)="clearLocation()"
+                      title="Clear pinned coordinates"
+                    >
+                      ✕ Clear Pin
+                    </button>
                   </div>
                 </div>
-                <span class="form-hint">Preloaded from your business location. Adjust if this event is off-site.</span>
+
+                <!-- Geolocation error alert if any -->
+                <div *ngIf="locationError" class="lp-error-banner">
+                  <span>⚠️ {{ locationError }}</span>
+                  <button type="button" class="btn-text-close" (click)="locationError = null">✕</button>
+                </div>
+
+                <!-- Interactive Map Container -->
+                <div class="lp-map-wrapper">
+                  <div #mapContainer id="listing-map-canvas" class="lp-map"></div>
+
+                  <!-- Overlay prompt if no pin set -->
+                  <div *ngIf="lat === null || lng === null" class="lp-map-overlay" (click)="focusMap()">
+                    <div class="lp-overlay-content">
+                      <span class="lp-overlay-icon">📍</span>
+                      <div>
+                        <strong>No pin placed yet</strong>
+                        <p>Click on the map to drop the event pin, or use your business location preset.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Location Status & Coordinates Accordion -->
+                <div class="lp-status-bar">
+                  <div class="lp-status-left">
+                    <span class="status-indicator-dot" [class.active]="lat !== null && lng !== null"></span>
+                    <span *ngIf="lat !== null && lng !== null" class="lp-coords-summary">
+                      <strong>Pinned:</strong> {{ lat | number:'1.4-4' }}, {{ lng | number:'1.4-4' }}
+                      <span *ngIf="draft.address" class="lp-address-preview">({{ draft.address }})</span>
+                    </span>
+                    <span *ngIf="lat === null || lng === null" class="lp-coords-empty">
+                      No coordinates pinned. Event will default to provider or area location.
+                    </span>
+                  </div>
+
+                  <div class="lp-status-right">
+                    <a
+                      *ngIf="lat && lng"
+                      [href]="getGoogleMapsUrl()"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="btn btn-sm btn-ghost map-preview-link"
+                    >
+                      Google Maps ↗
+                    </a>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-ghost coords-toggle-btn"
+                      (click)="showManualCoords = !showManualCoords"
+                    >
+                      {{ showManualCoords ? 'Hide Lat/Lng' : 'Manual Coordinates' }}
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Manual / Fine-Tune Coordinate Inputs (Collapsible) -->
+                <div *ngIf="showManualCoords" class="manual-coords-panel mt-3">
+                  <div class="form-row">
+                    <div class="form-group flex-1">
+                      <label for="coord-lat" class="form-label">Latitude</label>
+                      <input
+                        id="coord-lat"
+                        type="number"
+                        step="0.000001"
+                        class="form-control"
+                        placeholder="e.g. 19.318554"
+                        [(ngModel)]="lat"
+                        (ngModelChange)="onCoordChange()"
+                      />
+                    </div>
+                    <div class="form-group flex-1">
+                      <label for="coord-lng" class="form-label">Longitude</label>
+                      <input
+                        id="coord-lng"
+                        type="number"
+                        step="0.000001"
+                        class="form-control"
+                        placeholder="e.g. -69.539809"
+                        [(ngModel)]="lng"
+                        (ngModelChange)="onCoordChange()"
+                      />
+                    </div>
+                  </div>
+                  <span class="form-hint">Latitude and Longitude in decimal degrees (WGS84). Synchronized with the map pin above.</span>
+                </div>
               </div>
             </div>
           </section>
@@ -537,14 +620,38 @@ export interface ExistingImage {
             </div>
           </section>
 
-          <!-- Bottom Action Buttons on mobile / small screen -->
+          <!-- Bottom Error Banner if save failed -->
+          <div *ngIf="errorMessage" class="alert alert-danger mt-3" role="alert">
+            <div class="alert-icon">⚠️</div>
+            <div class="alert-message">{{ errorMessage }}</div>
+            <button type="button" class="alert-close" (click)="errorMessage = null" aria-label="Dismiss">✕</button>
+          </div>
+
+          <!-- Synchronized Bottom Action Buttons (Visible across all viewports) -->
           <div class="bottom-actions card card-flat">
-            <button type="button" class="btn btn-secondary" (click)="saveDraft()" [disabled]="submitting">
-              Save as Draft
-            </button>
-            <button type="button" class="btn btn-primary" (click)="publishListing()" [disabled]="submitting">
-              {{ isEditMode && !isDraft ? 'Save & Update' : 'Publish Listing' }}
-            </button>
+            <div class="bottom-actions-status">
+              <span *ngIf="isDirty" class="unsaved-indicator">
+                <span class="unsaved-dot"></span>
+                <span>Unsaved changes</span>
+              </span>
+              <span *ngIf="!isDirty && isEditMode" class="saved-indicator">
+                <span>✓ All changes saved</span>
+              </span>
+            </div>
+
+            <div class="bottom-actions-buttons">
+              <button type="button" class="btn btn-secondary" (click)="onCancel()" [disabled]="submitting">
+                Cancel
+              </button>
+              <button type="button" class="btn btn-secondary" (click)="saveDraft()" [disabled]="submitting">
+                <span *ngIf="submitting && saveTargetStatus === 'draft'" class="spinner-inline"></span>
+                <span>Save as Draft</span>
+              </button>
+              <button type="button" class="btn btn-primary" (click)="publishListing()" [disabled]="submitting">
+                <span *ngIf="submitting && saveTargetStatus === 'published'" class="spinner-inline"></span>
+                <span>{{ isEditMode && !isDraft ? 'Save & Update' : 'Publish Listing' }}</span>
+              </button>
+            </div>
           </div>
         </main>
 
@@ -1091,27 +1198,189 @@ export interface ExistingImage {
       margin-bottom: 12px;
     }
 
-    /* Coordinates Box */
-    .coordinates-box {
+    /* Location Picker & Map Styles */
+    .location-picker-box {
       background: var(--vamo-surface-subtle);
       border: 1px solid var(--vamo-border);
-      border-radius: var(--vamo-radius-md);
+      border-radius: var(--vamo-radius-lg);
       padding: 16px;
       display: flex;
       flex-direction: column;
       gap: 12px;
     }
 
-    .coords-title-row {
+    .lp-header-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .lp-subhint {
+      margin: 2px 0 0;
+      font-size: 0.8rem;
+      color: var(--vamo-text-muted);
+    }
+
+    .lp-quick-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .lp-error-banner {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      padding: 8px 12px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: var(--vamo-radius-md);
+      font-size: 0.82rem;
+      color: #dc2626;
     }
 
-    .coords-label {
-      font-size: 0.85rem;
-      font-weight: 600;
+    .btn-text-close {
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 0 4px;
+    }
+
+    .lp-map-wrapper {
+      position: relative;
+      width: 100%;
+      height: 280px;
+      border-radius: var(--vamo-radius-md);
+      overflow: hidden;
+      border: 1px solid var(--vamo-border);
+      background: #e2e8f0;
+    }
+
+    .lp-map {
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    .lp-map-overlay {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(4px);
+      color: #ffffff;
+      padding: 10px 14px;
+      border-radius: var(--vamo-radius-md);
+      z-index: 500;
+      cursor: pointer;
+    }
+
+    .lp-overlay-content {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.82rem;
+    }
+
+    .lp-overlay-content strong {
+      display: block;
+      color: #ffffff;
+    }
+
+    .lp-overlay-content p {
+      margin: 2px 0 0;
+      opacity: 0.85;
+      font-size: 0.78rem;
+    }
+
+    .lp-overlay-icon {
+      font-size: 1.2rem;
+    }
+
+    .lp-status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
+      flex-wrap: wrap;
+    }
+
+    .lp-status-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+    }
+
+    .status-indicator-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+
+    .status-indicator-dot.active {
+      background: #10b981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+    }
+
+    .lp-coords-summary {
       color: var(--vamo-text);
+    }
+
+    .lp-coords-empty {
+      color: var(--vamo-text-muted);
+    }
+
+    .lp-address-preview {
+      color: var(--vamo-text-muted);
+      margin-left: 4px;
+    }
+
+    .lp-status-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .coords-toggle-btn {
+      font-size: 0.8rem;
+    }
+
+    .manual-coords-panel {
+      padding: 14px;
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
+    }
+
+    /* Custom VAMO Pin Icon on Leaflet Map */
+    :host ::ng-deep .custom-vamo-pin-wrap {
+      background: transparent !important;
+      border: none !important;
+    }
+
+    :host ::ng-deep .vamo-pin-bubble {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.35));
+      cursor: grab;
+      transition: transform 0.15s ease;
+    }
+
+    :host ::ng-deep .vamo-pin-bubble:hover {
+      transform: scale(1.12);
     }
 
     /* Pricing Section */
@@ -1148,13 +1417,53 @@ export interface ExistingImage {
       padding: 16px;
     }
 
-    /* Bottom Actions (Small Screen) */
+    /* Synchronized Bottom Actions (Always visible at end of form) */
     .bottom-actions {
-      display: none;
+      display: flex;
       align-items: center;
-      justify-content: flex-end;
-      gap: 12px;
+      justify-content: space-between;
+      gap: 16px;
       padding: 16px 20px;
+      margin-top: 24px;
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-lg);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .bottom-actions-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .bottom-actions-buttons {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .unsaved-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.82rem;
+      color: #b45309;
+      font-weight: 500;
+    }
+
+    .unsaved-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f59e0b;
+      display: inline-block;
+    }
+
+    .saved-indicator {
+      font-size: 0.82rem;
+      color: #059669;
+      font-weight: 500;
     }
 
     /* Right Preview Column (Sticky Mockup) */
@@ -1442,14 +1751,28 @@ export interface ExistingImage {
       .editor-preview-col {
         display: none;
       }
+    }
 
+    @media (max-width: 640px) {
       .bottom-actions {
-        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .bottom-actions-buttons {
+        flex-direction: column;
+        width: 100%;
+      }
+
+      .bottom-actions-buttons .btn {
+        width: 100%;
       }
     }
   `],
 })
-export class ListingEditorComponent implements OnInit {
+export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy {
+  @ViewChild('mapContainer', { static: false }) mapContainer?: ElementRef<HTMLDivElement>;
+
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private authService = inject(AuthService);
@@ -1517,6 +1840,15 @@ export class ListingEditorComponent implements OnInit {
   lat: number | null = null;
   lng: number | null = null;
 
+  // Location Picker State
+  showManualCoords = false;
+  detectingLocation = false;
+  locationError: string | null = null;
+  mapError = false;
+  private map: any = null;
+  private marker: any = null;
+  private mapInitialized = false;
+
   // Images State
   existingImages: ExistingImage[] = [];
   removedImageJunctionIds: (number | string)[] = [];
@@ -1557,6 +1889,22 @@ export class ListingEditorComponent implements OnInit {
       this.initNewDraft();
       this.loadingInitial = false;
       this.cdr.markForCheck();
+      setTimeout(() => this.initMap(), 100);
+    }
+  }
+
+  async ngAfterViewInit(): Promise<void> {
+    if (!this.loadingInitial) {
+      await this.initMap();
+    }
+  }
+
+  ngOnDestroy(): void {
+    if (this.map) {
+      try {
+        this.map.remove();
+      } catch {}
+      this.map = null;
     }
   }
 
@@ -1566,6 +1914,12 @@ export class ListingEditorComponent implements OnInit {
     this.draft.address = this.providerAddress;
     this.lat = this.providerLat;
     this.lng = this.providerLng;
+    if (this.lat !== null && this.lng !== null) {
+      this.draft.location_point = {
+        type: 'Point',
+        coordinates: [Number(this.lng), Number(this.lat)],
+      };
+    }
   }
 
   async loadExistingEvent(id: string): Promise<void> {
@@ -1636,6 +1990,7 @@ export class ListingEditorComponent implements OnInit {
     } finally {
       this.loadingInitial = false;
       this.cdr.markForCheck();
+      setTimeout(() => this.initMap(), 100);
     }
   }
 
@@ -1708,13 +2063,191 @@ export class ListingEditorComponent implements OnInit {
     this.markDirty();
   }
 
+  async initMap(): Promise<void> {
+    if (this.mapInitialized || typeof window === 'undefined') return;
+
+    const container = this.mapContainer?.nativeElement || document.getElementById('listing-map-canvas');
+    if (!container) {
+      setTimeout(() => this.initMap(), 150);
+      return;
+    }
+
+    try {
+      const L = await this.loadLeaflet();
+      if (!L || this.map) return;
+
+      const initialLat = this.lat ?? this.providerLat ?? 19.3175;
+      const initialLng = this.lng ?? this.providerLng ?? -69.5422;
+      const initialZoom = this.lat !== null && this.lng !== null ? 15 : 12;
+
+      this.map = L.map(container, {
+        center: [initialLat, initialLng],
+        zoom: initialZoom,
+        zoomControl: true,
+      });
+
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
+      }).addTo(this.map);
+
+      this.mapInitialized = true;
+
+      const vamoIcon = L.divIcon({
+        className: 'custom-vamo-pin-wrap',
+        html: `<div class="vamo-pin-bubble"><svg width="28" height="34" viewBox="0 0 24 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 0C5.37 0 0 5.37 0 12C0 21 12 30 12 30C12 30 24 21 24 12C24 5.37 18.63 0 12 0Z" fill="#6366f1"/>
+          <circle cx="12" cy="11" r="5" fill="#ffffff"/>
+          <circle cx="12" cy="11" r="2.5" fill="#6366f1"/>
+        </svg></div>`,
+        iconSize: [28, 34],
+        iconAnchor: [14, 34],
+      });
+
+      if (this.lat !== null && this.lng !== null) {
+        this.marker = L.marker([this.lat, this.lng], { icon: vamoIcon, draggable: true }).addTo(this.map);
+        this.marker.on('dragend', () => {
+          const pos = this.marker.getLatLng();
+          this.setCoordinates(parseFloat(pos.lat.toFixed(6)), parseFloat(pos.lng.toFixed(6)), false);
+        });
+      }
+
+      this.map.on('click', (e: any) => {
+        const { lat, lng } = e.latlng;
+        this.setCoordinates(parseFloat(lat.toFixed(6)), parseFloat(lng.toFixed(6)), true);
+      });
+
+      setTimeout(() => this.map?.invalidateSize(), 200);
+      setTimeout(() => this.map?.invalidateSize(), 600);
+    } catch (err) {
+      console.warn('[ListingEditor] Leaflet map init failed or blocked:', err);
+      this.mapError = true;
+    }
+  }
+
+  private loadLeaflet(): Promise<any> {
+    if (typeof window === 'undefined') return Promise.reject('No window');
+    if ((window as any).L) return Promise.resolve((window as any).L);
+
+    return new Promise((resolve, reject) => {
+      if (!document.getElementById('leaflet-css')) {
+        const link = document.createElement('link');
+        link.id = 'leaflet-css';
+        link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        document.head.appendChild(link);
+      }
+
+      const script = document.createElement('script');
+      script.id = 'leaflet-js';
+      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      script.async = true;
+      script.onload = () => resolve((window as any).L);
+      script.onerror = (e) => reject(e);
+      document.head.appendChild(script);
+    });
+  }
+
+  setCoordinates(lat: number, lng: number, updateMap = true): void {
+    this.lat = lat;
+    this.lng = lng;
+    this.draft.location_point = {
+      type: 'Point',
+      coordinates: [lng, lat],
+    };
+    this.locationError = null;
+    this.markDirty();
+
+    if (this.map && (window as any).L) {
+      const L = (window as any).L;
+      const vamoIcon = L.divIcon({
+        className: 'custom-vamo-pin-wrap',
+        html: `<div class="vamo-pin-bubble"><svg width="28" height="34" viewBox="0 0 24 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 0C5.37 0 0 5.37 0 12C0 21 12 30 12 30C12 30 24 21 24 12C24 5.37 18.63 0 12 0Z" fill="#6366f1"/>
+          <circle cx="12" cy="11" r="5" fill="#ffffff"/>
+          <circle cx="12" cy="11" r="2.5" fill="#6366f1"/>
+        </svg></div>`,
+        iconSize: [28, 34],
+        iconAnchor: [14, 34],
+      });
+
+      if (this.marker) {
+        this.marker.setLatLng([lat, lng]);
+      } else {
+        this.marker = L.marker([lat, lng], { icon: vamoIcon, draggable: true }).addTo(this.map);
+        this.marker.on('dragend', () => {
+          const pos = this.marker.getLatLng();
+          this.setCoordinates(parseFloat(pos.lat.toFixed(6)), parseFloat(pos.lng.toFixed(6)), false);
+        });
+      }
+
+      if (updateMap) {
+        this.map.setView([lat, lng], Math.max(this.map.getZoom(), 14));
+      }
+    }
+
+    this.cdr.markForCheck();
+  }
+
+  useBusinessLocation(): void {
+    if (this.providerLat !== null && this.providerLng !== null) {
+      this.setCoordinates(this.providerLat, this.providerLng, true);
+      if (!this.draft.address && this.providerAddress) {
+        this.draft.address = this.providerAddress;
+      }
+    }
+  }
+
+  detectCurrentLocation(): void {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      this.locationError = 'Geolocation is not supported by your browser.';
+      return;
+    }
+
+    this.detectingLocation = true;
+    this.locationError = null;
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        this.detectingLocation = false;
+        const lat = parseFloat(pos.coords.latitude.toFixed(6));
+        const lng = parseFloat(pos.coords.longitude.toFixed(6));
+        this.setCoordinates(lat, lng, true);
+        this.cdr.markForCheck();
+      },
+      (err) => {
+        this.detectingLocation = false;
+        this.locationError = 'Could not detect device location: ' + err.message;
+        this.cdr.markForCheck();
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
+  }
+
+  clearLocation(): void {
+    this.lat = null;
+    this.lng = null;
+    this.draft.location_point = null;
+    if (this.marker) {
+      this.marker.remove();
+      this.marker = null;
+    }
+    this.markDirty();
+    this.cdr.markForCheck();
+  }
+
+  focusMap(): void {
+    if (this.map) {
+      this.map.invalidateSize();
+    }
+  }
+
   onCoordChange(): void {
     this.markDirty();
     if (this.lat !== null && this.lng !== null) {
-      this.draft.location_point = {
-        type: 'Point',
-        coordinates: [Number(this.lng), Number(this.lat)],
-      };
+      this.setCoordinates(Number(this.lat), Number(this.lng), true);
+    } else {
+      this.clearLocation();
     }
   }
 
@@ -1882,7 +2415,6 @@ export class ListingEditorComponent implements OnInit {
         startDate: this.draft.startDate || null,
         endDate: this.multiDay ? (this.draft.endDate || null) : null,
         allDay: !!this.draft.allDay,
-        openEnd: !!this.draft.openEnd,
         from: this.draft.allDay ? null : (this.draft.from || null),
         to: this.draft.allDay || this.draft.openEnd ? null : (this.draft.to || null),
         recurring: this.draft.mode === 'recurring' ? this.draft.recurring : null,
