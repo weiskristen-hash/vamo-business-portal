@@ -783,14 +783,10 @@ export interface OfferingOption {
               </div>
             </div>
 
-            <!-- Account Scope Card -->
+            <!-- Account Status Card -->
             <div class="card meta-card">
-              <h3 class="meta-title">Account Scope</h3>
+              <h3 class="meta-title">Account Status</h3>
               <div class="meta-list">
-                <div class="meta-item">
-                  <span class="meta-label">Business ID</span>
-                  <span class="meta-value font-mono">{{ form().id }}</span>
-                </div>
                 <div class="meta-item">
                   <span class="meta-label">Subscription Tier</span>
                   <span class="meta-value tier-badge">
@@ -799,7 +795,7 @@ export interface OfferingOption {
                 </div>
                 <div class="meta-item">
                   <span class="meta-label">Platform Status</span>
-                  <span class="meta-value font-mono">Connected</span>
+                  <span class="meta-value">Connected</span>
                 </div>
               </div>
             </div>
