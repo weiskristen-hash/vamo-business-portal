@@ -48,6 +48,7 @@ export interface VamoEvent {
   from?: string | null;
   to?: string | null;
   allDay?: boolean;
+  /** Client-side UI helper computed from (!to && !allDay). NOT a Directus schema field. */
   openEnd?: boolean;
   recurring?: EventRecurring | string | null;
   isFree?: boolean;
