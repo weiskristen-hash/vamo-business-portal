@@ -25,7 +25,158 @@ export class BusinessService {
   }
 
   /**
-   * Loads complete provider record by ID with expanded logo and images.
+   * Safe, explicit list of Directus provider fields matching business read permissions.
+   * Excludes wildcards (*, logo.*, images.directus_files_id.*) to prevent unauthorized field errors.
+   */
+  readonly providerReadFields = [
+    'id',
+    'status',
+    'name',
+    'business_type',
+    'description',
+    'address',
+    'city',
+    'phone',
+    'wa_number',
+    'email',
+    'website',
+    'facebook',
+    'instagram',
+    'google_business_link',
+    'location',
+    'offerings',
+    'opening_times',
+    'subscription_tier',
+    'logo.id',
+    'images.id',
+    'images.directus_files_id.id',
+  ] as const;
+
+  /**
+   * Verified editable provider fields from source VAMO mobile app.
+   */
+  readonly editableProviderFields = [
+    'name',
+    'business_type',
+    'description',
+    'address',
+    'city',
+    'phone',
+    'wa_number',
+    'email',
+    'website',
+    'facebook',
+    'instagram',
+    'google_business_link',
+    'location',
+    'offerings',
+    'opening_times',
+    'logo',
+  ] as const;
+
+  /**
+   * Explicitly protected provider fields that must NEVER be submitted by the frontend.
+   */
+  readonly protectedProviderFields = [
+    'id',
+    'status',
+    'subscription_tier',
+    'bookmarkCount',
+    'translations',
+    'translation_status',
+    'internal_provider_data',
+    'user_created',
+    'date_created',
+    'user_updated',
+    'date_updated',
+    'sort',
+  ] as const;
+
+  /**
+   * Builds a strictly validated and sanitized provider update payload.
+   * Strips all protected and unexpected fields, and optionally excludes unchanged values.
+   */
+  buildSafeProviderPayload(
+    data: Partial<Provider>,
+    original?: Partial<Provider>
+  ): Record<string, any> {
+    const payload: Record<string, any> = {};
+
+    if (data.name !== undefined) {
+      payload['name'] = data.name.trim();
+    }
+    if (data.business_type !== undefined) {
+      payload['business_type'] = data.business_type;
+    }
+    if (data.description !== undefined) {
+      payload['description'] = data.description.trim();
+    }
+    if (data.address !== undefined) {
+      payload['address'] = data.address.trim();
+    }
+    if (data.city !== undefined) {
+      payload['city'] = data.city?.trim() || null;
+    }
+    if (data.email !== undefined) {
+      payload['email'] = data.email?.trim() || null;
+    }
+    if (data.phone !== undefined) {
+      payload['phone'] = data.phone?.trim() || null;
+    }
+    if (data.wa_number !== undefined) {
+      payload['wa_number'] = data.wa_number?.trim() || null;
+    }
+    if (data.website !== undefined) {
+      payload['website'] = data.website?.trim() || null;
+    }
+    if (data.facebook !== undefined) {
+      payload['facebook'] = data.facebook?.trim() || null;
+    }
+    if (data.instagram !== undefined) {
+      payload['instagram'] = data.instagram?.trim() || null;
+    }
+    if (data.google_business_link !== undefined) {
+      payload['google_business_link'] = data.google_business_link?.trim() || null;
+    }
+    if (data.location !== undefined) {
+      payload['location'] = data.location;
+    }
+    if (data.offerings !== undefined) {
+      payload['offerings'] = Array.isArray(data.offerings) ? data.offerings : [];
+    }
+    if (data.opening_times !== undefined) {
+      payload['opening_times'] = (data.opening_times || []).map((ot) => ({
+        day: ot.day,
+        opens_at: ot.opens_at || '',
+        closes_at: ot.closes_at || '',
+        break_from: ot.break_from || '',
+        break_to: ot.break_to || '',
+        closed: !!ot.closed,
+      }));
+    }
+    if (data.logo !== undefined) {
+      payload['logo'] =
+        typeof data.logo === 'object' && data.logo !== null
+          ? (data.logo as any).id
+          : data.logo;
+    }
+
+    // If original is provided, omit unchanged fields to minimize mutation surface
+    if (original) {
+      for (const key of Object.keys(payload)) {
+        const origVal = (original as any)[key];
+        const newVal = payload[key];
+        if (JSON.stringify(origVal) === JSON.stringify(newVal)) {
+          delete payload[key];
+        }
+      }
+    }
+
+    return payload;
+  }
+
+  /**
+   * Loads complete provider record by ID with explicit, permission-safe fields.
    */
   async getProviderById(id: string): Promise<Provider> {
     if (!id) throw new Error('Provider ID is required');
@@ -33,12 +184,7 @@ export class BusinessService {
     return this.authService.safeRequest(async () => {
       const provider = await directusClient.request<Provider>(
         readItem('providers', id, {
-          fields: [
-            '*',
-            'logo.*',
-            'images.id',
-            'images.directus_files_id.*',
-          ] as any,
+          fields: this.providerReadFields as any,
         })
       );
       return provider;
@@ -46,52 +192,21 @@ export class BusinessService {
   }
 
   /**
-   * Updates provider record with sanitized fields matching Directus schema.
+   * Updates provider record with sanitized fields matching Directus schema and least-privilege allowlist.
    */
-  async updateProvider(id: string, data: Partial<Provider>): Promise<Provider> {
+  async updateProvider(
+    id: string,
+    data: Partial<Provider>,
+    original?: Partial<Provider>
+  ): Promise<Provider> {
     if (!id) throw new Error('Provider ID is required');
 
     return this.authService.safeRequest(async () => {
-      const openingTimes = data.opening_times
-        ? data.opening_times.map((ot) => ({
-            day: ot.day,
-            opens_at: ot.opens_at || '',
-            closes_at: ot.closes_at || '',
-            break_from: ot.break_from || '',
-            break_to: ot.break_to || '',
-            closed: !!ot.closed,
-          }))
-        : undefined;
+      const payload = this.buildSafeProviderPayload(data, original);
 
-      const payload: Record<string, any> = {
-        name: data.name?.trim(),
-        business_type: data.business_type,
-        description: data.description?.trim(),
-        address: data.address?.trim(),
-        city: data.city?.trim() || null,
-        email: data.email?.trim() || null,
-        phone: data.phone?.trim() || null,
-        wa_number: data.wa_number?.trim() || null,
-        website: data.website?.trim() || null,
-        facebook: data.facebook?.trim() || null,
-        instagram: data.instagram?.trim() || null,
-        google_business_link: data.google_business_link?.trim() || null,
-      };
-
-      if (data.location !== undefined) {
-        payload['location'] = data.location;
-      }
-      if (data.offerings !== undefined) {
-        payload['offerings'] = data.offerings;
-      }
-      if (openingTimes !== undefined) {
-        payload['opening_times'] = openingTimes;
-      }
-      if (data.logo !== undefined) {
-        payload['logo'] =
-          typeof data.logo === 'object' && data.logo !== null
-            ? (data.logo as any).id
-            : data.logo;
+      // If no fields changed, return existing state
+      if (Object.keys(payload).length === 0) {
+        return this.getProviderById(id);
       }
 
       const updated = await directusClient.request<Provider>(
@@ -419,7 +534,6 @@ export class BusinessService {
         currency: data.currency || 'USD',
         hasPromotion: !!data.hasPromotion,
         promoText: data.promoText?.trim() || null,
-        promotionStart: data.promotionStart || null,
         location_point: data.location_point || null,
         address: data.address?.trim() || null,
       };
@@ -512,7 +626,6 @@ export class BusinessService {
       if (data.currency !== undefined) payload['currency'] = data.currency;
       if (data.hasPromotion !== undefined) payload['hasPromotion'] = data.hasPromotion;
       if (data.promoText !== undefined) payload['promoText'] = data.promoText ? data.promoText.trim() : null;
-      if (data.promotionStart !== undefined) payload['promotionStart'] = data.promotionStart;
       if (data.location_point !== undefined) payload['location_point'] = data.location_point;
       if (data.address !== undefined) payload['address'] = data.address ? data.address.trim() : null;
 
@@ -612,7 +725,6 @@ export class BusinessService {
         currency: event.currency || 'USD',
         hasPromotion: !!event.hasPromotion,
         promoText: event.promoText || null,
-        promotionStart: event.promotionStart || null,
         location_point: event.location_point || null,
         address: event.address || null,
       };

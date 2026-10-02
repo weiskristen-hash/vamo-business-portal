@@ -135,7 +135,7 @@ describe('OverviewComponent', () => {
     expect(emptyCard.textContent).toContain('No posts published yet');
   });
 
-  it('should handle backend error and show retry button', async () => {
+  it('should handle backend error and show customer-safe error message and retry button', async () => {
     businessServiceSpy.getEventsForProvider.mockRejectedValue(new Error('Directus Network Error'));
 
     fixture = TestBed.createComponent(OverviewComponent);
@@ -143,9 +143,14 @@ describe('OverviewComponent', () => {
     await component.loadData();
     fixture.detectChanges();
 
-    expect(component.error).toBe('Directus Network Error');
+    // Verify raw Directus/backend internals are NEVER exposed to customer
+    expect(component.error).not.toContain('Directus');
+    expect(component.error).not.toContain('backend');
+    expect(component.error).toBe("We're having trouble connecting. Check your connection and try again.");
+
     const errorState = fixture.nativeElement.querySelector('.state-error');
     expect(errorState).toBeTruthy();
-    expect(errorState.textContent).toContain('Unable to connect to VAMO backend');
+    expect(errorState.textContent).toContain('Unable to load dashboard');
+    expect(errorState.textContent).not.toContain('Directus');
   });
 });

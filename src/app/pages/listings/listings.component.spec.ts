@@ -196,4 +196,18 @@ describe('ListingsComponent', () => {
     expect(component.deletingEvent).toBeNull();
     expect(component.actionSuccessMessage).toContain('permanently deleted');
   });
+
+  it('should display customer-safe error without leaking Directus details when operation fails', async () => {
+    businessServiceSpy.deleteEvent.mockRejectedValueOnce(
+      new Error("You don't have permission to delete item in collection 'events'")
+    );
+
+    component.openDeleteConfirm(mockEvents[2]);
+    await component.executeDelete();
+
+    expect(component.error).not.toContain('Directus');
+    expect(component.error).not.toContain('collection');
+    expect(component.error).not.toContain('events');
+    expect(component.error).toBe("We couldn't make that change. This action is not available for your account.");
+  });
 });

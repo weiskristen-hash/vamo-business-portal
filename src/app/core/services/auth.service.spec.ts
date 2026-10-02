@@ -31,4 +31,19 @@ describe('AuthService', () => {
     expect(service.currentUser).toBeNull();
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/login']);
   });
+
+  it('should maintain an explicit sessionFields allowlist without wildcards', () => {
+    const fields = service.sessionFields as readonly string[];
+    expect(fields.includes('*')).toBe(false);
+    expect(fields.includes('provider_link.*')).toBe(false);
+    expect(fields.includes('provider_link.logo.*')).toBe(false);
+    expect(fields.includes('provider_link.images.directus_files_id.*')).toBe(false);
+    expect(fields.includes('id')).toBe(true);
+    expect(fields.includes('first_name')).toBe(true);
+    expect(fields.includes('last_name')).toBe(true);
+    expect(fields.includes('email')).toBe(true);
+    expect(fields.includes('provider_link.id')).toBe(true);
+    expect(fields.includes('provider_link.name')).toBe(true);
+    expect(fields.includes('provider_link.subscription_tier')).toBe(true);
+  });
 });

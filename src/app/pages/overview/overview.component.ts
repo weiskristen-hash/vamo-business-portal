@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
+import { CustomerErrorService } from '../../core/services/customer-error.service';
 import { VamoUser } from '../../core/models/user.model';
 import { Provider } from '../../core/models/provider.model';
 import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
@@ -17,16 +18,16 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
       <div *ngIf="loading" class="state-container state-loading" role="status" aria-live="polite">
         <div class="loading-spinner"></div>
         <h3 class="state-title">Loading your business workspace…</h3>
-        <p class="state-desc">Retrieving live data from VAMO Directus Cloud.</p>
+        <p class="state-desc">Loading your business workspace…</p>
       </div>
 
       <!-- Error State -->
       <div *ngIf="!loading && error" class="state-container state-error" role="alert">
         <div class="state-icon error-icon">⚠️</div>
-        <h3 class="state-title">Unable to connect to VAMO backend</h3>
+        <h3 class="state-title">Unable to load dashboard</h3>
         <p class="state-desc">{{ error }}</p>
         <button type="button" class="btn btn-secondary retry-btn" (click)="loadData()">
-          ↻ Retry Connection
+          ↻ Retry
         </button>
       </div>
 
@@ -757,6 +758,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
 export class OverviewComponent implements OnInit {
   authService = inject(AuthService);
   businessService = inject(BusinessService);
+  customerErrorService = inject(CustomerErrorService);
   cdr = inject(ChangeDetectorRef);
 
   user: VamoUser | null = null;
@@ -809,7 +811,7 @@ export class OverviewComponent implements OnInit {
       const providerId = this.provider?.id;
 
       if (!providerId) {
-        this.error = 'No business record linked to this account.';
+        this.error = 'No business profile is associated with your account.';
         return;
       }
 
@@ -817,8 +819,7 @@ export class OverviewComponent implements OnInit {
       this.stats = this.businessService.calculateStats(events);
       this.recentEvents = this.businessService.getRecentEvents(events, 5);
     } catch (err: any) {
-      console.error('[OverviewComponent] Data load error:', err);
-      this.error = err?.message || 'Failed to load business data from Directus.';
+      this.error = this.customerErrorService.toCustomerMessage(err, 'load');
     } finally {
       this.loading = false;
       this.cdr.markForCheck();

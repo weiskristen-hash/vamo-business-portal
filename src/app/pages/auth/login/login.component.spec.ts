@@ -109,4 +109,19 @@ describe('LoginComponent', () => {
     expect(component.showForgotModal).toBe(false);
     expect(component.successMessage).toContain('recovery@business.com');
   });
+
+  it('should translate unexpected backend errors into customer-safe message without leaking Directus internals', async () => {
+    authServiceSpy.login.mockRejectedValue(new Error('Directus 403 Forbidden: access denied on collection providers'));
+
+    component.email = 'owner@beachbar.com';
+    component.password = 'validpass123';
+    await component.onSubmit();
+    fixture.detectChanges();
+
+    expect(component.errorMessage).not.toContain('Directus');
+    expect(component.errorMessage).not.toContain('403');
+    expect(component.errorMessage).not.toContain('collection');
+    expect(component.errorMessage).not.toContain('providers');
+    expect(component.errorMessage).toBe("We couldn't make that change. This action is not available for your account.");
+  });
 });
