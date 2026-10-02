@@ -150,7 +150,7 @@ export interface ExistingImage {
             <div class="form-body">
               <!-- Gallery Preview Grid -->
               <div class="gallery-preview-grid">
-                <!-- Existing Images from Directus -->
+                <!-- Existing Images -->
                 <div *ngFor="let img of existingImages; let idx = index" class="photo-preview-card">
                   <img [src]="img.url" alt="Existing photo" class="preview-img" />
                   <span *ngIf="idx === 0 && selectedNewFiles.length === 0" class="cover-badge">Cover Photo</span>
