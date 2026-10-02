@@ -142,6 +142,7 @@ describe('BusinessService', () => {
       expect(fields.includes('logo.*')).toBe(false);
       expect(fields.includes('images.directus_files_id.*')).toBe(false);
       expect(fields.includes('id')).toBe(true);
+      expect(fields.includes('website')).toBe(false);
       expect(fields.includes('name')).toBe(true);
       expect(fields.includes('business_type')).toBe(true);
       expect(fields.includes('description')).toBe(true);
@@ -189,22 +190,24 @@ describe('BusinessService', () => {
         email: 'bar@terrenas.com',
         phone: '18095551234',
         wa_number: '18095551234',
+        facebook: 'https://facebook.com/bar',
         website: 'https://bar.com',
       };
 
       const safePayload = service.buildSafeProviderPayload(maliciousOrBroadData);
 
-      // Verify protected fields were stripped
+      // Verify protected and non-schema fields were stripped
       expect(safePayload['id']).toBeUndefined();
       expect(safePayload['status']).toBeUndefined();
       expect(safePayload['subscription_tier']).toBeUndefined();
       expect(safePayload['user_created']).toBeUndefined();
+      expect(safePayload['website']).toBeUndefined();
 
       // Verify editable fields were preserved and sanitized
       expect(safePayload['name']).toBe('Safe Beach Bar');
       expect(safePayload['business_type']).toBe('bar');
       expect(safePayload['city']).toBe('Las Terrenas');
-      expect(safePayload['website']).toBe('https://bar.com');
+      expect(safePayload['facebook']).toBe('https://facebook.com/bar');
     });
 
     it('should diff payload against original to send only changed fields', () => {
@@ -229,16 +232,17 @@ describe('BusinessService', () => {
 
     it('should preserve intentional field clearing in payload', () => {
       const dataWithClearing: any = {
-        website: '   ',
+        instagram: '   ',
         facebook: '',
         city: '   ',
       };
 
       const payload = service.buildSafeProviderPayload(dataWithClearing);
 
-      expect(payload['website']).toBeNull();
+      expect(payload['instagram']).toBeNull();
       expect(payload['facebook']).toBeNull();
       expect(payload['city']).toBeNull();
+      expect(payload['website']).toBeUndefined();
     });
   });
 });

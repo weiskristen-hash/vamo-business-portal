@@ -102,9 +102,12 @@ export class CustomerErrorService {
 
       case 'permission':
         return {
-          headline: 'Action unavailable',
-          message: "We couldn't make that change. This action is not available for your account.",
+          headline: category === 'load' ? 'Loading error' : 'Action unavailable',
+          message: category === 'load'
+            ? "We couldn't load your business profile. Please refresh the page."
+            : "We couldn't make that change. This action is not available for your account.",
           secondaryMessage: `If you believe this is an error, please reach out to ${VAMO_SUPPORT_EMAIL}.`,
+          actionText: category === 'load' ? 'Refresh' : undefined,
         };
 
       case 'upload':

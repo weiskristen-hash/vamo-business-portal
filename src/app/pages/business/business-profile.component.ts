@@ -534,19 +534,6 @@ export interface OfferingOption {
                     Please enter a valid email address.
                   </p>
                 </div>
-
-                <!-- Website -->
-                <div class="form-group">
-                  <label class="form-label" for="field-website">Website URL</label>
-                  <input
-                    id="field-website"
-                    type="url"
-                    class="form-control"
-                    [(ngModel)]="form().website"
-                    (blur)="markDirty()"
-                    placeholder="https://yourbusiness.com"
-                  />
-                </div>
               </div>
             </section>
 
@@ -2052,7 +2039,7 @@ export class BusinessProfileComponent implements OnInit {
     if (!f.wa_number?.trim()) missing.push('Add WhatsApp number for inquiries');
     if (!f.city?.trim()) missing.push('Specify city or hub');
     if (!f.location?.coordinates) missing.push('Set map coordinates');
-    if (!f.website?.trim() && !f.instagram?.trim()) missing.push('Add Instagram or website');
+    if (!f.instagram?.trim() && !f.google_business_link?.trim()) missing.push('Add Instagram or Google Business link');
     return missing;
   });
 
@@ -2388,7 +2375,6 @@ export class BusinessProfileComponent implements OnInit {
           phone: f.phone,
           wa_number: f.wa_number,
           email: f.email,
-          website: f.website,
           facebook: f.facebook,
           instagram: f.instagram,
           google_business_link: f.google_business_link,
