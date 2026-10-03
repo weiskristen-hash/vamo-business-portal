@@ -297,6 +297,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               type="text"
               class="form-control coupon-input"
               placeholder="Have a promotion code?"
+              aria-label="Promotion code"
               [ngModel]="couponCode()"
               (ngModelChange)="couponCode.set($event)"
               [disabled]="couponLoading()"
@@ -496,11 +497,18 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   </div>
 
   <!-- Cancellation Confirmation Modal -->
-  <div *ngIf="showCancelConfirmModal()" class="modal-backdrop" (click)="closeCancelModal()">
+  <div
+    *ngIf="showCancelConfirmModal()"
+    class="modal-backdrop"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="cancel-modal-title"
+    (click)="closeCancelModal()"
+  >
     <div class="modal-dialog card" (click)="$event.stopPropagation()">
       <div class="modal-header">
-        <h3 class="modal-title">Cancel Subscription?</h3>
-        <button type="button" class="modal-close" (click)="closeCancelModal()">✕</button>
+        <h3 id="cancel-modal-title" class="modal-title">Cancel Subscription?</h3>
+        <button type="button" class="modal-close" (click)="closeCancelModal()" aria-label="Close cancel dialog">✕</button>
       </div>
       <div class="modal-body">
         <p>
@@ -1279,6 +1287,11 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   border: 1px solid transparent;
   text-decoration: none;
 
+  &:focus-visible {
+    outline: 2px solid var(--vamo-primary);
+    outline-offset: 2px;
+  }
+
   &:disabled {
     opacity: 0.6;
     cursor: not-allowed;
@@ -1424,6 +1437,11 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
       color: var(--vamo-text-muted);
       font-size: 1.25rem;
       cursor: pointer;
+
+      &:focus-visible {
+        outline: 2px solid var(--vamo-primary);
+        border-radius: 4px;
+      }
     }
   }
 

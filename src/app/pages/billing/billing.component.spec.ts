@@ -398,5 +398,52 @@ describe('BillingComponent', () => {
       expect(stripeServiceSpy.createSubscription).not.toHaveBeenCalled();
       expect(component.errorMessage()).toBe("We couldn't load current plan pricing. Please try again.");
     });
+
+    it('should handle subscription load failure gracefully by setting null subscription without leaking backend error', async () => {
+      stripeServiceSpy.getSubscription.mockRejectedValueOnce(
+        new Error('HTTP 500 Directus Flow a48e3dee-3d94-471b-804f-16ada69737cf crash on cus_12345')
+      );
+
+      await component.loadSubscription('sofia@restaurant.com');
+
+      expect(component.subscription()).toBeNull();
+      expect(component.errorMessage()).toBeNull();
+    });
+
+    it('should handle payment methods load failure gracefully with empty array', async () => {
+      stripeServiceSpy.getSavedPaymentMethods.mockRejectedValueOnce(
+        new Error('Flow 44946457-c8cd-42e2-98b2-a7a0672d59d3 timeout')
+      );
+
+      await component.loadSavedMethods();
+
+      expect(component.savedMethods()).toEqual([]);
+    });
+
+    it('should handle billing history load failure gracefully with empty array', async () => {
+      stripeServiceSpy.getBillingHistory.mockRejectedValueOnce(
+        new Error('Flow f8be3b19-62c9-4d0d-91ca-701bdaeaac7e returned 502 Bad Gateway')
+      );
+
+      await component.loadBillingHistory();
+
+      expect(component.billingHistory()).toEqual([]);
+      expect(component.billingHistoryLoading()).toBe(false);
+    });
+
+    it('should sanitize Stripe.js initialization failure without leaking SDK or secret details', async () => {
+      stripeServiceSpy.mountPaymentElement.mockRejectedValueOnce(
+        new Error('Stripe failed to initialize. Invalid key pk_test_...')
+      );
+      component.clientSecret.set('pi_test_secret');
+      component.paymentActive.set(true);
+
+      // Trigger private mount
+      await (component as any).mountPaymentElement('pi_test_secret');
+
+      expect(component.errorMessage()).not.toContain('pk_test');
+      expect(component.errorMessage()).not.toContain('initialize');
+      expect(component.errorMessage()).toBe("We couldn't load this information. Please refresh the page.");
+    });
   });
 });
