@@ -117,17 +117,37 @@ import { environment } from '../../../../environments/environment';
                   Forgot password?
                 </button>
               </div>
-              <input
-                type="password"
-                id="password"
-                name="password"
-                [(ngModel)]="password"
-                required
-                class="form-input"
-                placeholder="••••••••••••"
-                autocomplete="current-password"
-                [disabled]="loading"
-              />
+              <div class="password-input-wrapper">
+                <input
+                  [type]="showPassword ? 'text' : 'password'"
+                  id="password"
+                  name="password"
+                  [(ngModel)]="password"
+                  required
+                  class="form-input password-input"
+                  placeholder="••••••••••••"
+                  autocomplete="current-password"
+                  [disabled]="loading"
+                />
+                <button
+                  type="button"
+                  class="password-toggle-btn"
+                  (click)="togglePasswordVisibility()"
+                  [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'"
+                  tabindex="0"
+                >
+                  <!-- Eye Off Icon (visible when showPassword is true) -->
+                  <svg *ngIf="showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                  </svg>
+                  <!-- Eye Icon (visible when showPassword is false) -->
+                  <svg *ngIf="!showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+              </div>
             </div>
 
             <button
@@ -143,18 +163,27 @@ import { environment } from '../../../../environments/environment';
             </button>
           </form>
 
-          <!-- Google SSO Note (Feature-gated per Phase 1A guidelines) -->
-          <div *ngIf="googleLoginEnabled" class="sso-section">
+          <!-- Social Login Section -->
+          <div class="sso-section">
             <div class="divider"><span>OR</span></div>
-            <button type="button" class="btn btn-secondary google-btn" (click)="onGoogleLogin()">
-              <svg width="18" height="18" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-              </svg>
-              <span>Continue with Google</span>
-            </button>
+            <div class="social-btn-stack">
+              <button type="button" class="btn btn-secondary social-btn google-btn" (click)="onGoogleLogin()" [disabled]="loading">
+                <svg width="18" height="18" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+                <span>Continue with Google</span>
+              </button>
+
+              <button type="button" class="btn btn-secondary social-btn apple-btn" (click)="onAppleLogin()" [disabled]="loading">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+                </svg>
+                <span>Continue with Apple</span>
+              </button>
+            </div>
           </div>
 
           <div class="card-footer-info">
@@ -453,8 +482,91 @@ import { environment } from '../../../../environments/environment';
       padding: 0 10px;
     }
 
-    .google-btn {
+    .password-input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
       width: 100%;
+    }
+
+    .password-input {
+      padding-right: 44px !important;
+    }
+
+    .password-toggle-btn {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      color: var(--vamo-text-dim);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: color 0.15s ease;
+    }
+
+    .password-toggle-btn:hover {
+      color: #ffffff;
+    }
+
+    .password-toggle-btn:focus-visible {
+      outline: 2px solid var(--vamo-pink);
+      outline-offset: 1px;
+    }
+
+    .social-btn-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .social-btn {
+      width: 100%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    .google-btn {
+      background: var(--vamo-surface);
+      border: 1px solid var(--vamo-border);
+      color: var(--vamo-text);
+    }
+
+    .google-btn:hover:not(:disabled) {
+      background: var(--vamo-surface-hover);
+      border-color: var(--vamo-border-hover);
+    }
+
+    .apple-btn {
+      background: #000000;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #ffffff;
+    }
+
+    .apple-btn:hover:not(:disabled) {
+      background: #111111;
+      border-color: rgba(255, 255, 255, 0.4);
+    }
+
+    .apple-error-toast {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      margin-top: 10px;
+      text-align: center;
     }
 
     .card-footer-info {
@@ -643,8 +755,22 @@ export class LoginComponent implements OnInit {
     }
   }
 
+  showPassword = false;
+  appleLoginNotice = '';
+
+  togglePasswordVisibility(): void {
+    this.showPassword = !this.showPassword;
+  }
+
   onGoogleLogin(): void {
-    // Phase 1A: Architectural documentation only
-    console.info('Google SSO requested');
+    this.loading = true;
+    this.errorMessage = '';
+    this.authService.loginWithProvider('google', this.returnUrl);
+  }
+
+  onAppleLogin(): void {
+    this.loading = true;
+    this.errorMessage = '';
+    this.authService.loginWithProvider('apple', this.returnUrl);
   }
 }

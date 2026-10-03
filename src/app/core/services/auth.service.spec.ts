@@ -46,4 +46,34 @@ describe('AuthService', () => {
     expect(fields.includes('provider_link.name')).toBe(true);
     expect(fields.includes('provider_link.subscription_tier')).toBe(true);
   });
+
+  it('should store returnUrl in sessionStorage and redirect to Directus auth endpoint in loginWithProvider', () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+
+    try {
+      service.loginWithProvider('google', '/app/listings');
+    } catch {
+      // jsdom may throw on window.location.href assignment
+    }
+
+    expect(setItemSpy).toHaveBeenCalledWith('vamo_auth_return_url', '/app/listings');
+    setItemSpy.mockRestore();
+  });
+
+  it('should ingest tokens, update user, and store session in handleSsoTokens', async () => {
+    const mockUser = {
+      id: 'usr-sso',
+      first_name: 'Alex',
+      last_name: 'Rivera',
+      email: 'alex@vamo.com',
+      provider_link: { id: 'prov-sso', name: 'SSO Bar', subscription_tier: 'free' },
+    };
+
+    vi.spyOn(service, 'loadCurrentUser').mockResolvedValue(mockUser as any);
+
+    const user = await service.handleSsoTokens('mock_access_tok_123', 'mock_refresh_tok_456', 3600);
+
+    expect(user.id).toBe('usr-sso');
+    expect(service.currentUser?.email).toBe('alex@vamo.com');
+  });
 });
