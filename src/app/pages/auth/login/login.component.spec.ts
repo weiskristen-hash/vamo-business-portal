@@ -110,6 +110,49 @@ describe('LoginComponent', () => {
     expect(component.successMessage).toContain('recovery@business.com');
   });
 
+  it('should toggle password visibility and update input type and aria-label', () => {
+    const passwordInput = fixture.nativeElement.querySelector('#password') as HTMLInputElement;
+    const toggleBtn = fixture.nativeElement.querySelector('.password-toggle-btn') as HTMLButtonElement;
+
+    expect(component.showPassword).toBe(false);
+    expect(passwordInput.type).toBe('password');
+    expect(toggleBtn.getAttribute('aria-label')).toBe('Show password');
+
+    toggleBtn.click();
+    fixture.detectChanges();
+
+    expect(component.showPassword).toBe(true);
+    expect(passwordInput.type).toBe('text');
+    expect(toggleBtn.getAttribute('aria-label')).toBe('Hide password');
+
+    toggleBtn.click();
+    fixture.detectChanges();
+
+    expect(component.showPassword).toBe(false);
+    expect(passwordInput.type).toBe('password');
+    expect(toggleBtn.getAttribute('aria-label')).toBe('Show password');
+  });
+
+  it('should trigger Google SSO via AuthService with returnUrl', () => {
+    authServiceSpy.loginWithProvider = vi.fn();
+    const googleBtn = fixture.nativeElement.querySelector('.google-btn') as HTMLButtonElement;
+
+    googleBtn.click();
+
+    expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('google', '/app/overview');
+    expect(component.loading).toBe(true);
+  });
+
+  it('should trigger Apple SSO via AuthService with returnUrl', () => {
+    authServiceSpy.loginWithProvider = vi.fn();
+    const appleBtn = fixture.nativeElement.querySelector('.apple-btn') as HTMLButtonElement;
+
+    appleBtn.click();
+
+    expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('apple', '/app/overview');
+    expect(component.loading).toBe(true);
+  });
+
   it('should translate unexpected backend errors into customer-safe message without leaking Directus internals', async () => {
     authServiceSpy.login.mockRejectedValue(new Error('Directus 403 Forbidden: access denied on collection providers'));
 
@@ -123,5 +166,17 @@ describe('LoginComponent', () => {
     expect(component.errorMessage).not.toContain('collection');
     expect(component.errorMessage).not.toContain('providers');
     expect(component.errorMessage).toBe("We couldn't make that change. This action is not available for your account.");
+  });
+
+  it('should reset loading state and show message when login fails with non-credential error', async () => {
+    authServiceSpy.login.mockRejectedValue(new Error('Network failure'));
+
+    component.email = 'test@example.com';
+    component.password = 'password123';
+    await component.onSubmit();
+    fixture.detectChanges();
+
+    expect(component.loading).toBe(false);
+    expect(component.errorMessage).toBeTruthy();
   });
 });

@@ -4,6 +4,8 @@ import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { passwordRequest, readMe } from '@directus/sdk';
 import { directusClient } from '../directus/directus-client';
+import { runtimeConfig } from '../config/runtime-config';
+import { createBrowserAuthStorage } from '../directus/browser-auth.storage';
 import { VamoUser } from '../models/user.model';
 import { environment } from '../../../environments/environment';
 
@@ -213,11 +215,51 @@ export class AuthService {
   }
 
   // ======================================================
-  // 🔹 LOGIN
+  // 🔹 LOGIN & SSO
   // ======================================================
 
   async login(email: string, password: string): Promise<VamoUser> {
     await directusClient.login({ email, password });
+
+    const user = await this.loadCurrentUser();
+    this.userSubject.next(user);
+    this.scheduleProactiveRefresh();
+
+    return user;
+  }
+
+  /**
+   * Hand off to Directus hosted OAuth flow (e.g. google).
+   * Directus redirects back to /auth/callback with access_token, refresh_token, expires.
+   */
+  loginWithProvider(provider: 'google' | 'apple', returnUrl: string = '/app/overview'): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+      window.sessionStorage.setItem('vamo_auth_return_url', returnUrl);
+    } catch {
+      // Ignore storage restrictions
+    }
+
+    const callbackUrl = `${window.location.origin}/auth/callback`;
+    const authUrl = `${runtimeConfig.directusUrl}/auth/login/${provider}?redirect=${encodeURIComponent(callbackUrl)}`;
+    window.location.href = authUrl;
+  }
+
+  /**
+   * Ingest session tokens received from OAuth redirect callback.
+   */
+  async handleSsoTokens(accessToken: string, refreshToken?: string | null, expires?: number | null): Promise<VamoUser> {
+    const storage = createBrowserAuthStorage();
+    await storage.set({
+      access_token: accessToken,
+      refresh_token: refreshToken ?? null,
+      expires: expires ?? null,
+      expires_at: expires ? Date.now() + expires : null,
+    });
+
+    // Also sync Directus client instance token
+    await directusClient.setToken(accessToken);
 
     const user = await this.loadCurrentUser();
     this.userSubject.next(user);
