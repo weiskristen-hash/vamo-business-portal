@@ -56,7 +56,6 @@ export class BusinessService {
    */
   readonly editableProviderFields = [
     'name',
-    'business_type',
     'description',
     'address',
     'city',
@@ -70,7 +69,6 @@ export class BusinessService {
     'offerings',
     'opening_times',
     'logo',
-    'images',
   ] as const;
 
   /**
@@ -79,6 +77,7 @@ export class BusinessService {
   readonly protectedProviderFields = [
     'id',
     'status',
+    'business_type',
     'subscription_tier',
     'bookmarkCount',
     'translations',
@@ -103,9 +102,6 @@ export class BusinessService {
 
     if (data.name !== undefined) {
       payload['name'] = data.name;
-    }
-    if (data.business_type !== undefined) {
-      payload['business_type'] = data.business_type;
     }
     if (data.description !== undefined) {
       payload['description'] = data.description;
@@ -156,11 +152,10 @@ export class BusinessService {
           ? (data.logo as any).id
           : data.logo ?? null;
     }
-    if (data.images !== undefined) {
-      payload['images'] = data.images;
-    }
 
-    // Defensive: never include translation metadata or status on provider updates
+    // Defensive: immutable / protected fields must never be sent on provider update
+    delete payload['business_type'];
+    delete payload['images'];
     delete payload['translations'];
     delete payload['translation_status'];
     delete payload['status'];

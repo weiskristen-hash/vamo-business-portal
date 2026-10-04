@@ -61,7 +61,7 @@ describe('Canonical Provider Translation Save Parity (Phase 2B)', () => {
   });
 
   // 1. provider creation during business onboarding
-  it('1. provider creation during business onboarding: exact full canonical payload equality', async () => {
+  it('1. provider creation during business onboarding: exact full canonical payload equality including business_type', async () => {
     clientRequestMock.mockResolvedValueOnce({ id: 'prov-created-1' });
 
     const createInput = {
@@ -106,12 +106,13 @@ describe('Canonical Provider Translation Save Parity (Phase 2B)', () => {
   });
 
   // 2. provider profile edit
-  it('2. provider profile edit: exact full canonical update payload equality', async () => {
+  it('2. provider profile edit: exact full canonical update payload equality (omits business_type, images, status)', async () => {
     clientRequestMock.mockResolvedValueOnce({ id: 'prov-1', name: 'Playa Bar & Grill' });
 
     const editData: Partial<Provider> = {
       name: 'Playa Bar & Grill',
-      business_type: 'restaurant_and_bar',
+      business_type: 'restaurant_and_bar', // Must be omitted on edit
+      images: [{ id: 'img-1' }] as any,    // Must be omitted on edit
       description: 'Beachfront dining with cocktails and fresh seafood.',
       address: 'Calle Principal 10',
       city: 'Las Terrenas',
@@ -147,7 +148,6 @@ describe('Canonical Provider Translation Save Parity (Phase 2B)', () => {
     const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
     expect(payload).toEqual({
       name: 'Playa Bar & Grill',
-      business_type: 'restaurant_and_bar',
       description: 'Beachfront dining with cocktails and fresh seafood.',
       address: 'Calle Principal 10',
       city: 'Las Terrenas',
@@ -174,6 +174,9 @@ describe('Canonical Provider Translation Save Parity (Phase 2B)', () => {
         },
       ],
     });
+    expect('business_type' in payload).toBe(false);
+    expect('images' in payload).toBe(false);
+    expect('status' in payload).toBe(false);
   });
 
   // 3. description with leading/trailing whitespace
@@ -270,15 +273,15 @@ describe('Canonical Provider Translation Save Parity (Phase 2B)', () => {
   });
 
   // 9. business type
-  it('9. business type: exact business_type string is preserved in create and edit payloads', async () => {
+  it('9. business type: onboarding create DOES include business_type; provider edit payload does NOT include business_type', async () => {
+    // Edit path: business_type is strictly omitted
     const editPayload = businessService.buildSafeProviderPayload({
       business_type: 'bakery',
     });
+    expect(editPayload).toEqual({});
+    expect('business_type' in editPayload).toBe(false);
 
-    expect(editPayload).toEqual({
-      business_type: 'bakery',
-    });
-
+    // Create path: business_type is explicitly included
     clientRequestMock.mockResolvedValueOnce({ id: 'prov-new' });
     await authServiceSpy.createProviderAndLink({
       name: 'La Panaderia',
@@ -399,5 +402,39 @@ describe('Canonical Provider Translation Save Parity (Phase 2B)', () => {
     const createPayload = extractPayload(clientRequestMock.mock.calls[1][0]);
     expect(createPayload.translation_status).toBeUndefined();
     expect('translation_status' in createPayload).toBe(false);
+  });
+
+  // 15. images update parity & gallery dedicated behavior
+  it('15. images update parity: provider metadata update omits images while dedicated gallery mutations remain intact', async () => {
+    // Generic edit payload omits images
+    const editPayload = businessService.buildSafeProviderPayload({
+      name: 'Bar with Images',
+      images: [{ id: 'img-1' }] as any,
+    });
+    expect(editPayload.name).toBe('Bar with Images');
+    expect('images' in editPayload).toBe(false);
+
+    // Dedicated uploadProviderImage continues through its dedicated canonical path
+    const mockFile = new File(['dummy'], 'photo.jpg', { type: 'image/jpeg' });
+    vi.spyOn(businessService as any, 'uploadFile').mockResolvedValue('file-upload-123');
+    clientRequestMock.mockResolvedValueOnce({ id: 'prov-1' });
+
+    const uploadedId = await businessService.uploadProviderImage('prov-1', mockFile);
+    expect(uploadedId).toBe('file-upload-123');
+    expect(clientRequestMock).toHaveBeenCalled();
+    const uploadCallArg = extractPayload(clientRequestMock.mock.calls[0][0]);
+    expect(uploadCallArg.images).toEqual({
+      create: [{ directus_files_id: 'file-upload-123' }],
+    });
+
+    // Dedicated removeProviderImage continues through its dedicated canonical path
+    clientRequestMock.mockReset();
+    clientRequestMock.mockResolvedValueOnce({ id: 'prov-1' });
+    await businessService.removeProviderImage('prov-1', 'img-to-del', 'junc-456');
+    expect(clientRequestMock).toHaveBeenCalled();
+    const removeCallArg = extractPayload(clientRequestMock.mock.calls[0][0]);
+    expect(removeCallArg.images).toEqual({
+      delete: ['junc-456'],
+    });
   });
 });

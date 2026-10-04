@@ -140,25 +140,24 @@ export interface OfferingOption {
                   </p>
                 </div>
 
-                <!-- Business Type -->
+                <!-- Business Type (Non-editable after onboarding) -->
                 <div class="form-group span-2">
                   <label class="form-label" for="field-type">
-                    Business Category <span class="required-star">*</span>
+                    Business Category
                   </label>
                   <select
                     id="field-type"
                     class="form-control"
-                    [class.is-invalid]="touched.businessType && !form().business_type"
-                    [(ngModel)]="form().business_type"
-                    (change)="touched.businessType = true; markDirty()"
+                    [ngModel]="form().business_type"
+                    disabled
                   >
                     <option value="" disabled>Select a business category</option>
                     <option *ngFor="let bt of businessTypes" [value]="bt.value">
                       {{ bt.label }}
                     </option>
                   </select>
-                  <p *ngIf="touched.businessType && !form().business_type" class="form-error">
-                    Please select a category for your business.
+                  <p class="form-hint">
+                    Business category is set during registration and cannot be changed.
                   </p>
                 </div>
 
@@ -2368,7 +2367,6 @@ export class BusinessProfileComponent implements OnInit {
         f.id,
         {
           name: f.name,
-          business_type: f.business_type,
           description: f.description,
           address: f.address,
           city: f.city,
