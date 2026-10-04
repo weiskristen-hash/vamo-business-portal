@@ -2414,19 +2414,19 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         description: this.draft.description,
         mode: this.draft.mode,
         status,
-        startDate: this.draft.startDate || null,
-        endDate: this.multiDay ? (this.draft.endDate || null) : null,
+        startDate: this.draft.startDate || undefined,
+        endDate: this.multiDay ? (this.draft.endDate || undefined) : undefined,
         allDay: !!this.draft.allDay,
-        from: this.draft.allDay ? null : (this.draft.from || null),
-        to: this.draft.allDay || this.draft.openEnd ? null : (this.draft.to || null),
-        recurring: this.draft.mode === 'recurring' ? this.draft.recurring : null,
+        from: this.draft.allDay ? undefined : (this.draft.from || undefined),
+        to: this.draft.allDay || this.draft.openEnd ? undefined : (this.draft.to || undefined),
+        recurring: this.draft.mode === 'recurring' ? this.draft.recurring : { days: [] },
         isFree: !!this.draft.isFree,
         contactForPrice: !!this.draft.contactForPrice,
         price: this.draft.isFree || this.draft.contactForPrice ? 0 : (this.draft.price || 0),
-        currency: this.draft.currency || 'USD',
+        currency: this.draft.isFree ? undefined : (this.draft.currency || 'USD'),
         hasPromotion: !!this.draft.hasPromotion,
         promoText: this.draft.hasPromotion ? this.draft.promoText : null,
-        address: this.draft.address,
+        address: this.draft.address || null,
         location_point: this.lat !== null && this.lng !== null
           ? { type: 'Point', coordinates: [Number(this.lng), Number(this.lat)] }
           : null,
@@ -2445,7 +2445,6 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         );
       } else {
         await this.businessService.createEvent(
-          providerId,
           payload,
           this.selectedNewFiles,
           areaIds

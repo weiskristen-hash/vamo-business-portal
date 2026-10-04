@@ -175,7 +175,7 @@ describe('ListingsComponent', () => {
 
   it('should duplicate an event as draft and route to edit wizard', async () => {
     await component.onDuplicate(mockEvents[0]);
-    expect(businessServiceSpy.duplicateEventAsDraft).toHaveBeenCalledWith(mockEvents[0], 'provider-123');
+    expect(businessServiceSpy.duplicateEventAsDraft).toHaveBeenCalledWith(mockEvents[0]);
     expect(router.navigate).toHaveBeenCalledWith(['/app/listings/create'], {
       queryParams: { eventId: 'ev-new-copy' },
     });
