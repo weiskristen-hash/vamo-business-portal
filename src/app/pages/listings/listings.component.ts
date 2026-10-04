@@ -1330,7 +1330,7 @@ export class ListingsComponent implements OnInit {
     this.cdr.markForCheck();
 
     try {
-      const newId = await this.businessService.duplicateEventAsDraft(event, providerId);
+      const newId = await this.businessService.duplicateEventAsDraft(event);
       this.router.navigate(['/app/listings/create'], { queryParams: { eventId: newId } });
     } catch (err: any) {
       this.error = this.customerErrorService.toCustomerMessage(err, 'save');

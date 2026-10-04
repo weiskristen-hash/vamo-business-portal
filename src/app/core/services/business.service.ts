@@ -384,6 +384,30 @@ export class BusinessService {
   }
 
   /**
+   * Extracts HH:mm:ss string matching canonical util.service.ts extractTime.
+   */
+  extractTime(value?: string | null): string | undefined {
+    if (!value) return undefined;
+
+    // ISO String → extract time
+    if (value.includes('T')) {
+      return value.split('T')[1].substring(0, 8); // HH:mm:ss
+    }
+
+    // HH:mm → append seconds
+    if (/^\d{2}:\d{2}$/.test(value)) {
+      return value + ':00';
+    }
+
+    // Already HH:mm:ss
+    if (/^\d{2}:\d{2}:\d{2}$/.test(value)) {
+      return value;
+    }
+
+    return undefined;
+  }
+
+  /**
    * Safe, explicit list of Directus event fields matching read permissions.
    * Excludes non-existent 'openEnd', restricted root 'provider' expansion, and unauthorized boost/addon metadata.
    */
@@ -501,41 +525,49 @@ export class BusinessService {
   }
 
   /**
-   * Creates a new event/listing for the provider in Directus.
+   * Creates a new event/listing in Directus matching canonical VamoEvent creation contract.
+   * Relies on Directus $CURRENT_USER.provider_link server preset for provider assignment.
    */
   async createEvent(
-    providerId: string,
     data: Partial<VamoEvent>,
     files: File[] = [],
     areaIds: string[] = []
   ): Promise<VamoEvent> {
-    if (!providerId) throw new Error('Provider ID is required');
-
     return this.authService.safeRequest(async () => {
+      // 1. Build canonical payload matching create-event.page.ts buildPayload()
       const payload: Record<string, any> = {
-        status: data.status || 'draft',
-        name: data.name?.trim(),
-        description: data.description?.trim(),
-        category: data.category || 'other',
-        mode: data.mode || 'single',
-        startDate: data.startDate || null,
-        endDate: data.endDate || null,
-        from: data.from || null,
-        to: data.allDay || data.openEnd ? null : (data.to || null),
+        name: data.name !== undefined ? data.name.trim() : undefined,
+        category: data.category !== undefined ? data.category : undefined,
+        description: data.description !== undefined ? data.description.trim() : undefined,
+        location_point: data.location_point ?? null,
+        address: data.address !== undefined ? (data.address ? data.address.trim() : null) : null,
+        startDate: data.startDate ? new Date(data.startDate).toISOString().split('T')[0] : undefined,
+        endDate: data.endDate ? new Date(data.endDate).toISOString().split('T')[0] : undefined,
         allDay: !!data.allDay,
+        mode: data.mode ?? 'single',
         recurring: typeof data.recurring === 'object' && data.recurring !== null
           ? JSON.stringify(data.recurring)
-          : (data.recurring || null),
+          : (typeof data.recurring === 'string' ? data.recurring : JSON.stringify({ days: [] })),
+        from: data.from ? this.extractTime(data.from) : undefined,
+        to: data.allDay || data.openEnd || !data.to ? undefined : this.extractTime(data.to),
+        promotionStart: data.promotionStart !== undefined
+          ? data.promotionStart
+          : new Date().toISOString().split('T')[0],
+        hasPromotion: !!data.hasPromotion,
+        promoText: data.hasPromotion ? (data.promoText ? data.promoText.trim() : null) : null,
         isFree: !!data.isFree,
         contactForPrice: !!data.contactForPrice,
         price: data.price ?? 0,
-        currency: data.currency || 'USD',
-        hasPromotion: !!data.hasPromotion,
-        promoText: data.promoText?.trim() || null,
-        location_point: data.location_point || null,
-        address: data.address?.trim() || null,
+        currency: data.isFree ? undefined : (data.currency || 'USD'),
+        status: data.status || 'draft',
+        areas: {
+          create: areaIds.map((aid) => ({ areas_id: aid })),
+          update: [],
+          delete: [],
+        },
       };
 
+      // Directus createItem
       const created = await directusClient.request<any>(createItem('events', payload as any));
       if (!created?.id) throw new Error('Failed to create event in Directus');
 
@@ -553,17 +585,6 @@ export class BusinessService {
         }
       }
 
-      // Attach areas if any
-      if (areaIds.length > 0) {
-        await directusClient.request(updateItem('events', created.id, {
-          areas: {
-            create: areaIds.map((aid) => ({ areas_id: aid, events_id: created.id })),
-            update: [],
-            delete: [],
-          },
-        } as any));
-      }
-
       // Read back created event, with resilient fallback to prevent false "save failed" states
       try {
         return await this.getEventById(created.id);
@@ -572,7 +593,6 @@ export class BusinessService {
         return this.normalizeEvent({
           ...payload,
           id: created.id,
-          provider: { id: providerId } as any,
           date_created: new Date().toISOString(),
           date_updated: new Date().toISOString(),
         } as VamoEvent);
@@ -581,7 +601,7 @@ export class BusinessService {
   }
 
   /**
-   * Updates an existing event in Directus.
+   * Updates an existing event in Directus matching canonical VamoEvent update contract.
    */
   async updateEvent(
     eventId: string,
@@ -596,37 +616,55 @@ export class BusinessService {
     return this.authService.safeRequest(async () => {
       const payload: Record<string, any> = {};
 
-      if (data.status !== undefined) payload['status'] = data.status;
       if (data.name !== undefined) payload['name'] = data.name.trim();
-      if (data.description !== undefined) payload['description'] = data.description.trim();
       if (data.category !== undefined) payload['category'] = data.category;
-      if (data.mode !== undefined) payload['mode'] = data.mode;
-      if (data.startDate !== undefined) payload['startDate'] = data.startDate;
-      if (data.endDate !== undefined) payload['endDate'] = data.endDate;
-      if (data.from !== undefined) payload['from'] = data.from;
-      if (data.allDay !== undefined || data.openEnd !== undefined || data.to !== undefined) {
-        const isAllDay = data.allDay !== undefined ? !!data.allDay : false;
-        const isOpenEnd = data.openEnd !== undefined ? !!data.openEnd : false;
-        if (isAllDay || isOpenEnd) {
-          payload['to'] = null;
-        } else if (data.to !== undefined) {
-          payload['to'] = data.to;
-        }
+      if (data.description !== undefined) payload['description'] = data.description.trim();
+      if (data.location_point !== undefined) payload['location_point'] = data.location_point ?? null;
+      if (data.address !== undefined) payload['address'] = data.address ? data.address.trim() : null;
+      if (data.startDate !== undefined) {
+        payload['startDate'] = data.startDate ? new Date(data.startDate).toISOString().split('T')[0] : undefined;
       }
-      if (data.allDay !== undefined) payload['allDay'] = data.allDay;
+      if (data.endDate !== undefined) {
+        payload['endDate'] = data.endDate ? new Date(data.endDate).toISOString().split('T')[0] : undefined;
+      }
+      if (data.allDay !== undefined) payload['allDay'] = !!data.allDay;
+      if (data.mode !== undefined) payload['mode'] = data.mode;
       if (data.recurring !== undefined) {
         payload['recurring'] = typeof data.recurring === 'object' && data.recurring !== null
           ? JSON.stringify(data.recurring)
-          : data.recurring;
+          : (typeof data.recurring === 'string' ? data.recurring : JSON.stringify({ days: [] }));
       }
-      if (data.isFree !== undefined) payload['isFree'] = data.isFree;
-      if (data.contactForPrice !== undefined) payload['contactForPrice'] = data.contactForPrice;
+      if (data.from !== undefined) {
+        payload['from'] = data.from ? this.extractTime(data.from) : undefined;
+      }
+      if (data.allDay !== undefined || data.openEnd !== undefined || data.to !== undefined) {
+        const isAllDay = !!data.allDay;
+        const isOpenEnd = !!data.openEnd;
+        payload['to'] = (isAllDay || isOpenEnd || !data.to) ? undefined : this.extractTime(data.to);
+      }
+      if (data.promotionStart !== undefined) {
+        payload['promotionStart'] = data.promotionStart;
+      }
+      if (data.hasPromotion !== undefined) payload['hasPromotion'] = !!data.hasPromotion;
+      if (data.promoText !== undefined) {
+        payload['promoText'] = data.hasPromotion ? (data.promoText ? data.promoText.trim() : null) : null;
+      }
+      if (data.isFree !== undefined) payload['isFree'] = !!data.isFree;
+      if (data.contactForPrice !== undefined) payload['contactForPrice'] = !!data.contactForPrice;
       if (data.price !== undefined) payload['price'] = data.price;
-      if (data.currency !== undefined) payload['currency'] = data.currency;
-      if (data.hasPromotion !== undefined) payload['hasPromotion'] = data.hasPromotion;
-      if (data.promoText !== undefined) payload['promoText'] = data.promoText ? data.promoText.trim() : null;
-      if (data.location_point !== undefined) payload['location_point'] = data.location_point;
-      if (data.address !== undefined) payload['address'] = data.address ? data.address.trim() : null;
+      if (data.currency !== undefined || data.isFree !== undefined) {
+        payload['currency'] = (data.isFree || payload['isFree']) ? undefined : (data.currency || 'USD');
+      }
+      if (data.status !== undefined) payload['status'] = data.status;
+
+      // Handle area updates matching canonical nested shape
+      if (areaIds !== undefined) {
+        payload['areas'] = {
+          create: areaIds.map((aid) => ({ areas_id: aid })),
+          update: [],
+          delete: existingAreaJunctionIds,
+        };
+      }
 
       // Handle image updates
       const newFileIds = files.length > 0 ? await this.uploadEventImages(files) : [];
@@ -635,15 +673,6 @@ export class BusinessService {
           create: newFileIds.map((fid) => ({ directus_files_id: fid, events_id: eventId })),
           update: [],
           delete: removedImageJunctionIds,
-        };
-      }
-
-      // Handle area updates
-      if (areaIds !== undefined) {
-        payload['areas'] = {
-          create: areaIds.map((aid) => ({ areas_id: aid, events_id: eventId })),
-          update: [],
-          delete: existingAreaJunctionIds,
         };
       }
 
@@ -697,34 +726,28 @@ export class BusinessService {
   }
 
   /**
-   * Duplicates an existing event as a draft, preserving images and categories without re-uploading.
+   * Duplicates an existing event as a draft matching canonical event.service.ts duplicateEventAsDraft.
    */
-  async duplicateEventAsDraft(event: VamoEvent, providerId: string): Promise<string> {
-    if (!providerId) throw new Error('Provider ID is required');
-
+  async duplicateEventAsDraft(event: VamoEvent): Promise<string> {
     return this.authService.safeRequest(async () => {
       const payload: Record<string, any> = {
         status: 'draft',
         name: event.name ? `${event.name} (Copy)` : 'Untitled Copy',
-        description: event.description || '',
-        category: event.category || 'other',
-        mode: event.mode || 'single',
-        startDate: event.startDate || null,
-        endDate: event.endDate || null,
-        from: event.from || null,
-        to: event.allDay || event.openEnd || !event.to ? null : event.to,
-        allDay: !!event.allDay,
+        description: event.description,
+        location_point: event.location_point ?? null,
+        address: event.address ?? null,
+        category: event.category,
+        mode: event.mode,
+        from: event.from,
+        to: event.to,
+        allDay: event.allDay,
         recurring: typeof event.recurring === 'object' && event.recurring !== null
           ? JSON.stringify(event.recurring)
-          : (event.recurring || null),
-        isFree: !!event.isFree,
-        contactForPrice: !!event.contactForPrice,
-        price: event.price ?? 0,
-        currency: event.currency || 'USD',
-        hasPromotion: !!event.hasPromotion,
-        promoText: event.promoText || null,
-        location_point: event.location_point || null,
-        address: event.address || null,
+          : (typeof event.recurring === 'string' ? event.recurring : JSON.stringify({ days: [] })),
+        isFree: event.isFree,
+        price: event.price,
+        hasPromotion: event.hasPromotion,
+        promoText: event.promoText,
       };
 
       const newEvent = await directusClient.request<any>(createItem('events', payload as any));
@@ -764,7 +787,6 @@ export class BusinessService {
           areas: {
             create: areaIds.map((areaId: string) => ({
               areas_id: areaId,
-              events_id: newEvent.id,
             })),
             update: [],
             delete: [],

@@ -196,7 +196,6 @@ describe('ListingEditorComponent', () => {
     await component.saveDraft();
 
     expect(businessServiceSpy.createEvent).toHaveBeenCalledWith(
-      'provider-999',
       expect.objectContaining({
         name: 'Work-in-progress Draft',
         status: 'draft',
@@ -225,7 +224,6 @@ describe('ListingEditorComponent', () => {
     await component.publishListing();
 
     expect(businessServiceSpy.createEvent).toHaveBeenCalledWith(
-      'provider-999',
       expect.objectContaining({
         name: 'Live Ocean Music Session',
         status: 'published',
