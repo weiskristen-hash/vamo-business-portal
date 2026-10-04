@@ -2,14 +2,20 @@ import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
+import { LanguageSelectorComponent } from '../../core/i18n/language-selector.component';
 
 @Component({
   selector: 'app-no-business',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, TranslatePipe, LanguageSelectorComponent],
   template: `
     <div class="no-business-page">
       <div class="no-business-card">
+        <div class="card-top-actions">
+          <app-language-selector></app-language-selector>
+        </div>
+
         <div class="icon-wrap">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
@@ -19,27 +25,27 @@ import { AuthService } from '../../core/services/auth.service';
           </svg>
         </div>
 
-        <h1 class="card-title">This VAMO account is not currently linked to a business.</h1>
+        <h1 class="card-title">{{ 'PORTAL.NO_BUSINESS.TITLE' | translate }}</h1>
 
         <p class="card-description">
-          You are currently signed in as <strong>{{ (authService.user$ | async)?.email }}</strong>. The VAMO Business Portal is dedicated exclusively to verified businesses, venues, and event organizers.
+          {{ 'PORTAL.NO_BUSINESS.DESC' | translate: { email: (authService.user$ | async)?.email || '' } }}
         </p>
 
         <div class="action-box">
           <div class="action-row">
             <div class="action-text">
-              <strong>Are you a business owner in the Dominican Republic?</strong>
-              <span>Claim or register your business profile to start managing posts and promotions.</span>
+              <strong>{{ 'PORTAL.NO_BUSINESS.QUESTION' | translate }}</strong>
+              <span>{{ 'PORTAL.NO_BUSINESS.SUB' | translate }}</span>
             </div>
-            <a routerLink="/onboarding" [queryParams]="{ mode: 'business' }" class="btn btn-primary">
-              Set up Business Profile →
+            <a routerLink="/onboarding" [queryParams]="{ mode: 'business' }" class="btn btn-primary action-btn">
+              {{ 'PORTAL.NO_BUSINESS.SETUP_BTN' | translate }}
             </a>
           </div>
         </div>
 
         <div class="card-footer">
           <button type="button" class="btn btn-ghost" (click)="signOut()">
-            Sign out / Switch account
+            {{ 'PORTAL.NO_BUSINESS.SIGNOUT_BTN' | translate }}
           </button>
         </div>
       </div>
@@ -52,64 +58,74 @@ import { AuthService } from '../../core/services/auth.service';
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 30px;
-      background: var(--vamo-gradient-bg);
+      padding: 30px 16px;
+      background: var(--vamo-background, #f8fafc);
+      box-sizing: border-box;
     }
 
     .no-business-card {
       width: 100%;
       max-width: 580px;
-      background: var(--vamo-surface);
-      border: 1px solid var(--vamo-border);
-      border-radius: var(--vamo-radius-md);
-      padding: 40px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 20px;
+      padding: 36px 32px;
       text-align: center;
-      box-shadow: var(--vamo-shadow-md);
+      box-shadow:
+        0 10px 25px -5px rgba(15, 23, 42, 0.05),
+        0 8px 10px -6px rgba(15, 23, 42, 0.03);
       display: flex;
       flex-direction: column;
       align-items: center;
+      box-sizing: border-box;
+      position: relative;
+    }
+
+    .card-top-actions {
+      width: 100%;
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 8px;
     }
 
     .icon-wrap {
-      width: 72px;
-      height: 72px;
+      width: 68px;
+      height: 68px;
       border-radius: 50%;
       background: rgba(236, 72, 153, 0.1);
       border: 1px solid rgba(236, 72, 153, 0.25);
-      color: var(--vamo-secondary);
+      color: var(--vamo-pink, #ec4899);
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
 
     .card-title {
       font-size: 1.45rem;
-      font-weight: 700;
-      color: var(--vamo-text);
+      font-weight: 800;
+      color: #0f172a;
       line-height: 1.3;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
+      letter-spacing: -0.02em;
     }
 
     .card-description {
-      font-size: 0.95rem;
+      font-size: 0.94rem;
       line-height: 1.6;
-      color: var(--vamo-text-muted);
-      margin-bottom: 28px;
-    }
-
-    .card-description strong {
-      color: var(--vamo-text);
+      color: #475569;
+      margin-bottom: 26px;
     }
 
     .action-box {
       width: 100%;
-      background: var(--vamo-surface-subtle);
-      border: 1px solid var(--vamo-border);
-      border-radius: 12px;
+      background: #f8fafc;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 14px;
       padding: 20px;
       margin-bottom: 24px;
       text-align: left;
+      box-sizing: border-box;
     }
 
     .action-row {
@@ -126,14 +142,41 @@ import { AuthService } from '../../core/services/auth.service';
     }
 
     .action-text strong {
-      font-size: 0.9rem;
-      color: #ffffff;
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #0f172a;
     }
 
     .action-text span {
-      font-size: 0.8rem;
-      color: var(--vamo-text-muted);
+      font-size: 0.82rem;
+      color: #64748b;
       line-height: 1.4;
+    }
+
+    .action-btn {
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--vamo-pink, #ec4899), #db2777);
+      color: #ffffff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.88rem;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+      box-shadow: 0 2px 8px rgba(236, 72, 153, 0.25);
+    }
+
+    .btn-primary:hover {
+      opacity: 0.95;
+      box-shadow: 0 4px 12px rgba(236, 72, 153, 0.35);
+      transform: translateY(-1px);
     }
 
     .card-footer {
@@ -142,16 +185,34 @@ import { AuthService } from '../../core/services/auth.service';
       width: 100%;
     }
 
+    .btn-ghost {
+      background: transparent;
+      color: #64748b;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 8px 18px;
+      font-weight: 600;
+      font-size: 0.86rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-ghost:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+
     @media (max-width: 640px) {
       .no-business-card {
-        padding: 28px 20px;
+        padding: 24px 18px;
       }
       .action-row {
         flex-direction: column;
         align-items: flex-start;
       }
-      .action-row .btn {
+      .action-btn {
         width: 100%;
+        box-sizing: border-box;
       }
     }
   `],

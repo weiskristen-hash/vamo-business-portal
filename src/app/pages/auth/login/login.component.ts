@@ -4,12 +4,15 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { CustomerErrorService } from '../../../core/services/customer-error.service';
+import { I18nService } from '../../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../../core/i18n/translate.pipe';
+import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.component';
 import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [CommonModule, FormsModule, RouterModule, TranslatePipe, LanguageSelectorComponent],
   template: `
     <div class="login-page">
       <!-- Left Hero Panel: Dark Branded VAMO Presentation -->
@@ -22,15 +25,15 @@ import { environment } from '../../../../environments/environment';
             <img src="/assets/vamo-logo.png" alt="VAMO" class="hero-logo" onerror="this.style.display='none'" />
             <div class="hero-brand-text">
               <span class="hero-name">VAMO</span>
-              <span class="hero-tag">BUSINESS PORTAL</span>
+              <span class="hero-tag">{{ 'PORTAL.BRAND.TAG' | translate }}</span>
             </div>
           </div>
 
           <!-- Hero Headline & Supporting Copy -->
           <div class="hero-body">
-            <h1 class="hero-title">Run your VAMO business from one place.</h1>
+            <h1 class="hero-title">{{ 'PORTAL.LOGIN.HERO_TITLE' | translate }}</h1>
             <p class="hero-description">
-              Manage your profile, events, promotions, and customer reach from one simple dashboard.
+              {{ 'PORTAL.LOGIN.HERO_DESC' | translate }}
             </p>
 
             <!-- Customer-Facing Benefit Items -->
@@ -42,8 +45,8 @@ import { environment } from '../../../../environments/environment';
                   </svg>
                 </div>
                 <div class="feature-text">
-                  <strong>MANAGE EVERYTHING IN ONE PLACE</strong>
-                  <span>Update your business profile, events, and promotions.</span>
+                  <strong>{{ 'PORTAL.LOGIN.FEAT_1_TITLE' | translate }}</strong>
+                  <span>{{ 'PORTAL.LOGIN.FEAT_1_DESC' | translate }}</span>
                 </div>
               </div>
 
@@ -54,8 +57,8 @@ import { environment } from '../../../../environments/environment';
                   </svg>
                 </div>
                 <div class="feature-text">
-                  <strong>STAY SYNCED WITH VAMO</strong>
-                  <span>Your changes appear across the VAMO experience.</span>
+                  <strong>{{ 'PORTAL.LOGIN.FEAT_2_TITLE' | translate }}</strong>
+                  <span>{{ 'PORTAL.LOGIN.FEAT_2_DESC' | translate }}</span>
                 </div>
               </div>
 
@@ -66,8 +69,8 @@ import { environment } from '../../../../environments/environment';
                   </svg>
                 </div>
                 <div class="feature-text">
-                  <strong>REACH MORE CUSTOMERS</strong>
-                  <span>Stay visible to locals and travelers looking for things to do.</span>
+                  <strong>{{ 'PORTAL.LOGIN.FEAT_3_TITLE' | translate }}</strong>
+                  <span>{{ 'PORTAL.LOGIN.FEAT_3_DESC' | translate }}</span>
                 </div>
               </div>
             </div>
@@ -78,19 +81,19 @@ import { environment } from '../../../../environments/environment';
             <div class="preview-header">
               <div class="preview-badge">
                 <span class="preview-pulse-dot"></span>
-                <span>LIVE PLATFORM</span>
+                <span>{{ 'PORTAL.LOGIN.LIVE_PLATFORM' | translate }}</span>
               </div>
-              <span class="preview-meta-tag">Dominican Republic</span>
+              <span class="preview-meta-tag">{{ 'PORTAL.LOGIN.DOMINICAN_REPUBLIC' | translate }}</span>
             </div>
             <div class="preview-body">
-              <div class="preview-title">Your VAMO Business</div>
-              <div class="preview-sub">Manage your profile, events, and promotions in one place.</div>
+              <div class="preview-title">{{ 'PORTAL.LOGIN.PREVIEW_TITLE' | translate }}</div>
+              <div class="preview-sub">{{ 'PORTAL.LOGIN.PREVIEW_SUB' | translate }}</div>
             </div>
           </div>
 
           <!-- Left Footer -->
           <footer class="hero-footer">
-            <span>© {{ currentYear }} VAMO. All rights reserved.</span>
+            <span>© {{ currentYear }} VAMO. {{ 'PORTAL.LOGIN.ALL_RIGHTS' | translate }}</span>
           </footer>
         </div>
       </aside>
@@ -98,9 +101,13 @@ import { environment } from '../../../../environments/environment';
       <!-- Right Panel: Clean Light Authentication Card -->
       <main class="login-panel">
         <div class="login-card">
+          <div class="card-top-actions">
+            <app-language-selector></app-language-selector>
+          </div>
+
           <header class="login-card-header">
-            <h2 class="card-title">Sign in to VAMO</h2>
-            <p class="card-subtitle">Manage your business, events, and promotions.</p>
+            <h2 class="card-title">{{ 'PORTAL.LOGIN.CARD_TITLE' | translate }}</h2>
+            <p class="card-subtitle">{{ 'PORTAL.LOGIN.CARD_SUB' | translate }}</p>
           </header>
 
           <!-- Error Alert Banner -->
@@ -125,7 +132,7 @@ import { environment } from '../../../../environments/environment';
           <!-- Login Form -->
           <form (ngSubmit)="onSubmit()" #loginForm="ngForm" class="login-form">
             <div class="form-group">
-              <label for="email" class="form-label">Email address</label>
+              <label for="email" class="form-label">{{ 'PORTAL.LOGIN.EMAIL_LABEL' | translate }}</label>
               <input
                 type="email"
                 id="email"
@@ -142,14 +149,14 @@ import { environment } from '../../../../environments/environment';
 
             <div class="form-group">
               <div class="password-label-row">
-                <label for="password" class="form-label">Password</label>
+                <label for="password" class="form-label">{{ 'PORTAL.LOGIN.PASSWORD_LABEL' | translate }}</label>
                 <button
                   type="button"
                   class="forgot-link"
                   (click)="openForgotModal()"
                   [disabled]="loading"
                 >
-                  Forgot password?
+                  {{ 'AUTH.FORGOT_PASSWORD_LINK' | translate }}
                 </button>
               </div>
               <div class="password-input-wrapper">
@@ -178,7 +185,7 @@ import { environment } from '../../../../environments/environment';
                   </svg>
                   <!-- Eye Icon (visible when showPassword is false) -->
                   <svg *ngIf="!showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8z"></path>
                     <circle cx="12" cy="12" r="3"></circle>
                   </svg>
                 </button>
@@ -190,17 +197,17 @@ import { environment } from '../../../../environments/environment';
               class="btn btn-primary submit-btn"
               [disabled]="loading || !email || !password"
             >
-              <span *ngIf="!loading">Sign In</span>
+              <span *ngIf="!loading">{{ 'AUTH.LOGIN_BTN' | translate }}</span>
               <span *ngIf="loading" class="spinner-content">
                 <span class="spinner"></span>
-                <span>Signing in…</span>
+                <span>{{ 'PORTAL.LOGIN.SIGNING_IN' | translate }}</span>
               </span>
             </button>
           </form>
 
           <!-- Social Login Section -->
           <div class="sso-section">
-            <div class="divider"><span>OR CONTINUE WITH</span></div>
+            <div class="divider"><span>{{ 'AUTH.OR_CONTINUE_WITH' | translate | uppercase }}</span></div>
             <div class="social-btn-stack">
               <button type="button" class="btn btn-secondary social-btn google-btn" (click)="onGoogleLogin()" [disabled]="loading">
                 <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -209,16 +216,16 @@ import { environment } from '../../../../environments/environment';
                   <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
                 </svg>
-                <span>Continue with Google</span>
+                <span>{{ 'AUTH.LOGIN_GOOGLE' | translate }}</span>
               </button>
             </div>
           </div>
 
           <!-- Secondary Intentional Registration CTA -->
           <div class="signup-prompt">
-            <span class="signup-prompt-text">New to VAMO?</span>
+            <span class="signup-prompt-text">{{ 'PORTAL.LOGIN.NEW_TO_VAMO' | translate }}</span>
             <a routerLink="/register" class="signup-link">
-              Create your business account →
+              {{ 'PORTAL.LOGIN.CREATE_ACCOUNT_LINK' | translate }}
             </a>
           </div>
         </div>
@@ -229,8 +236,8 @@ import { environment } from '../../../../environments/environment';
         <div class="modal-card">
           <div class="modal-header">
             <div>
-              <h3 id="forgot-modal-title" class="modal-title">Reset your password</h3>
-              <p class="modal-subtitle">Enter your business email and we'll send you a password reset link.</p>
+              <h3 id="forgot-modal-title" class="modal-title">{{ 'PORTAL.LOGIN.FORGOT_MODAL_TITLE' | translate }}</h3>
+              <p class="modal-subtitle">{{ 'PORTAL.LOGIN.FORGOT_MODAL_SUB' | translate }}</p>
             </div>
             <button type="button" class="modal-close-btn" (click)="closeForgotModal()" aria-label="Close dialog">×</button>
           </div>
@@ -241,7 +248,7 @@ import { environment } from '../../../../environments/environment';
 
           <div class="modal-body">
             <div class="form-group">
-              <label for="forgot-email" class="form-label">Email address</label>
+              <label for="forgot-email" class="form-label">{{ 'PORTAL.LOGIN.EMAIL_LABEL' | translate }}</label>
               <input
                 type="email"
                 id="forgot-email"
@@ -255,7 +262,7 @@ import { environment } from '../../../../environments/environment';
 
           <div class="modal-footer">
             <button type="button" class="btn btn-ghost" (click)="closeForgotModal()" [disabled]="forgotLoading">
-              Cancel
+              {{ 'PORTAL.LOGIN.CANCEL' | translate }}
             </button>
             <button
               type="button"
@@ -263,8 +270,8 @@ import { environment } from '../../../../environments/environment';
               (click)="sendPasswordReset()"
               [disabled]="forgotLoading || !forgotEmail"
             >
-              <span *ngIf="!forgotLoading">Send Reset Link</span>
-              <span *ngIf="forgotLoading">Sending…</span>
+              <span *ngIf="!forgotLoading">{{ 'PORTAL.LOGIN.SEND_RESET_LINK' | translate }}</span>
+              <span *ngIf="forgotLoading">{{ 'PORTAL.LOGIN.SENDING' | translate }}</span>
             </button>
           </div>
         </div>
@@ -298,100 +305,97 @@ import { environment } from '../../../../environments/environment';
 
     .hero-glow-ambient {
       position: absolute;
-      inset: 0;
-      background:
-        radial-gradient(circle at 18% 22%, rgba(236, 72, 153, 0.16) 0%, transparent 42%),
-        radial-gradient(circle at 82% 78%, rgba(139, 92, 246, 0.14) 0%, transparent 46%),
-        radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.07) 0%, transparent 52%);
+      top: -20%;
+      left: -20%;
+      width: 140%;
+      height: 140%;
+      background: radial-gradient(circle at 30% 30%, rgba(236, 72, 153, 0.12) 0%, transparent 60%),
+                  radial-gradient(circle at 70% 70%, rgba(124, 58, 237, 0.08) 0%, transparent 60%);
       pointer-events: none;
+      z-index: 0;
     }
 
     .hero-content {
       position: relative;
       z-index: 1;
-      max-width: 480px;
-      margin: 0 auto;
+      max-width: 520px;
       display: flex;
       flex-direction: column;
-      gap: 32px;
-      width: 100%;
+      gap: 36px;
     }
 
-    /* VAMO Prominent Branding */
     .hero-brand {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 12px;
     }
 
     .hero-logo {
-      height: 44px;
+      height: 38px;
       width: auto;
-      filter: drop-shadow(0 2px 8px rgba(236, 72, 153, 0.3));
     }
 
     .hero-brand-text {
       display: flex;
       flex-direction: column;
-      line-height: 1.1;
     }
 
     .hero-name {
-      font-size: 1.7rem;
+      font-size: 1.5rem;
       font-weight: 900;
       letter-spacing: -0.02em;
       color: #ffffff;
+      line-height: 1.1;
     }
 
     .hero-tag {
-      font-size: 0.72rem;
-      font-weight: 800;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
       color: var(--vamo-pink, #ec4899);
-      letter-spacing: 0.18em;
-      margin-top: 2px;
     }
 
-    /* Hero Typography */
     .hero-body {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .hero-title {
-      font-size: 2.35rem;
-      font-weight: 800;
-      line-height: 1.2;
-      letter-spacing: -0.025em;
-      color: #ffffff;
-      margin: 0 0 14px 0;
-    }
-
-    .hero-description {
-      font-size: 1.02rem;
-      line-height: 1.6;
-      color: #94a3b8;
-      margin: 0 0 28px 0;
-    }
-
-    /* Customer-Facing Benefit Items */
-    .hero-features {
       display: flex;
       flex-direction: column;
       gap: 18px;
     }
 
+    .hero-title {
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+      margin: 0;
+    }
+
+    .hero-description {
+      font-size: 1rem;
+      line-height: 1.6;
+      color: #94a3b8;
+      margin: 0;
+    }
+
+    .hero-features {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      margin-top: 10px;
+    }
+
     .feature-item {
       display: flex;
-      gap: 14px;
       align-items: flex-start;
+      gap: 14px;
     }
 
     .feature-icon-wrap {
-      width: 28px;
-      height: 28px;
+      width: 32px;
+      height: 32px;
       border-radius: 8px;
-      background: rgba(236, 72, 153, 0.14);
-      border: 1px solid rgba(236, 72, 153, 0.3);
+      background: rgba(236, 72, 153, 0.12);
+      border: 1px solid rgba(236, 72, 153, 0.25);
       color: var(--vamo-pink, #ec4899);
       display: flex;
       align-items: center;
@@ -403,49 +407,52 @@ import { environment } from '../../../../environments/environment';
     .feature-text {
       display: flex;
       flex-direction: column;
-      gap: 3px;
+      gap: 2px;
     }
 
     .feature-text strong {
-      font-size: 0.84rem;
+      font-size: 0.88rem;
       font-weight: 700;
-      color: #ffffff;
       letter-spacing: 0.04em;
+      color: #f1f5f9;
     }
 
     .feature-text span {
-      font-size: 0.88rem;
-      color: #cbd5e1;
+      font-size: 0.84rem;
+      color: #94a3b8;
       line-height: 1.45;
     }
 
-    /* Subtle Product Interface Preview Card */
     .hero-preview-card {
-      background: rgba(15, 23, 42, 0.65);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 14px;
       padding: 16px 20px;
-      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 10px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
     }
 
     .preview-header {
       display: flex;
-      align-items: center;
       justify-content: space-between;
+      align-items: center;
     }
 
     .preview-badge {
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: 6px;
-      font-size: 0.7rem;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      padding: 3px 8px;
+      border-radius: 9999px;
+      font-size: 0.68rem;
       font-weight: 700;
-      color: #38bdf8;
       letter-spacing: 0.08em;
+      color: #38bdf8;
     }
 
     .preview-pulse-dot {
@@ -508,6 +515,13 @@ import { environment } from '../../../../environments/environment';
         0 10px 25px -5px rgba(15, 23, 42, 0.05),
         0 8px 10px -6px rgba(15, 23, 42, 0.03);
       box-sizing: border-box;
+      position: relative;
+    }
+
+    .card-top-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 12px;
     }
 
     .login-card-header {
@@ -598,31 +612,32 @@ import { environment } from '../../../../environments/environment';
     .forgot-link:focus-visible {
       outline: 2px solid var(--vamo-pink, #ec4899);
       outline-offset: 2px;
-      border-radius: 2px;
+      border-radius: 4px;
     }
 
     .form-input {
       width: 100%;
-      height: 46px;
+      height: 44px;
       padding: 10px 14px;
       background: #f8fafc;
-      border: 1px solid #cbd5e1;
-      border-radius: 10px;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 8px;
       color: #0f172a;
-      font-size: 0.94rem;
-      box-sizing: border-box;
+      font-size: 0.95rem;
+      font-family: inherit;
       transition: all 0.15s ease;
+      box-sizing: border-box;
+    }
+
+    .form-input:focus {
+      background: #ffffff;
+      outline: none;
+      border-color: var(--vamo-pink, #ec4899);
+      box-shadow: 0 0 0 3px rgba(236, 72, 153, 0.15);
     }
 
     .form-input::placeholder {
       color: #94a3b8;
-    }
-
-    .form-input:focus {
-      outline: none;
-      background: #ffffff;
-      border-color: var(--vamo-pink, #ec4899);
-      box-shadow: 0 0 0 3px rgba(236, 72, 153, 0.18);
     }
 
     .form-input:disabled {
@@ -635,27 +650,24 @@ import { environment } from '../../../../environments/environment';
       position: relative;
       display: flex;
       align-items: center;
-      width: 100%;
     }
 
     .password-input {
-      padding-right: 44px !important;
+      padding-right: 44px;
     }
 
     .password-toggle-btn {
       position: absolute;
-      right: 10px;
-      top: 50%;
-      transform: translateY(-50%);
+      right: 12px;
       background: transparent;
       border: none;
       color: #64748b;
-      display: inline-flex;
+      cursor: pointer;
+      display: flex;
       align-items: center;
       justify-content: center;
-      padding: 6px;
-      cursor: pointer;
-      border-radius: 6px;
+      padding: 4px;
+      border-radius: 4px;
       transition: color 0.15s ease;
     }
 
@@ -665,71 +677,82 @@ import { environment } from '../../../../environments/environment';
 
     .password-toggle-btn:focus-visible {
       outline: 2px solid var(--vamo-pink, #ec4899);
-      outline-offset: 1px;
-    }
-
-    /* Primary CTA */
-    .submit-btn {
-      width: 100%;
-      height: 48px;
-      margin-top: 6px;
-      font-size: 1rem;
-      font-weight: 700;
-      border-radius: 10px;
-      border: none;
-      background: linear-gradient(135deg, #ec4899 0%, #db2777 40%, #7c3aed 100%);
-      color: #ffffff;
-      box-shadow: 0 4px 14px rgba(236, 72, 153, 0.35);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s ease;
-    }
-
-    .submit-btn:hover:not(:disabled) {
-      transform: translateY(-1px);
-      box-shadow: 0 8px 22px rgba(236, 72, 153, 0.45);
-    }
-
-    .submit-btn:active:not(:disabled) {
-      transform: translateY(0);
-    }
-
-    .submit-btn:focus-visible {
-      outline: 2px solid var(--vamo-pink, #ec4899);
       outline-offset: 2px;
     }
 
-    .submit-btn:disabled {
+    /* Buttons */
+    .submit-btn {
+      width: 100%;
+      height: 46px;
+      font-size: 0.96rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-top: 6px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--vamo-pink, #ec4899), #db2777);
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      box-shadow: 0 2px 8px rgba(236, 72, 153, 0.25);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      opacity: 0.95;
+      box-shadow: 0 4px 12px rgba(236, 72, 153, 0.35);
+      transform: translateY(-1px);
+    }
+
+    .btn-primary:disabled {
       opacity: 0.55;
       cursor: not-allowed;
       box-shadow: none;
-      transform: none;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-weight: 600;
+      font-size: 0.88rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-ghost:hover:not(:disabled) {
+      background: #f1f5f9;
+      color: #0f172a;
     }
 
     .spinner-content {
       display: flex;
       align-items: center;
+      justify-content: center;
       gap: 8px;
     }
 
     .spinner {
-      width: 18px;
-      height: 18px;
-      border: 2px solid rgba(255, 255, 255, 0.35);
-      border-radius: 50%;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
       border-top-color: #ffffff;
-      animation: spin 0.7s linear infinite;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
     }
 
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
 
-    /* Single Clean OR Divider */
+    /* SSO Section */
     .sso-section {
-      margin-top: 20px;
+      margin-top: 24px;
     }
 
     .divider {
@@ -740,7 +763,7 @@ import { environment } from '../../../../environments/environment';
       font-size: 0.72rem;
       font-weight: 700;
       letter-spacing: 0.08em;
-      margin: 20px 0 16px;
+      margin-bottom: 16px;
     }
 
     .divider::before,
@@ -751,51 +774,36 @@ import { environment } from '../../../../environments/environment';
     }
 
     .divider span {
-      padding: 0 12px;
+      padding: 0 10px;
     }
 
-    /* Secondary Social Sign-In Buttons */
     .social-btn-stack {
       display: flex;
       flex-direction: column;
       gap: 10px;
-      width: 100%;
     }
 
     .social-btn {
       width: 100%;
       height: 44px;
-      border-radius: 10px;
-      display: inline-flex;
+      display: flex;
       align-items: center;
       justify-content: center;
       gap: 10px;
-      font-size: 0.9rem;
+      background: #ffffff;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 8px;
+      color: #0f172a;
+      font-size: 0.92rem;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s ease;
-      box-sizing: border-box;
+      font-family: inherit;
     }
 
-    .google-btn {
-      background: #ffffff;
-      border: 1px solid #cbd5e1;
-      color: #1e293b;
-    }
-
-    .google-btn:hover:not(:disabled) {
+    .social-btn:hover:not(:disabled) {
       background: #f8fafc;
       border-color: #94a3b8;
-    }
-
-    .apple-btn {
-      background: #000000;
-      border: 1px solid #000000;
-      color: #ffffff;
-    }
-
-    .apple-btn:hover:not(:disabled) {
-      background: #1e293b;
     }
 
     .social-btn:focus-visible {
@@ -972,6 +980,7 @@ export class LoginComponent implements OnInit {
   private customerErrorService = inject(CustomerErrorService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  private i18n = inject(I18nService);
 
   email = '';
   password = '';
@@ -1012,7 +1021,9 @@ export class LoginComponent implements OnInit {
     } catch (err: any) {
       const code = err?.errors?.[0]?.extensions?.code;
       if (code === 'INVALID_CREDENTIALS') {
-        this.errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+        this.errorMessage = this.i18n.lang() === 'es'
+          ? 'Correo o contraseña no válidos. Por favor verifica tus credenciales.'
+          : 'Invalid email or password. Please check your credentials and try again.';
       } else {
         this.errorMessage = this.customerErrorService.toCustomerMessage(err, 'auth');
       }
@@ -1040,16 +1051,17 @@ export class LoginComponent implements OnInit {
     try {
       await this.authService.requestPasswordReset(this.forgotEmail.trim());
       this.showForgotModal = false;
-      this.successMessage = `A password reset link has been dispatched to ${this.forgotEmail}. Please check your inbox.`;
+      this.successMessage = this.i18n.lang() === 'es'
+        ? `¡Enlace enviado a ${this.forgotEmail}! Revisa tu correo.`
+        : `A password reset link has been dispatched to ${this.forgotEmail}. Please check your inbox.`;
     } catch (err: any) {
-      this.forgotError = this.customerErrorService.toCustomerMessage(err, 'save', 'Could not dispatch password reset link. Please check the email address.');
+      this.forgotError = this.customerErrorService.toCustomerMessage(err, 'save', this.i18n.t('AUTH.FORGOT_PASSWORD_ERROR'));
     } finally {
       this.forgotLoading = false;
     }
   }
 
   showPassword = false;
-  appleLoginNotice = '';
 
   togglePasswordVisibility(): void {
     this.showPassword = !this.showPassword;
