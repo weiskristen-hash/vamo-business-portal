@@ -552,7 +552,7 @@ export class BusinessService {
         to: data.allDay || data.openEnd || !data.to ? undefined : this.extractTime(data.to),
         promotionStart: data.promotionStart !== undefined
           ? data.promotionStart
-          : new Date().toISOString().split('T')[0],
+          : new Date().toISOString(),
         hasPromotion: !!data.hasPromotion,
         promoText: data.hasPromotion ? (data.promoText ? data.promoText.trim() : null) : null,
         isFree: !!data.isFree,

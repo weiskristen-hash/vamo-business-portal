@@ -179,18 +179,24 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
     expect(payload.to).toBeUndefined();
   });
 
-  it('9. promotionStart is populated on event creation', async () => {
-    clientRequestMock.mockResolvedValueOnce({ id: 'ev-promo-1' });
-    clientRequestMock.mockResolvedValueOnce({ id: 'ev-promo-1' });
+  it('9. promotionStart is populated with exact full ISO timestamp on immediate event creation', async () => {
+    const fixedNow = new Date('2026-10-04T12:34:56.789Z');
+    vi.useFakeTimers();
+    vi.setSystemTime(fixedNow);
 
-    await service.createEvent({
-      name: 'Promo Event',
-    });
+    try {
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-promo-1' });
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-promo-1' });
 
-    const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
-    expect(payload.promotionStart).toBeDefined();
-    expect(typeof payload.promotionStart).toBe('string');
-    expect(payload.promotionStart.length).toBeGreaterThan(0);
+      await service.createEvent({
+        name: 'Promo Event',
+      });
+
+      const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      expect(payload.promotionStart).toBe('2026-10-04T12:34:56.789Z');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('10. nested area creation shape matches canonical Directus contract', async () => {

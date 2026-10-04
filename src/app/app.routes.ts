@@ -4,6 +4,7 @@ import { noAuthGuard } from './core/guards/no-auth.guard';
 import { businessGuard } from './core/guards/business.guard';
 import { ShellComponent } from './layout/shell/shell.component';
 import { LoginComponent } from './pages/auth/login/login.component';
+import { RegisterComponent } from './pages/auth/register/register.component';
 import { SsoCallbackComponent } from './pages/auth/callback/sso-callback.component';
 import { NoBusinessComponent } from './pages/no-business/no-business.component';
 import { OverviewComponent } from './pages/overview/overview.component';
@@ -19,6 +20,21 @@ export const routes: Routes = [
     path: 'login',
     component: LoginComponent,
     canActivate: [noAuthGuard],
+  },
+  {
+    path: 'register',
+    component: RegisterComponent,
+    canActivate: [noAuthGuard],
+  },
+  {
+    path: 'auth/register',
+    redirectTo: 'register',
+    pathMatch: 'full',
+  },
+  {
+    path: 'auth/login',
+    redirectTo: 'login',
+    pathMatch: 'full',
   },
   {
     path: 'auth/callback',

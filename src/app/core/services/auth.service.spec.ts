@@ -76,4 +76,37 @@ describe('AuthService', () => {
     expect(user.id).toBe('usr-sso');
     expect(service.currentUser?.email).toBe('alex@vamo.com');
   });
+
+  it('should call registerUser with canonical verification_url on register when email is not taken', async () => {
+    const directusClient = (await import('../directus/directus-client')).directusClient;
+    const loginSpy = vi.spyOn(directusClient, 'login').mockRejectedValue(new Error('Invalid credentials'));
+    const requestSpy = vi.spyOn(directusClient, 'request').mockResolvedValue(undefined as any);
+
+    await service.register({
+      first_name: 'Carlos',
+      last_name: 'Pérez',
+      email: 'carlos@vamo.com',
+      password: 'password123',
+    });
+
+    expect(loginSpy).toHaveBeenCalledWith({ email: 'carlos@vamo.com', password: 'password123' });
+    expect(requestSpy).toHaveBeenCalled();
+  });
+
+  it('should reject with RECORD_NOT_UNIQUE if login pre-check succeeds during register', async () => {
+    const directusClient = (await import('../directus/directus-client')).directusClient;
+    vi.spyOn(directusClient, 'login').mockResolvedValue(undefined as any);
+    vi.spyOn(directusClient, 'logout').mockResolvedValue(undefined as any);
+
+    await expect(
+      service.register({
+        first_name: 'Existing',
+        last_name: 'User',
+        email: 'taken@vamo.com',
+        password: 'password123',
+      })
+    ).rejects.toMatchObject({
+      errors: [{ extensions: { code: 'RECORD_NOT_UNIQUE' } }],
+    });
+  });
 });

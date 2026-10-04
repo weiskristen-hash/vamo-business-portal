@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
-import { passwordRequest, readMe } from '@directus/sdk';
+import { passwordRequest, readMe, registerUser } from '@directus/sdk';
 import { directusClient } from '../directus/directus-client';
 import { runtimeConfig } from '../config/runtime-config';
 import { createBrowserAuthStorage } from '../directus/browser-auth.storage';
@@ -217,6 +217,34 @@ export class AuthService {
   // ======================================================
   // 🔹 LOGIN & SSO
   // ======================================================
+
+  async register(payload: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    password: string;
+  }): Promise<void> {
+    // Canonical VAMO pre-check: Directus returns 204 even for duplicate emails without throwing.
+    // If login succeeds with these credentials, the email is already registered.
+    try {
+      await directusClient.login({ email: payload.email, password: payload.password });
+      try { await directusClient.logout(); } catch { /* ignore */ }
+      const takenErr: any = new Error('Email already taken');
+      takenErr.errors = [{ extensions: { code: 'RECORD_NOT_UNIQUE' }, message: 'Email already taken' }];
+      throw takenErr;
+    } catch (preLoginErr: any) {
+      if (preLoginErr?.errors?.[0]?.extensions?.code === 'RECORD_NOT_UNIQUE') throw preLoginErr;
+      // Login failed -> email is not registered with this password, proceed to registerUser
+    }
+
+    await directusClient.request(
+      registerUser(payload.email, payload.password, {
+        verification_url: 'https://vamo-app.com/verify.html',
+        first_name: payload.first_name,
+        last_name: payload.last_name,
+      })
+    );
+  }
 
   async login(email: string, password: string): Promise<VamoUser> {
     await directusClient.login({ email, password });

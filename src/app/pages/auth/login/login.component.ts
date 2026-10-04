@@ -187,9 +187,9 @@ import { environment } from '../../../../environments/environment';
           </div>
 
           <div class="card-footer-info">
-            <span>Don't have a VAMO business account?</span>
-            <a href="https://vamo-app.com" target="_blank" rel="noopener" class="signup-link">
-              Get started on VAMO →
+            <span>Don't have an account yet?</span>
+            <a routerLink="/register" class="signup-link">
+              Register here →
             </a>
           </div>
         </div>
