@@ -1834,6 +1834,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     currency: 'USD',
     hasPromotion: false,
     promoText: null,
+    promotionStart: null,
     address: '',
     recurring: { days: ['fri', 'sat'] },
   };
@@ -1913,6 +1914,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   initNewDraft(): void {
     const today = this.businessService.drTodayStr();
     this.draft.startDate = today;
+    this.draft.promotionStart = new Date().toISOString();
     this.draft.address = this.providerAddress;
     this.lat = this.providerLat;
     this.lng = this.providerLng;
@@ -1951,6 +1953,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         openEnd: !!event.openEnd,
         from: event.from ? event.from.substring(0, 5) : '19:00',
         to: event.to ? event.to.substring(0, 5) : '22:00',
+        promotionStart: event.promotionStart ?? new Date().toISOString(),
         isFree: event.isFree !== undefined ? !!event.isFree : true,
         contactForPrice: !!event.contactForPrice,
         price: event.price ?? 0,
@@ -2420,6 +2423,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         from: this.draft.allDay ? undefined : (this.draft.from || undefined),
         to: this.draft.allDay || this.draft.openEnd ? undefined : (this.draft.to || undefined),
         recurring: this.draft.mode === 'recurring' ? this.draft.recurring : { days: [] },
+        promotionStart: this.draft.promotionStart || new Date().toISOString(),
         isFree: !!this.draft.isFree,
         contactForPrice: !!this.draft.contactForPrice,
         price: this.draft.isFree || this.draft.contactForPrice ? 0 : (this.draft.price || 0),

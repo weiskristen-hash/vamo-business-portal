@@ -500,4 +500,168 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
       });
     });
   });
+
+  describe('Translation Trigger & Event Update Parity (Phase 2A)', () => {
+    const fixedIso = '2026-10-04T12:00:00.000Z';
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(fixedIso));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('19. updateEvent full-object parity: sends complete canonical payload with status published without images', async () => {
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-full-update' }); // updateItem
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-full-update', name: 'Updated Festival' }); // read back
+
+      await service.updateEvent(
+        'ev-full-update',
+        {
+          name: 'Updated Festival',
+          category: 'festivals',
+          description: 'Annual cultural festival celebration',
+          location_point: { type: 'Point', coordinates: [-69.89, 18.48] },
+          address: 'Zona Colonial, Santo Domingo',
+          startDate: '2026-11-20',
+          endDate: '2026-11-22',
+          allDay: false,
+          openEnd: false,
+          mode: 'single',
+          recurring: { days: [] },
+          from: '16:00',
+          to: '23:00',
+          promotionStart: fixedIso,
+          hasPromotion: true,
+          promoText: 'Early Bird discount 20%',
+          isFree: false,
+          contactForPrice: false,
+          price: 25,
+          currency: 'USD',
+          status: 'published',
+        },
+        [],
+        [],
+        ['area-sd'],
+        [101]
+      );
+
+      // Exactly 2 calls: updateItem (PATCH) then readItem (GET). No secondary image call.
+      expect(clientRequestMock).toHaveBeenCalledTimes(2);
+      expect(extractMethod(clientRequestMock.mock.calls[0][0])).toBe('PATCH');
+
+      const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      expect(payload).toEqual({
+        name: 'Updated Festival',
+        category: 'festivals',
+        description: 'Annual cultural festival celebration',
+        location_point: { type: 'Point', coordinates: [-69.89, 18.48] },
+        address: 'Zona Colonial, Santo Domingo',
+        startDate: '2026-11-20',
+        endDate: '2026-11-22',
+        allDay: false,
+        mode: 'single',
+        recurring: JSON.stringify({ days: [] }),
+        from: '16:00:00',
+        to: '23:00:00',
+        promotionStart: fixedIso,
+        hasPromotion: true,
+        promoText: 'Early Bird discount 20%',
+        isFree: false,
+        contactForPrice: false,
+        price: 25,
+        currency: 'USD',
+        areas: {
+          create: [{ areas_id: 'area-sd' }],
+          update: [],
+          delete: [101],
+        },
+        status: 'published',
+      });
+      expect(payload.images).toBeUndefined();
+      expect(payload.translations).toBeUndefined();
+      expect(payload.translation_status).toBeUndefined();
+    });
+
+    it('20. updateEvent canonical image attachment: performs primary metadata update first, then secondary image junction update', async () => {
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-img-update' }); // primary updateItem
+      vi.spyOn(service, 'uploadEventImages').mockResolvedValueOnce(['new-img-file-id']);
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-img-update' }); // secondary updateItem for images
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-img-update', name: 'Event with Images' }); // read back
+
+      const mockFiles = [new File(['dummy'], 'poster.png')];
+      await service.updateEvent(
+        'ev-img-update',
+        {
+          name: 'Event with Images',
+          status: 'published',
+        },
+        mockFiles,
+        [42]
+      );
+
+      // Call 0: primary updateItem for metadata
+      expect(extractMethod(clientRequestMock.mock.calls[0][0])).toBe('PATCH');
+      const primaryPayload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      expect(primaryPayload.name).toBe('Event with Images');
+      expect(primaryPayload.status).toBe('published');
+      expect(primaryPayload.images).toBeUndefined();
+
+      // Call 1: secondary updateItem for images junction
+      expect(extractMethod(clientRequestMock.mock.calls[1][0])).toBe('PATCH');
+      const imagePayload = extractPayload(clientRequestMock.mock.calls[1][0]);
+      expect(imagePayload.images).toEqual({
+        create: [{ directus_files_id: 'new-img-file-id', events_id: 'ev-img-update' }],
+        update: [],
+        delete: [42],
+      });
+      // Ensure secondary image payload does NOT contain status or metadata
+      expect(imagePayload.status).toBeUndefined();
+      expect(imagePayload.name).toBeUndefined();
+    });
+
+    it('21. translations and translation_status are strictly stripped from write payloads on create and update', async () => {
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-strip-create' });
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-strip-create' });
+
+      // Simulate caller passing cached or contaminated event record
+      const contaminatedData: any = {
+        name: 'Contaminated Event',
+        status: 'published',
+        translations: [{ id: 1, languages_code: 'es-ES', name: 'Evento Contaminado' }],
+        translation_status: 'completed',
+      };
+
+      await service.createEvent(contaminatedData);
+      const createPayload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      expect(createPayload.translations).toBeUndefined();
+      expect(createPayload.translation_status).toBeUndefined();
+
+      clientRequestMock.mockReset();
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-strip-update' });
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-strip-update' });
+
+      await service.updateEvent('ev-strip-update', contaminatedData);
+      const updatePayload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      expect(updatePayload.translations).toBeUndefined();
+      expect(updatePayload.translation_status).toBeUndefined();
+      expect(updatePayload.status).toBe('published');
+    });
+
+    it('22. updateEvent preserves status draft when saving draft edit', async () => {
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-draft-update' });
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-draft-update', status: 'draft' });
+
+      await service.updateEvent('ev-draft-update', {
+        name: 'Draft Edit',
+        status: 'draft',
+      });
+
+      const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      expect(payload.status).toBe('draft');
+      expect(payload.name).toBe('Draft Edit');
+    });
+  });
 });

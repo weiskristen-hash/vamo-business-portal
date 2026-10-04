@@ -567,6 +567,11 @@ export class BusinessService {
         status: data.status,
       };
 
+      // Ensure translations, translation_status, and images are never in the primary event payload
+      delete payload['translations'];
+      delete payload['translation_status'];
+      delete payload['images'];
+
       // Directus createItem
       const created = await directusClient.request<any>(createItem('events', payload as any));
       if (!created?.id) throw new Error('Failed to create event in Directus');
@@ -602,6 +607,10 @@ export class BusinessService {
 
   /**
    * Updates an existing event in Directus matching canonical VamoEvent update contract.
+   * Following canonical saveEventWithImages (event.service.ts):
+   * 1. Primary write updates event record with metadata (including status, without images).
+   * 2. Secondary write attaches/deletes images junction records ONLY if new files or removed junctions exist.
+   * Translations and translation_status are strictly managed by Directus backend Flows and never sent.
    */
   async updateEvent(
     eventId: string,
@@ -666,17 +675,25 @@ export class BusinessService {
         };
       }
 
-      // Handle image updates
-      const newFileIds = files.length > 0 ? await this.uploadEventImages(files) : [];
-      if (newFileIds.length > 0 || removedImageJunctionIds.length > 0) {
-        payload['images'] = {
-          create: newFileIds.map((fid) => ({ directus_files_id: fid, events_id: eventId })),
-          update: [],
-          delete: removedImageJunctionIds,
-        };
-      }
+      // Ensure translations, translation_status, and images are never in the primary event payload
+      delete payload['translations'];
+      delete payload['translation_status'];
+      delete payload['images'];
 
+      // 1. Primary write: update event record with metadata (including status, triggering Translate Event Flow if published)
       await directusClient.request(updateItem('events', eventId, payload as any));
+
+      // 2. Secondary write: attach/delete images junction records if needed (matching canonical saveEventWithImages)
+      if (files.length > 0 || removedImageJunctionIds.length > 0) {
+        const newFileIds = files.length > 0 ? await this.uploadEventImages(files) : [];
+        await directusClient.request(updateItem('events', eventId, {
+          images: {
+            create: newFileIds.map((fid) => ({ directus_files_id: fid, events_id: eventId })),
+            update: [],
+            delete: removedImageJunctionIds,
+          },
+        } as any));
+      }
 
       // Read back updated event, with resilient fallback to prevent false "save failed" states
       try {
