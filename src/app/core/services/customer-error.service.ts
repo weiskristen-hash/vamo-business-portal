@@ -140,6 +140,20 @@ export class CustomerErrorService {
         };
 
       case 'save':
+        return {
+          headline: this.i18n.t('PORTAL.ERRORS.SAVE_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.SAVE_MSG'),
+          secondaryMessage: this.i18n.t('PORTAL.ERRORS.SUPPORT_SECONDARY', { email: VAMO_SUPPORT_EMAIL }),
+          actionText: this.i18n.t('PORTAL.ERRORS.TRY_AGAIN'),
+        };
+
+      case 'validation':
+        return {
+          headline: this.i18n.t('PORTAL.ERRORS.VALIDATION_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.VALIDATION_MSG'),
+          actionText: this.i18n.t('PORTAL.ERRORS.TRY_AGAIN'),
+        };
+
       default:
         return {
           headline: this.i18n.t('PORTAL.ERRORS.SAVE_HEADLINE'),

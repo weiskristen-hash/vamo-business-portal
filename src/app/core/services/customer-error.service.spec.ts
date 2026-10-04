@@ -129,13 +129,36 @@ describe('CustomerErrorService', () => {
       expect(msg).toBe("We couldn't load your business profile. Please refresh the page.");
     });
 
-    it('should sanitize technical leaks in custom validation messages', () => {
+    it('should handle validation category with default message when no customValidationMessage is provided', () => {
+      const detail = service.toCustomerError(null, 'validation');
+
+      expect(detail.headline).toBe('Please check your information');
+      expect(detail.message).toBe('Please fix the validation errors before saving.');
+      expect(detail.actionText).toBe('Try Again');
+      expect(detail.headline).not.toBe('Save failed');
+      expect(detail.message).not.toBe("We couldn't save your changes. Please try again.");
+    });
+
+    it('should return localized validation message in Spanish when UI language is es', () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+
+      const detail = service.toCustomerError(null, 'validation');
+      expect(detail.headline).toBe('Por favor revisa tu información');
+      expect(detail.message).toBe('Por favor corrige los errores antes de guardar.');
+      expect(detail.actionText).toBe('Intentar de nuevo');
+
+      i18n.setLang('en');
+    });
+
+    it('should sanitize technical leaks in custom validation messages and fallback to validation error message', () => {
       const leakyValidation = "Validation failed: collection 'providers' has invalid schema";
       const detail = service.toCustomerError(null, 'validation', leakyValidation);
 
       expect(detail.message).not.toContain('collection');
       expect(detail.message).not.toContain('schema');
-      expect(detail.message).toBe("We couldn't save your changes. Please try again.");
+      expect(detail.headline).toBe('Please check your information');
+      expect(detail.message).toBe('Please fix the validation errors before saving.');
     });
 
     it('should allow legitimate user-facing validation messages', () => {

@@ -9,9 +9,9 @@ import { I18nService } from './i18n.service';
 export class TranslatePipe implements PipeTransform {
   private readonly i18n = inject(I18nService);
 
-  transform(key: string, params?: Record<string, string | number>): string {
+  transform(key: string, params?: Record<string, string | number | null | undefined>): string {
     // Read the signal to track reactive dependency
     this.i18n.lang();
-    return this.i18n.t(key, params);
+    return this.i18n.t(key, params as any);
   }
 }
