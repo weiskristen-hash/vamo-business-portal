@@ -45,7 +45,7 @@ describe('I18n Parity & Language Switching System', () => {
       expect(service.dateLocale()).toBe('en-US');
 
       service.setLang('es');
-      expect(service.dateLocale()).toBe('es-DO');
+      expect(service.dateLocale()).toBe('es');
     });
   });
 

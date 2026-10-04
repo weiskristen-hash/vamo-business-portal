@@ -1,5 +1,6 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { environment } from '../../../environments/environment';
+import { I18nService } from '../i18n/i18n.service';
 
 export type ErrorActionCategory =
   | 'auth'
@@ -24,6 +25,8 @@ export const VAMO_SUPPORT_EMAIL = 'support@vamo-app.com';
   providedIn: 'root',
 })
 export class CustomerErrorService {
+  private readonly i18n = inject(I18nService);
+
   private readonly technicalPatterns = [
     /directus/i,
     /collection/i,
@@ -75,7 +78,7 @@ export class CustomerErrorService {
     if (category === 'validation' && customValidationMessage) {
       if (!this.containsTechnicalLeak(customValidationMessage)) {
         return {
-          headline: 'Please check your information',
+          headline: this.i18n.t('PORTAL.ERRORS.VALIDATION_HEADLINE'),
           message: customValidationMessage,
         };
       }
@@ -87,60 +90,62 @@ export class CustomerErrorService {
     switch (detectedCategory) {
       case 'auth':
         return {
-          headline: 'Session expired',
-          message: 'Your session has expired. Please sign in again.',
-          actionText: 'Sign In',
+          headline: this.i18n.t('PORTAL.ERRORS.AUTH_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.AUTH_MSG'),
+          actionText: this.i18n.t('PORTAL.ERRORS.AUTH_ACTION'),
         };
 
       case 'network':
         return {
-          headline: 'Connection issue',
-          message: "We're having trouble connecting. Check your connection and try again.",
-          secondaryMessage: `If the problem continues, contact VAMO support at ${VAMO_SUPPORT_EMAIL}.`,
-          actionText: 'Try Again',
+          headline: this.i18n.t('PORTAL.ERRORS.NETWORK_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.NETWORK_MSG'),
+          secondaryMessage: this.i18n.t('PORTAL.ERRORS.NETWORK_SECONDARY', { email: VAMO_SUPPORT_EMAIL }),
+          actionText: this.i18n.t('PORTAL.ERRORS.TRY_AGAIN'),
         };
 
       case 'permission':
         return {
-          headline: category === 'load' ? 'Loading error' : 'Action unavailable',
+          headline: category === 'load'
+            ? this.i18n.t('PORTAL.ERRORS.PERMISSION_LOAD_HEADLINE')
+            : this.i18n.t('PORTAL.ERRORS.PERMISSION_ACTION_HEADLINE'),
           message: category === 'load'
-            ? "We couldn't load your business profile. Please refresh the page."
-            : "We couldn't make that change. This action is not available for your account.",
-          secondaryMessage: `If you believe this is an error, please reach out to ${VAMO_SUPPORT_EMAIL}.`,
-          actionText: category === 'load' ? 'Refresh' : undefined,
+            ? this.i18n.t('PORTAL.ERRORS.PERMISSION_LOAD_MSG')
+            : this.i18n.t('PORTAL.ERRORS.PERMISSION_ACTION_MSG'),
+          secondaryMessage: this.i18n.t('PORTAL.ERRORS.PERMISSION_SECONDARY', { email: VAMO_SUPPORT_EMAIL }),
+          actionText: category === 'load' ? this.i18n.t('PORTAL.ERRORS.REFRESH') : undefined,
         };
 
       case 'upload':
         return {
-          headline: 'Upload failed',
-          message: "We couldn't upload that image. Please try again.",
-          secondaryMessage: 'Supported formats include JPG, PNG, and WebP up to 10MB.',
-          actionText: 'Try Again',
+          headline: this.i18n.t('PORTAL.ERRORS.UPLOAD_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.UPLOAD_MSG'),
+          secondaryMessage: this.i18n.t('PORTAL.ERRORS.UPLOAD_SECONDARY'),
+          actionText: this.i18n.t('PORTAL.ERRORS.TRY_AGAIN'),
         };
 
       case 'delete':
         return {
-          headline: 'Removal failed',
-          message: "We couldn't remove this item. Please try again.",
-          secondaryMessage: `If the problem continues, contact VAMO support at ${VAMO_SUPPORT_EMAIL}.`,
-          actionText: 'Try Again',
+          headline: this.i18n.t('PORTAL.ERRORS.DELETE_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.DELETE_MSG'),
+          secondaryMessage: this.i18n.t('PORTAL.ERRORS.SUPPORT_SECONDARY', { email: VAMO_SUPPORT_EMAIL }),
+          actionText: this.i18n.t('PORTAL.ERRORS.TRY_AGAIN'),
         };
 
       case 'load':
         return {
-          headline: 'Loading error',
-          message: "We couldn't load this information. Please refresh the page.",
-          secondaryMessage: `If the problem continues, contact VAMO support at ${VAMO_SUPPORT_EMAIL}.`,
-          actionText: 'Refresh',
+          headline: this.i18n.t('PORTAL.ERRORS.LOAD_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.LOAD_MSG'),
+          secondaryMessage: this.i18n.t('PORTAL.ERRORS.SUPPORT_SECONDARY', { email: VAMO_SUPPORT_EMAIL }),
+          actionText: this.i18n.t('PORTAL.ERRORS.REFRESH'),
         };
 
       case 'save':
       default:
         return {
-          headline: 'Save failed',
-          message: "We couldn't save your changes. Please try again.",
-          secondaryMessage: `If the problem continues, contact VAMO support at ${VAMO_SUPPORT_EMAIL}.`,
-          actionText: 'Try Again',
+          headline: this.i18n.t('PORTAL.ERRORS.SAVE_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.SAVE_MSG'),
+          secondaryMessage: this.i18n.t('PORTAL.ERRORS.SUPPORT_SECONDARY', { email: VAMO_SUPPORT_EMAIL }),
+          actionText: this.i18n.t('PORTAL.ERRORS.TRY_AGAIN'),
         };
     }
   }
