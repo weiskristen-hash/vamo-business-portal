@@ -369,13 +369,13 @@ export class OnboardingComponent implements OnInit {
         (this.waNumberSameAsPhone ? this.businessPhone : this.businessWhatsapp).trim() || null;
 
       const providerPayload: Record<string, any> = {
-        name: this.businessName.trim(),
+        name: this.businessName,
         business_type: this.businessType,
-        description: this.businessDescription.trim(),
-        phone: this.businessPhone.trim(),
+        description: this.businessDescription,
+        phone: this.businessPhone,
         wa_number: waNumber,
         email: (this.email.trim() || this.authService.currentUser?.email) ?? null,
-        address: this.businessAddress.trim(),
+        address: this.businessAddress,
         city: area.name,
         area: area.id,
         location: this.businessLocation ?? {
@@ -384,6 +384,8 @@ export class OnboardingComponent implements OnInit {
         },
         status: 'published',
       };
+      delete providerPayload['translations'];
+      delete providerPayload['translation_status'];
 
       await this.authService.createProviderAndLink(providerPayload);
 

@@ -92,8 +92,8 @@ export class BusinessService {
   ] as const;
 
   /**
-   * Builds a strictly validated and sanitized provider update payload.
-   * Strips all protected and unexpected fields, and optionally excludes unchanged values.
+   * Builds a strictly validated and sanitized provider update payload matching canonical VAMO semantics.
+   * Strips all protected and translation metadata fields, preserving canonical full payload semantics.
    */
   buildSafeProviderPayload(
     data: Partial<Provider>,
@@ -102,40 +102,40 @@ export class BusinessService {
     const payload: Record<string, any> = {};
 
     if (data.name !== undefined) {
-      payload['name'] = data.name.trim();
+      payload['name'] = data.name;
     }
     if (data.business_type !== undefined) {
       payload['business_type'] = data.business_type;
     }
     if (data.description !== undefined) {
-      payload['description'] = data.description.trim();
+      payload['description'] = data.description;
     }
     if (data.address !== undefined) {
-      payload['address'] = data.address.trim();
+      payload['address'] = data.address;
     }
     if (data.city !== undefined) {
-      payload['city'] = data.city?.trim() || null;
+      payload['city'] = data.city;
     }
     if (data.email !== undefined) {
       payload['email'] = data.email?.trim() || null;
     }
     if (data.phone !== undefined) {
-      payload['phone'] = data.phone?.trim() || null;
+      payload['phone'] = data.phone;
     }
     if (data.wa_number !== undefined) {
       payload['wa_number'] = data.wa_number?.trim() || null;
     }
     if (data.facebook !== undefined) {
-      payload['facebook'] = data.facebook?.trim() || null;
+      payload['facebook'] = data.facebook;
     }
     if (data.instagram !== undefined) {
-      payload['instagram'] = data.instagram?.trim() || null;
+      payload['instagram'] = data.instagram;
     }
     if (data.google_business_link !== undefined) {
-      payload['google_business_link'] = data.google_business_link?.trim() || null;
+      payload['google_business_link'] = data.google_business_link;
     }
     if (data.location !== undefined) {
-      payload['location'] = data.location;
+      payload['location'] = data.location ?? null;
     }
     if (data.offerings !== undefined) {
       payload['offerings'] = Array.isArray(data.offerings) ? data.offerings : [];
@@ -143,33 +143,27 @@ export class BusinessService {
     if (data.opening_times !== undefined) {
       payload['opening_times'] = (data.opening_times || []).map((ot) => ({
         day: ot.day,
-        opens_at: ot.opens_at || '',
-        closes_at: ot.closes_at || '',
-        break_from: ot.break_from || '',
-        break_to: ot.break_to || '',
-        closed: !!ot.closed,
+        opens_at: ot.opens_at || null,
+        closes_at: ot.closes_at || null,
+        break_from: ot.break_from || null,
+        break_to: ot.break_to || null,
+        closed: ot.closed,
       }));
     }
     if (data.logo !== undefined) {
       payload['logo'] =
         typeof data.logo === 'object' && data.logo !== null
           ? (data.logo as any).id
-          : data.logo;
+          : data.logo ?? null;
     }
     if (data.images !== undefined) {
       payload['images'] = data.images;
     }
 
-    // If original is provided, omit unchanged fields to minimize mutation surface
-    if (original) {
-      for (const key of Object.keys(payload)) {
-        const origVal = (original as any)[key];
-        const newVal = payload[key];
-        if (JSON.stringify(origVal) === JSON.stringify(newVal)) {
-          delete payload[key];
-        }
-      }
-    }
+    // Defensive: never include translation metadata or status on provider updates
+    delete payload['translations'];
+    delete payload['translation_status'];
+    delete payload['status'];
 
     return payload;
   }
