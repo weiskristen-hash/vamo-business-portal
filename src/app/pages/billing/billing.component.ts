@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
 import { CustomerErrorService } from '../../core/services/customer-error.service';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import {
   StripeService,
   StripePlan,
@@ -11,20 +13,21 @@ import {
   BillingHistoryItem,
   SavedPaymentMethod,
   PromoResult,
+  getCanonicalTierFeatures,
 } from '../../core/services/stripe.service';
 import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
 @Component({
   selector: 'app-billing',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TranslatePipe],
   template: `
 <div class="billing-page">
   <!-- Header -->
   <header class="page-header">
     <div class="header-titles">
-      <h1 class="page-title">Subscription & Billing</h1>
-      <p class="page-subtitle">Manage your VAMO business tier, publishing quotas, and invoice receipts.</p>
+      <h1 class="page-title">{{ 'PORTAL.BILLING.TITLE' | translate }}</h1>
+      <p class="page-subtitle">{{ 'PORTAL.BILLING.SUBTITLE' | translate }}</p>
     </div>
   </header>
 
@@ -32,19 +35,19 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   <div *ngIf="errorMessage()" class="alert alert-danger" role="alert">
     <span class="alert-icon">⚠️</span>
     <span class="alert-text">{{ errorMessage() }}</span>
-    <button type="button" class="alert-close" (click)="errorMessage.set(null)" aria-label="Dismiss">✕</button>
+    <button type="button" class="alert-close" (click)="errorMessage.set(null)" [attr.aria-label]="'PORTAL.BILLING.DISMISS' | translate">✕</button>
   </div>
 
   <div *ngIf="successMessage()" class="alert alert-success" role="alert">
     <span class="alert-icon">✓</span>
     <span class="alert-text">{{ successMessage() }}</span>
-    <button type="button" class="alert-close" (click)="successMessage.set(null)" aria-label="Dismiss">✕</button>
+    <button type="button" class="alert-close" (click)="successMessage.set(null)" [attr.aria-label]="'PORTAL.BILLING.DISMISS' | translate">✕</button>
   </div>
 
   <!-- Loading State -->
   <div *ngIf="isLoading() && subscription() === undefined" class="loading-container">
     <div class="spinner"></div>
-    <p>Loading subscription details…</p>
+    <p>{{ 'PORTAL.BILLING.LOADING' | translate }}</p>
   </div>
 
   <!-- Content when loaded -->
@@ -61,15 +64,15 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
         <div class="status-indicator">
           <span class="status-dot"></span>
           <span class="status-label">
-            {{ sub.cancelAtPeriodEnd ? 'Cancels at Period End' : 'Active Subscription' }}
+            {{ (sub.cancelAtPeriodEnd ? 'PORTAL.BILLING.STATUS_CANCELING' : 'PORTAL.BILLING.STATUS_ACTIVE') | translate }}
           </span>
         </div>
         <div class="status-date">
           <span *ngIf="sub.cancelAtPeriodEnd">
-            Access until <strong>{{ formatDate(sub.currentPeriodEnd) }}</strong>
+            {{ 'PORTAL.BILLING.ACCESS_UNTIL' | translate }} <strong>{{ formatDate(sub.currentPeriodEnd) }}</strong>
           </span>
           <span *ngIf="!sub.cancelAtPeriodEnd">
-            Renews on <strong>{{ formatDate(sub.currentPeriodEnd) }}</strong>
+            {{ 'PORTAL.BILLING.RENEWS_ON' | translate }} <strong>{{ formatDate(sub.currentPeriodEnd) }}</strong>
           </span>
         </div>
       </div>
@@ -79,8 +82,8 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
         <div class="pending-info">
           <span class="pending-icon">⏳</span>
           <div class="pending-text">
-            <strong>Scheduled Plan Change:</strong>
-            <span>Downgrade to {{ sub.pendingPlanName }} will take effect on {{ formatDate(sub.pendingPeriodEnd) }}.</span>
+            <strong>{{ 'PORTAL.BILLING.SCHEDULED_CHANGE_TITLE' | translate }}</strong>
+            <span>{{ 'PORTAL.BILLING.PENDING_DOWNGRADE_DESC' | translate: { plan: sub.pendingPlanName, date: formatDate(sub.pendingPeriodEnd) } }}</span>
           </div>
         </div>
         <button
@@ -89,7 +92,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
           [disabled]="isLoading()"
           (click)="cancelPendingDowngrade()"
         >
-          Cancel Downgrade
+          {{ 'PORTAL.BILLING.CANCEL_DOWNGRADE_BTN' | translate }}
         </button>
       </div>
 
@@ -98,16 +101,16 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
         <!-- Current Plan Card -->
         <div class="card current-plan-card">
           <div class="card-header">
-            <span class="card-eyebrow">Current Plan</span>
+            <span class="card-eyebrow">{{ 'PORTAL.BILLING.CURRENT_PLAN' | translate }}</span>
             <span class="tier-pill">{{ sub.plan.productName }}</span>
           </div>
           <div class="card-body">
             <div class="plan-price-display">
               <span class="price-val">{{ formatPrice(sub.plan.amount, sub.plan.currency) }}</span>
-              <span class="price-interval">/ {{ sub.plan.interval }}</span>
+              <span class="price-interval">/ {{ (sub.plan.interval === 'year' ? 'PORTAL.BILLING.INTERVAL_YEAR' : 'PORTAL.BILLING.INTERVAL_MONTH') | translate }}</span>
             </div>
             <p class="plan-note">
-              Billed through Stripe. Manage your active events and campaign tier below.
+              {{ 'PORTAL.BILLING.PLAN_NOTE' | translate }}
             </p>
           </div>
           <div class="card-footer actions-row">
@@ -117,7 +120,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               *ngIf="!showChangePlanSection()"
               (click)="openChangePlan()"
             >
-              Change Plan
+              {{ 'PORTAL.BILLING.CHANGE_PLAN_BTN' | translate }}
             </button>
             <button
               type="button"
@@ -125,7 +128,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               *ngIf="showChangePlanSection()"
               (click)="closeChangePlan()"
             >
-              Keep Current Plan
+              {{ 'PORTAL.BILLING.KEEP_PLAN_BTN' | translate }}
             </button>
             
             <!-- Cancel / Reactivate -->
@@ -135,7 +138,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               *ngIf="!sub.cancelAtPeriodEnd"
               (click)="openCancelModal()"
             >
-              Cancel Subscription
+              {{ 'PORTAL.BILLING.CANCEL_SUB_BTN' | translate }}
             </button>
             <button
               type="button"
@@ -144,7 +147,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               [disabled]="isLoading()"
               (click)="reactivateSubscription()"
             >
-              Reactivate Subscription
+              {{ 'PORTAL.BILLING.REACTIVATE_SUB_BTN' | translate }}
             </button>
           </div>
         </div>
@@ -152,8 +155,8 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
         <!-- Publishing Quota Card -->
         <div class="card quota-card">
           <div class="card-header">
-            <span class="card-eyebrow">Publishing Quota</span>
-            <span class="quota-count font-mono">{{ postsUsed() }} / {{ postLimit() }} Posts</span>
+            <span class="card-eyebrow">{{ 'PORTAL.BILLING.QUOTA_TITLE' | translate }}</span>
+            <span class="quota-count font-mono">{{ 'PORTAL.BILLING.QUOTA_COUNT' | translate: { used: postsUsed(), limit: postLimit() } }}</span>
           </div>
           <div class="card-body">
             <div class="progress-bar-bg" role="progressbar" [attr.aria-valuenow]="postsUsed()" [attr.aria-valuemax]="postLimit()">
@@ -164,7 +167,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               ></div>
             </div>
             <p class="quota-desc">
-              {{ postsUsed() }} active listing(s) published on VAMO discovery. Upgrade your plan to increase your active post capacity.
+              {{ 'PORTAL.BILLING.QUOTA_DESC' | translate: { used: postsUsed() } }}
             </p>
           </div>
         </div>
@@ -179,14 +182,13 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
     >
       <div class="section-header">
         <h2 id="plans-heading" class="section-title">
-          {{ subscription() === null ? 'Choose Your Business Plan' : 'Select a New Plan' }}
+          {{ (subscription() === null ? 'PORTAL.BILLING.PLANS_TITLE_NEW' : 'PORTAL.BILLING.PLANS_TITLE_CHANGE') | translate }}
         </h2>
         <p class="section-subtitle">
-          Select the option that matches your event calendar and promotion frequency.
+          {{ 'PORTAL.BILLING.PLANS_SUBTITLE' | translate }}
         </p>
       </div>
 
-      <!-- Plan Cards Grid -->
       <!-- Plan Cards Grid -->
       <div *ngIf="plans().length > 0" class="plans-grid">
         <div
@@ -199,20 +201,20 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
           <div class="plan-card-header">
             <div class="plan-title-row">
               <h3 class="plan-name">{{ plan.name }}</h3>
-              <span *ngIf="isCurrentPlan(plan)" class="badge badge-current">Current Plan</span>
-              <span *ngIf="isPendingPlan(plan)" class="badge badge-scheduled">Scheduled</span>
+              <span *ngIf="isCurrentPlan(plan)" class="badge badge-current">{{ 'PORTAL.BILLING.BADGE_CURRENT' | translate }}</span>
+              <span *ngIf="isPendingPlan(plan)" class="badge badge-scheduled">{{ 'PORTAL.BILLING.BADGE_SCHEDULED' | translate }}</span>
             </div>
             <div class="plan-price">
               <span class="currency-amount">{{ formatPrice(plan.amount, plan.currency) }}</span>
-              <span class="interval-text">/ {{ plan.interval }}</span>
+              <span class="interval-text">/ {{ (plan.interval === 'year' ? 'PORTAL.BILLING.INTERVAL_YEAR' : 'PORTAL.BILLING.INTERVAL_MONTH') | translate }}</span>
             </div>
             <p class="plan-description">{{ plan.description }}</p>
           </div>
 
           <div class="plan-card-body">
-            <span class="features-label">Included Entitlements:</span>
+            <span class="features-label">{{ 'PORTAL.BILLING.ENTITLEMENTS_LABEL' | translate }}</span>
             <ul class="features-list">
-              <li *ngFor="let feat of plan.features" class="feature-item">
+              <li *ngFor="let feat of getPlanFeatures(plan)" class="feature-item">
                 <span class="feature-check">✓</span>
                 <span class="feature-text">{{ feat }}</span>
               </li>
@@ -227,10 +229,10 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               [class.btn-outline-primary]="selectedPlan()?.id !== plan.id && !isCurrentPlan(plan) && !isPendingPlan(plan)"
               [disabled]="isCurrentPlan(plan) || isPendingPlan(plan)"
             >
-              <span *ngIf="isCurrentPlan(plan)">Active</span>
-              <span *ngIf="isPendingPlan(plan)">Scheduled</span>
+              <span *ngIf="isCurrentPlan(plan)">{{ 'PORTAL.BILLING.BTN_ACTIVE' | translate }}</span>
+              <span *ngIf="isPendingPlan(plan)">{{ 'PORTAL.BILLING.BADGE_SCHEDULED' | translate }}</span>
               <span *ngIf="!isCurrentPlan(plan) && !isPendingPlan(plan)">
-                {{ selectedPlan()?.id === plan.id ? 'Selected' : 'Select Plan' }}
+                {{ (selectedPlan()?.id === plan.id ? 'PORTAL.BILLING.BTN_SELECTED' : 'PORTAL.BILLING.BTN_SELECT') | translate }}
               </span>
             </button>
           </div>
@@ -240,17 +242,16 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
       <!-- Empty Plans Fallback Notice -->
       <div *ngIf="plans().length === 0" class="alert alert-warning empty-plans-alert">
         <span class="alert-icon">⚠️</span>
-        <span class="alert-text">We couldn't load current plan pricing. Please try again later.</span>
+        <span class="alert-text">{{ 'PORTAL.BILLING.EMPTY_PLANS' | translate }}</span>
       </div>
 
       <!-- Downgrade Warning Notice -->
       <div *ngIf="downgradeWarning() as dw" class="alert alert-warning downgrade-warning-box">
         <span class="alert-icon">⚠️</span>
         <div class="alert-body">
-          <strong>Notice: Some posts will be moved to drafts</strong>
+          <strong>{{ 'PORTAL.BILLING.DOWNGRADE_WARN_TITLE' | translate }}</strong>
           <p>
-            You currently have {{ dw.activePosts }} active post(s), but your new plan only allows {{ dw.newLimit }}.
-            The excess posts will be moved to drafts automatically when your new plan activates.
+            {{ 'PORTAL.BILLING.DOWNGRADE_WARN_DESC' | translate: { activePosts: dw.activePosts, newLimit: dw.newLimit } }}
           </p>
           <div class="warning-actions">
             <button
@@ -259,14 +260,14 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               [disabled]="isLoading()"
               (click)="confirmDowngradeAnyway()"
             >
-              Downgrade Anyway
+              {{ 'PORTAL.BILLING.BTN_DOWNGRADE_ANYWAY' | translate }}
             </button>
             <button
               type="button"
               class="btn btn-secondary btn-sm"
               (click)="dismissDowngradeWarning()"
             >
-              Keep Current Plan
+              {{ 'PORTAL.BILLING.KEEP_PLAN_BTN' | translate }}
             </button>
           </div>
         </div>
@@ -276,28 +277,28 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
       <div *ngIf="selectedPlan() as selPlan" class="card checkout-panel">
         <div class="checkout-header">
           <h3>
-            {{ subscription() === null ? 'Complete Your Subscription' : 'Confirm Plan Change' }}
+            {{ (subscription() === null ? 'PORTAL.BILLING.CHECKOUT_TITLE_NEW' : 'PORTAL.BILLING.CHECKOUT_TITLE_CHANGE') | translate }}
           </h3>
           <p>
-            Upgrading or changing to <strong>{{ selPlan.name }}</strong> ({{ formatPrice(selPlan.amount, selPlan.currency) }} / {{ selPlan.interval }}).
+            {{ 'PORTAL.BILLING.CHECKOUT_SUBTITLE' | translate: { name: selPlan.name, price: formatPrice(selPlan.amount, selPlan.currency), interval: ((selPlan.interval === 'year' ? 'PORTAL.BILLING.INTERVAL_YEAR' : 'PORTAL.BILLING.INTERVAL_MONTH') | translate) } }}
           </p>
         </div>
 
         <!-- Coupon Row (for new subscriptions) -->
         <div *ngIf="subscription() === null" class="coupon-section">
           <div *ngIf="promoResult() as promo" class="applied-promo-chip">
-            <span class="promo-tag">🎟 {{ promo.name || 'Promo Code' }}</span>
-            <span *ngIf="promo.percentOff === 100" class="promo-badge">100% Free Period</span>
-            <span *ngIf="promo.percentOff && promo.percentOff < 100" class="promo-badge">{{ promo.percentOff }}% off</span>
-            <button type="button" class="promo-remove-btn" (click)="removePromoCode()" title="Remove code">✕</button>
+            <span class="promo-tag">🎟 {{ promo.name || ('PORTAL.BILLING.PROMO_TAG' | translate) }}</span>
+            <span *ngIf="promo.percentOff === 100" class="promo-badge">{{ 'PORTAL.BILLING.PROMO_FREE' | translate }}</span>
+            <span *ngIf="promo.percentOff && promo.percentOff < 100" class="promo-badge">{{ 'PORTAL.BILLING.PROMO_OFF' | translate: { percent: promo.percentOff } }}</span>
+            <button type="button" class="promo-remove-btn" (click)="removePromoCode()" [attr.title]="'PORTAL.BILLING.PROMO_REMOVE' | translate">✕</button>
           </div>
 
           <div *ngIf="!promoResult()" class="coupon-input-group">
             <input
               type="text"
               class="form-control coupon-input"
-              placeholder="Have a promotion code?"
-              aria-label="Promotion code"
+              [placeholder]="'PORTAL.BILLING.COUPON_PLACEHOLDER' | translate"
+              [attr.aria-label]="'PORTAL.BILLING.PROMO_TAG' | translate"
               [ngModel]="couponCode()"
               (ngModelChange)="couponCode.set($event)"
               [disabled]="couponLoading()"
@@ -308,7 +309,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               [disabled]="couponLoading() || !couponCode().trim()"
               (click)="applyPromoCode()"
             >
-              {{ couponLoading() ? 'Applying…' : 'Apply' }}
+              {{ (couponLoading() ? 'PORTAL.BILLING.COUPON_APPLYING' : 'PORTAL.BILLING.COUPON_APPLY') | translate }}
             </button>
           </div>
           <span *ngIf="couponError()" class="form-error">{{ couponError() }}</span>
@@ -316,7 +317,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
         <!-- Saved Payment Method Selection (if any exist) -->
         <div *ngIf="savedMethods().length > 0 && !paymentActive()" class="saved-methods-selection">
-          <label class="section-label">Select Payment Method:</label>
+          <label class="section-label">{{ 'PORTAL.BILLING.SELECT_PAYMENT_METHOD' | translate }}</label>
           <div class="saved-methods-radios">
             <div
               *ngFor="let pm of savedMethods()"
@@ -331,7 +332,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               />
               <span class="card-brand">{{ pm.brand | uppercase }}</span>
               <span class="card-last4">•••• {{ pm.last4 }}</span>
-              <span class="card-exp">Exp {{ pm.expMonth }}/{{ pm.expYear }}</span>
+              <span class="card-exp">{{ 'PORTAL.BILLING.EXP_DATE' | translate: { month: pm.expMonth, year: pm.expYear } }}</span>
             </div>
             <div
               class="saved-card-radio-item"
@@ -339,7 +340,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               (click)="selectedSavedMethod.set(null)"
             >
               <input type="radio" name="savedMethodChoice" [checked]="selectedSavedMethod() === null" />
-              <span>Use a new card</span>
+              <span>{{ 'PORTAL.BILLING.USE_NEW_CARD' | translate }}</span>
             </div>
           </div>
         </div>
@@ -359,7 +360,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               [disabled]="!stripeReady() || isProcessingPayment()"
               (click)="confirmPayment()"
             >
-              {{ isProcessingPayment() ? 'Processing…' : (paymentRequiresSetup() ? 'Save Card & Activate' : 'Pay & Subscribe') }}
+              {{ isProcessingPayment() ? ('PORTAL.BILLING.BTN_PROCESSING' | translate) : (paymentRequiresSetup() ? ('PORTAL.BILLING.BTN_SAVE_ACTIVATE' | translate) : ('PORTAL.BILLING.BTN_PAY_SUBSCRIBE' | translate)) }}
             </button>
             <button
               type="button"
@@ -367,7 +368,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               [disabled]="isProcessingPayment()"
               (click)="cancelPayment()"
             >
-              Cancel
+              {{ 'PORTAL.COMMON.CANCEL' | translate }}
             </button>
           </div>
 
@@ -380,9 +381,9 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               [disabled]="isProcessingPayment()"
               (click)="proceedToPayment()"
             >
-              <span *ngIf="isProcessingPayment()">Processing…</span>
+              <span *ngIf="isProcessingPayment()">{{ 'PORTAL.BILLING.BTN_PROCESSING' | translate }}</span>
               <span *ngIf="!isProcessingPayment()">
-                {{ selectedSavedMethod() ? 'Pay with Saved Card' : 'Continue to Payment' }}
+                {{ (selectedSavedMethod() ? 'PORTAL.BILLING.BTN_PAY_SAVED' : 'PORTAL.BILLING.BTN_CONTINUE_PAYMENT') | translate }}
               </span>
             </button>
 
@@ -393,7 +394,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               [disabled]="isLoading()"
               (click)="confirmChangePlan()"
             >
-              {{ isLoading() ? 'Updating Plan…' : 'Confirm Plan Change' }}
+              {{ isLoading() ? ('PORTAL.BILLING.BTN_UPDATING_PLAN' | translate) : ('PORTAL.BILLING.BTN_CONFIRM_PLAN_CHANGE' | translate) }}
             </button>
 
             <button
@@ -401,7 +402,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               class="btn btn-secondary"
               (click)="selectedPlan.set(null); showChangePlanSection.set(false)"
             >
-              Cancel
+              {{ 'PORTAL.COMMON.CANCEL' | translate }}
             </button>
           </div>
         </div>
@@ -409,9 +410,10 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
     </section>
 
     <!-- ── SAVED PAYMENT METHODS SECTION ─────────────────────────────── -->
+    <!-- ── SAVED PAYMENT METHODS SECTION ─────────────────────────────── -->
     <section *ngIf="savedMethods().length > 0" class="saved-methods-section card">
       <div class="card-header">
-        <h3 class="card-title">Saved Payment Methods</h3>
+        <h3 class="card-title">{{ 'PORTAL.BILLING.SAVED_METHODS_TITLE' | translate }}</h3>
       </div>
       <div class="card-body">
         <div class="saved-cards-list">
@@ -419,7 +421,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             <div class="saved-card-meta">
               <span class="brand-badge">{{ card.brand | uppercase }}</span>
               <span class="card-digits font-mono">•••• •••• •••• {{ card.last4 }}</span>
-              <span class="card-expiry">Expires {{ card.expMonth }}/{{ card.expYear }}</span>
+              <span class="card-expiry">{{ 'PORTAL.BILLING.EXPIRES' | translate: { month: card.expMonth, year: card.expYear } }}</span>
             </div>
             <button
               type="button"
@@ -427,7 +429,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               [disabled]="deletingMethodId() === card.id"
               (click)="deletePaymentMethod(card)"
             >
-              {{ deletingMethodId() === card.id ? 'Removing…' : 'Remove' }}
+              {{ deletingMethodId() === card.id ? ('PORTAL.BILLING.BTN_REMOVING' | translate) : ('PORTAL.BILLING.BTN_REMOVE' | translate) }}
             </button>
           </div>
         </div>
@@ -437,27 +439,27 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
     <!-- ── BILLING & INVOICE HISTORY SECTION ─────────────────────────── -->
     <section class="billing-history-section card">
       <div class="card-header">
-        <h3 class="card-title">Invoice & Billing Receipts</h3>
+        <h3 class="card-title">{{ 'PORTAL.BILLING.HISTORY_TITLE' | translate }}</h3>
       </div>
       <div class="card-body">
         <div *ngIf="billingHistoryLoading()" class="history-loading">
           <div class="spinner-sm"></div>
-          <span>Loading invoices…</span>
+          <span>{{ 'PORTAL.BILLING.HISTORY_LOADING' | translate }}</span>
         </div>
 
         <div *ngIf="!billingHistoryLoading() && billingHistory().length === 0" class="empty-history">
-          <p>No billing invoices recorded yet.</p>
+          <p>{{ 'PORTAL.BILLING.HISTORY_EMPTY' | translate }}</p>
         </div>
 
         <div *ngIf="!billingHistoryLoading() && billingHistory().length > 0" class="table-responsive">
           <table class="table billing-table">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Description</th>
-                <th>Amount</th>
-                <th>Status</th>
-                <th class="text-right">Receipt</th>
+                <th>{{ 'PORTAL.BILLING.TH_DATE' | translate }}</th>
+                <th>{{ 'PORTAL.BILLING.TH_DESC' | translate }}</th>
+                <th>{{ 'PORTAL.BILLING.TH_AMOUNT' | translate }}</th>
+                <th>{{ 'PORTAL.BILLING.TH_STATUS' | translate }}</th>
+                <th class="text-right">{{ 'PORTAL.BILLING.TH_RECEIPT' | translate }}</th>
               </tr>
             </thead>
             <tbody>
@@ -481,9 +483,9 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
                     target="_blank"
                     rel="noopener noreferrer"
                     class="btn btn-sm btn-ghost"
-                    title="View official receipt"
+                    [attr.title]="'PORTAL.BILLING.VIEW_RECEIPT_TITLE' | translate"
                   >
-                    View Receipt ↗
+                    {{ 'PORTAL.BILLING.VIEW_RECEIPT' | translate }}
                   </a>
                   <span *ngIf="!item.hosted_invoice_url" class="text-muted">—</span>
                 </td>
@@ -507,20 +509,20 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   >
     <div class="modal-dialog card" (click)="$event.stopPropagation()">
       <div class="modal-header">
-        <h3 id="cancel-modal-title" class="modal-title">Cancel Subscription?</h3>
-        <button type="button" class="modal-close" (click)="closeCancelModal()" aria-label="Close cancel dialog">✕</button>
+        <h3 id="cancel-modal-title" class="modal-title">{{ 'PORTAL.BILLING.CANCEL_MODAL_TITLE' | translate }}</h3>
+        <button type="button" class="modal-close" (click)="closeCancelModal()" [attr.aria-label]="'PORTAL.BILLING.CLOSE_DIALOG' | translate">✕</button>
       </div>
       <div class="modal-body">
         <p>
-          Are you sure you want to cancel your VAMO Business subscription?
+          {{ 'PORTAL.BILLING.CANCEL_MODAL_DESC' | translate }}
         </p>
         <p class="modal-subtext">
-          You will continue to keep full access to your plan and published listings until the end of your current billing period.
+          {{ 'PORTAL.BILLING.CANCEL_MODAL_SUBTEXT' | translate }}
         </p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" (click)="closeCancelModal()">
-          Keep Subscription
+          {{ 'PORTAL.BILLING.CANCEL_MODAL_KEEP' | translate }}
         </button>
         <button
           type="button"
@@ -528,7 +530,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
           [disabled]="isLoading()"
           (click)="confirmCancelSubscription()"
         >
-          {{ isLoading() ? 'Canceling…' : 'Confirm Cancellation' }}
+          {{ isLoading() ? ('PORTAL.BILLING.CANCEL_MODAL_CANCELING' | translate) : ('PORTAL.BILLING.CANCEL_MODAL_CONFIRM' | translate) }}
         </button>
       </div>
     </div>
@@ -1488,6 +1490,7 @@ export class BillingComponent implements OnInit, OnDestroy {
   businessService = inject(BusinessService);
   stripeService = inject(StripeService);
   errorService = inject(CustomerErrorService);
+  i18n = inject(I18nService);
 
   // Core State Signals
   subscription = signal<StripeSubscription | null | undefined>(undefined);
@@ -1591,7 +1594,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       this.plans.set(plans);
     } catch {
       this.plans.set([]);
-      this.errorMessage.set("We couldn't load current plan pricing. Please try again.");
+      this.errorMessage.set(this.i18n.t('PORTAL.BILLING.EMPTY_PLANS'));
     }
   }
 
@@ -1648,10 +1651,10 @@ export class BillingComponent implements OnInit, OnDestroy {
       if (result.valid) {
         this.promoResult.set(result);
       } else {
-        this.couponError.set("That promotion code isn't valid.");
+        this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_INVALID'));
       }
     } catch {
-      this.couponError.set('Could not validate promotion code. Please try again.');
+      this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_ERROR'));
     } finally {
       this.couponLoading.set(false);
     }
@@ -1676,7 +1679,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     const user = this.authService.currentUser;
     if (!plan || !user?.email) return;
     if (this.plans().length === 0) {
-      this.errorMessage.set("We couldn't load current plan pricing. Please try again.");
+      this.errorMessage.set(this.i18n.t('PORTAL.BILLING.EMPTY_PLANS'));
       return;
     }
 
@@ -1773,7 +1776,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.selectedPlan.set(null);
     this.selectedSavedMethod.set(null);
     this.showChangePlanSection.set(false);
-    this.successMessage.set(`Success! Your account is now active on the ${plan.name}.`);
+    this.successMessage.set(this.i18n.t('PORTAL.BILLING.SUCCESS_ACTIVE', { plan: plan.name }));
 
     // Reload state
     const user = this.authService.currentUser;
@@ -1839,8 +1842,8 @@ export class BillingComponent implements OnInit, OnDestroy {
       this.selectedPlan.set(null);
       this.successMessage.set(
         isUpgrade
-          ? `Your plan has been upgraded to ${newPlan.name}.`
-          : `Your downgrade to ${newPlan.name} is scheduled for the end of your billing cycle.`
+          ? this.i18n.t('PORTAL.BILLING.SUCCESS_UPGRADED', { plan: newPlan.name })
+          : this.i18n.t('PORTAL.BILLING.SUCCESS_DOWNGRADE_SCHEDULED', { plan: newPlan.name })
       );
 
       const user = this.authService.currentUser;
@@ -1871,7 +1874,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.errorMessage.set(null);
     try {
       await this.stripeService.releaseSchedule(sub.pendingScheduleId);
-      this.successMessage.set('Scheduled downgrade has been canceled. Your current plan remains active.');
+      this.successMessage.set(this.i18n.t('PORTAL.BILLING.SUCCESS_DOWNGRADE_CANCELED'));
       const user = this.authService.currentUser;
       if (user?.email) {
         await this.loadSubscription(user.email);
@@ -1902,7 +1905,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       await this.stripeService.cancelSubscription(sub.subscriptionId, true);
       this.showCancelConfirmModal.set(false);
       this.successMessage.set(
-        `Subscription canceled. You will continue to have access until ${this.formatDate(sub.currentPeriodEnd)}.`
+        this.i18n.t('PORTAL.BILLING.SUCCESS_CANCELED', { date: this.formatDate(sub.currentPeriodEnd) })
       );
       const user = this.authService.currentUser;
       if (user?.email) {
@@ -1922,7 +1925,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.errorMessage.set(null);
     try {
       await this.stripeService.cancelSubscription(sub.subscriptionId, false);
-      this.successMessage.set('Welcome back! Your subscription renewal has been reactivated.');
+      this.successMessage.set(this.i18n.t('PORTAL.BILLING.SUCCESS_REACTIVATED'));
       const user = this.authService.currentUser;
       if (user?.email) {
         await this.loadSubscription(user.email);
@@ -1954,12 +1957,19 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   // ─── Helpers ─────────────────────────────────────────────────────
 
+  getPlanFeatures(plan: StripePlan): string[] {
+    if (plan.tier) {
+      return getCanonicalTierFeatures(plan.tier, this.i18n.lang());
+    }
+    return plan.features || [];
+  }
+
   formatPrice(amount: number, currency: string): string {
     return this.stripeService.formatPrice(amount, currency);
   }
 
   formatDate(timestamp: number): string {
-    return new Date(timestamp * 1000).toLocaleDateString('en-US', {
+    return new Date(timestamp * 1000).toLocaleDateString(this.i18n.dateLocale(), {
       year: 'numeric',
       month: 'short',
       day: 'numeric',

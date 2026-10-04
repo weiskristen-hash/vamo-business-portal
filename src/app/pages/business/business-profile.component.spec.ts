@@ -297,21 +297,26 @@ describe('BusinessProfileComponent', () => {
       i18nService.setLang('en');
     });
 
-    it('localizes category offerings display labels while preserving stored offering values', async () => {
+    it('enforces canonical offering display labels in both EN and ES while preserving stored offering values', async () => {
       await fixture.whenStable();
       component.form.update((f) => ({ ...f, business_type: 'restaurant_and_bar' }));
 
+      // English renders exact canonical labels
       i18nService.setLang('en');
       const enChoices = component.currentOfferingChoices;
       expect(enChoices.find((c) => c.value === 'breakfast')?.label).toBe('Breakfast');
       expect(enChoices.find((c) => c.value === 'cocktails')?.label).toBe('Cocktails');
 
+      // Spanish ALSO renders exact canonical English labels (matching canonical VAMO offeringMap)
       i18nService.setLang('es');
       const esChoices = component.currentOfferingChoices;
-      expect(esChoices.find((c) => c.value === 'breakfast')?.label).toBe('Desayuno');
-      expect(esChoices.find((c) => c.value === 'cocktails')?.label).toBe('Cócteles');
+      expect(esChoices.find((c) => c.value === 'breakfast')?.label).toBe('Breakfast');
+      expect(esChoices.find((c) => c.value === 'cocktails')?.label).toBe('Cocktails');
+      // Verify no invented Spanish labels are used
+      expect(esChoices.find((c) => c.value === 'breakfast')?.label).not.toBe('Desayuno');
+      expect(esChoices.find((c) => c.value === 'cocktails')?.label).not.toBe('Cócteles');
 
-      // Select an offering
+      // Select an offering - stored value remains canonical identifier
       component.toggleOffering('breakfast');
       expect(component.form().offerings).toContain('breakfast');
 

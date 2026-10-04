@@ -3,6 +3,7 @@ import { loadStripe } from '@stripe/stripe-js';
 import type { Stripe, StripeElements } from '@stripe/stripe-js';
 import { runtimeConfig } from '../config/runtime-config';
 import { AuthService } from './auth.service';
+import { I18nService } from '../i18n/i18n.service';
 
 export interface StripeSubscription {
   subscriptionId: string;
@@ -97,9 +98,50 @@ export const CANONICAL_TIER_FEATURES: Record<'starter' | 'basic' | 'advanced', {
   },
 };
 
+export const CANONICAL_TIER_FEATURES_ES: Record<'starter' | 'basic' | 'advanced', { maxPosts: number; features: string[] }> = {
+  starter: {
+    maxPosts: 1,
+    features: [
+      '1 publicación activa (evento o actividad)',
+      'Promoción en la app, el sitio web y las redes sociales de VAMO',
+      'Descubrimiento por búsqueda y categorías',
+      'Reservas y reservaciones directas',
+    ],
+  },
+  basic: {
+    maxPosts: 4,
+    features: [
+      'Hasta 4 publicaciones activas (eventos o actividades)',
+      'Promoción en la app, el sitio web y las redes sociales de VAMO',
+      'La campaña aparece más arriba en las categorías correspondientes',
+      'Reservas y reservaciones directas',
+      'Analíticas básicas de campaña',
+    ],
+  },
+  advanced: {
+    maxPosts: 8,
+    features: [
+      'Hasta 8 publicaciones activas (eventos o actividades)',
+      'Promoción en la app, el sitio web y las redes sociales de VAMO',
+      'Ubicación prioritaria en búsquedas y descubrimiento por categorías',
+      'Reservas y reservaciones directas',
+      'Consideración prioritaria para las oportunidades promocionales disponibles',
+      'Analíticas básicas de campaña',
+    ],
+  },
+};
+
+export function getCanonicalTierFeatures(tier: 'starter' | 'basic' | 'advanced', lang: string = 'en'): string[] {
+  if (lang === 'es') {
+    return CANONICAL_TIER_FEATURES_ES[tier]?.features ?? CANONICAL_TIER_FEATURES[tier]?.features ?? [];
+  }
+  return CANONICAL_TIER_FEATURES[tier]?.features ?? [];
+}
+
 @Injectable({ providedIn: 'root' })
 export class StripeService {
   private authService = inject(AuthService);
+  private i18n = inject(I18nService);
   private stripePromise: Promise<Stripe | null> | null = null;
   private activeElements: StripeElements | null = null;
 
@@ -225,6 +267,7 @@ export class StripeService {
 
     this.activeElements = stripe.elements({
       clientSecret,
+      locale: this.i18n.lang() === 'es' ? 'es' : 'en',
       appearance: {
         theme: 'night',
         variables: {

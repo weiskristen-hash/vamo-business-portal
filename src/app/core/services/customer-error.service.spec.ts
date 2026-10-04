@@ -174,6 +174,16 @@ describe('CustomerErrorService', () => {
       expect(detail.secondaryMessage).toContain(VAMO_SUPPORT_EMAIL);
       expect(detail.actionText).toBe('Try Again');
     });
+
+    it('should sanitize Stripe internals such as client_secret, payment_intent, and setup_intent', () => {
+      const stripeLeak = new Error('Stripe error on client_secret seti_12345_secret_abcde with setup_intent failed');
+      const detail = service.toCustomerError(stripeLeak, 'save');
+
+      expect(detail.message).not.toContain('client_secret');
+      expect(detail.message).not.toContain('setup_intent');
+      expect(detail.message).not.toContain('seti_12345');
+      expect(detail.message).toBe("We couldn't save your changes. Please try again.");
+    });
   });
 
   describe('Localized Customer Error Messages', () => {

@@ -994,18 +994,18 @@ export const esTranslations: Record<string, any> = {
       "MOBILE_SAVING": "Guardando…",
 
       "OFFERINGS": {
-        "BREAKFAST": "Desayuno",
-        "LUNCH": "Almuerzo",
-        "DINNER": "Cena",
-        "SNACKS": "Bocadillos / Snacks",
-        "COCKTAILS": "Cócteles",
+        "BREAKFAST": "Breakfast",
+        "LUNCH": "Lunch",
+        "DINNER": "Dinner",
+        "SNACKS": "Snacks",
+        "COCKTAILS": "Cocktails",
         "SAUNA": "Sauna",
-        "MASSAGE": "Masajes",
-        "COSMETICS": "Cosméticos",
-        "ADULTS_ONLY": "Solo adultos",
-        "CARS": "Carros / Autos",
+        "MASSAGE": "Massage",
+        "COSMETICS": "Cosmetics",
+        "ADULTS_ONLY": "Adults only",
+        "CARS": "Cars",
         "SCOOTERS": "Scooters / Pasolas",
-        "QUADS": "Quads / Four Wheels"
+        "QUADS": "Quads"
       }
     },
     "LISTINGS": {
@@ -1187,6 +1187,144 @@ export const esTranslations: Record<string, any> = {
         "GEO_NOT_SUPPORTED": "La geolocalización no es compatible con tu navegador.",
         "GEO_FAILED": "No se pudo detectar la ubicación del dispositivo: ",
         "LOAD_FAILED": "No se pudo cargar la publicación existente. Iniciando una nueva."
+      }
+    },
+    "BILLING": {
+      "TITLE": "Suscripción y facturación",
+      "SUBTITLE": "Gestiona tu nivel de negocio en VAMO, tus límites de publicación y tus facturas.",
+      "DISMISS": "Descartar",
+      "LOADING": "Cargando detalles de suscripción…",
+
+      "STATUS_ACTIVE": "Suscripción activa",
+      "STATUS_CANCELING": "Se cancela al final del período",
+      "ACCESS_UNTIL": "Acceso hasta el",
+      "RENEWS_ON": "Se renueva el",
+
+      "SCHEDULED_CHANGE_TITLE": "Cambio de plan programado:",
+      "PENDING_DOWNGRADE_DESC": "La reducción a {{plan}} entrará en vigor el {{date}}.",
+      "CANCEL_DOWNGRADE_BTN": "Cancelar reducción",
+
+      "CURRENT_PLAN": "Plan actual",
+      "PLAN_NOTE": "Facturado a través de Stripe. Gestiona tus eventos activos y tu nivel de campaña a continuación.",
+      "INTERVAL_MONTH": "mes",
+      "INTERVAL_YEAR": "año",
+      "CHANGE_PLAN_BTN": "Cambiar plan",
+      "KEEP_PLAN_BTN": "Mantener plan actual",
+      "CANCEL_SUB_BTN": "Cancelar suscripción",
+      "REACTIVATE_SUB_BTN": "Reactivar suscripción",
+
+      "QUOTA_TITLE": "Límite de publicaciones",
+      "QUOTA_COUNT": "{{used}} / {{limit}} publicaciones",
+      "QUOTA_DESC": "{{used}} publicación(es) activa(s) en VAMO. Mejora tu plan para aumentar tu capacidad de publicaciones activas.",
+
+      "PLANS_TITLE_NEW": "Elige tu plan de negocio",
+      "PLANS_TITLE_CHANGE": "Selecciona un nuevo plan",
+      "PLANS_SUBTITLE": "Selecciona la opción que mejor se adapte a tu calendario de eventos y frecuencia de promoción.",
+      "BADGE_CURRENT": "Plan actual",
+      "BADGE_SCHEDULED": "Programado",
+      "ENTITLEMENTS_LABEL": "Beneficios incluidos:",
+      "BTN_ACTIVE": "Activo",
+      "BTN_SELECTED": "Seleccionado",
+      "BTN_SELECT": "Seleccionar plan",
+      "EMPTY_PLANS": "No se pudieron cargar los precios actuales. Por favor inténtalo de nuevo más tarde.",
+
+      "DOWNGRADE_WARN_TITLE": "Aviso: Algunas publicaciones se moverán a borradores",
+      "DOWNGRADE_WARN_DESC": "Actualmente tienes {{activePosts}} publicación(es) activa(s), pero tu nuevo plan solo permite {{newLimit}}. Las publicaciones excedentes se moverán automáticamente a borradores cuando tu nuevo plan se active.",
+      "BTN_DOWNGRADE_ANYWAY": "Reducir de todas formas",
+
+      "CHECKOUT_TITLE_NEW": "Completa tu suscripción",
+      "CHECKOUT_TITLE_CHANGE": "Confirmar cambio de plan",
+      "CHECKOUT_SUBTITLE": "Cambiando a {{name}} ({{price}} / {{interval}}).",
+
+      "PROMO_TAG": "Código promocional",
+      "PROMO_FREE": "Período 100% gratis",
+      "PROMO_OFF": "{{percent}}% de descuento",
+      "PROMO_REMOVE": "Eliminar código",
+      "COUPON_PLACEHOLDER": "¿Tienes un código promocional?",
+      "COUPON_APPLY": "Aplicar",
+      "COUPON_APPLYING": "Aplicando…",
+      "COUPON_INVALID": "Ese código promocional no es válido.",
+      "COUPON_ERROR": "No se pudo validar el código promocional. Por favor inténtalo de nuevo.",
+
+      "SELECT_PAYMENT_METHOD": "Seleccionar método de pago:",
+      "USE_NEW_CARD": "Usar una tarjeta nueva",
+      "EXP_DATE": "Vence {{month}}/{{year}}",
+      "EXPIRES": "Vence {{month}}/{{year}}",
+
+      "SAVED_METHODS_TITLE": "Métodos de pago guardados",
+      "BTN_REMOVE": "Eliminar",
+      "BTN_REMOVING": "Eliminando…",
+
+      "BTN_PROCESSING": "Procesando…",
+      "BTN_SAVE_ACTIVATE": "Guardar tarjeta y activar",
+      "BTN_PAY_SUBSCRIBE": "Pagar y suscribirse",
+      "BTN_PAY_SAVED": "Pagar con tarjeta guardada",
+      "BTN_CONTINUE_PAYMENT": "Continuar al pago",
+      "BTN_UPDATING_PLAN": "Actualizando plan…",
+      "BTN_CONFIRM_PLAN_CHANGE": "Confirmar cambio de plan",
+
+      "HISTORY_TITLE": "Facturas y recibos",
+      "HISTORY_LOADING": "Cargando facturas…",
+      "HISTORY_EMPTY": "Aún no hay facturas registradas.",
+      "TH_DATE": "Fecha",
+      "TH_DESC": "Descripción",
+      "TH_AMOUNT": "Monto",
+      "TH_STATUS": "Estado",
+      "TH_RECEIPT": "Recibo",
+      "VIEW_RECEIPT": "Ver recibo ↗",
+      "VIEW_RECEIPT_TITLE": "Ver recibo oficial",
+
+      "CANCEL_MODAL_TITLE": "¿Cancelar suscripción?",
+      "CANCEL_MODAL_DESC": "¿Estás seguro de que deseas cancelar tu suscripción a VAMO Business?",
+      "CANCEL_MODAL_SUBTEXT": "Mantendrás acceso total a tu plan y publicaciones hasta el final del período de facturación actual.",
+      "CANCEL_MODAL_KEEP": "Mantener suscripción",
+      "CANCEL_MODAL_CONFIRM": "Confirmar cancelación",
+      "CANCEL_MODAL_CANCELING": "Cancelando…",
+      "CLOSE_DIALOG": "Cerrar diálogo de cancelación",
+
+      "SUCCESS_ACTIVE": "¡Éxito! Tu cuenta ya está activa en el plan {{plan}}.",
+      "SUCCESS_UPGRADED": "Tu plan se ha actualizado a {{plan}}.",
+      "SUCCESS_DOWNGRADE_SCHEDULED": "La reducción a {{plan}} está programada para el final de tu ciclo de facturación.",
+      "SUCCESS_DOWNGRADE_CANCELED": "La reducción programada ha sido cancelada. Tu plan actual se mantiene activo.",
+      "SUCCESS_CANCELED": "Suscripción cancelada. Mantendrás el acceso hasta el {{date}}.",
+      "SUCCESS_REACTIVATED": "¡Bienvenido de vuelta! La renovación de tu suscripción ha sido reactivada."
+    },
+    "PLACEHOLDER": {
+      "BADGE_DEVELOPMENT": "En desarrollo activo",
+      "PLANNED_CAPABILITIES": "Funcionalidades planeadas para este módulo:",
+      "RETURN_OVERVIEW": "← Volver al resumen",
+      "FUTURE_MODULE": "Módulo futuro",
+      "FUTURE_PHASE": "Hoja de ruta - Fase 1B",
+      "FUTURE_DESC": "Esta función forma parte de las próximas fases de desarrollo.",
+      "FUTURE_FEAT_DESKTOP": "Optimización para escritorio",
+      "FUTURE_FEAT_SEAMLESS": "Integración de datos fluida",
+
+      "SETTINGS": {
+        "TITLE": "Configuración de la cuenta",
+        "PHASE": "Hoja de ruta - Fase 1B",
+        "DESC": "Gestiona tus credenciales de usuario, preferencias de notificación y permisos de colaboradores del equipo.",
+        "FEAT_PROFILE": "Edición de perfil de usuario (nombre, apellido, correo electrónico)",
+        "FEAT_SECURITY": "Seguridad: Actualización de contraseña y gestión de sesiones",
+        "FEAT_NOTIFS": "Alertas operativas de notificaciones por correo",
+        "FEAT_TEAM": "Futuras cuentas para miembros del equipo y delegación de roles"
+      },
+      "PROMOTIONS": {
+        "TITLE": "Promociones y ubicaciones en VAMO",
+        "PHASE": "Hoja de ruta - Fase 1C",
+        "DESC": "Maximiza tu visibilidad con banners principales en el feed de inicio y ubicaciones en Lo Más Caliente.",
+        "FEAT_MAIN_BANNER": "Cima del descubrimiento: Ubicación de banner principal",
+        "FEAT_WHATS_HOT": "Tendencias de hoy: Destacados en Lo Más Caliente",
+        "FEAT_METRICS": "Métricas transparentes de impresiones y toques",
+        "FEAT_BILLING": "Integración de facturación con Stripe para campañas automáticas"
+      },
+      "INSIGHTS": {
+        "TITLE": "Estadísticas de audiencia y rendimiento",
+        "PHASE": "Hoja de ruta - Fase 1C",
+        "DESC": "Analíticas profundas que rastrean impresiones, visitas al perfil, guardados de eventos y compromiso de los clientes.",
+        "FEAT_TIMELINE": "Gráficos de cronología interactivos para impresiones y visitas diarias",
+        "FEAT_GROWTH": "Métricas de crecimiento en guardados y retención de audiencia",
+        "FEAT_GEOGRAPHIC": "Desglose geográfico de visitantes por provincia y origen del viajero",
+        "FEAT_EXPORTS": "Resúmenes de rendimiento exportables en CSV y PDF"
       }
     },
     "ERRORS": {

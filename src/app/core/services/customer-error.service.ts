@@ -48,6 +48,10 @@ export class CustomerErrorService {
     /provider_link/i,
     /events_files/i,
     /providers_files/i,
+    /stripe/i,
+    /client_secret/i,
+    /payment_intent/i,
+    /setup_intent/i,
   ];
 
   /**

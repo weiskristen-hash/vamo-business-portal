@@ -1189,6 +1189,144 @@ export const enTranslations: Record<string, any> = {
         "LOAD_FAILED": "Could not load existing listing. Starting fresh."
       }
     },
+    "BILLING": {
+      "TITLE": "Subscription & Billing",
+      "SUBTITLE": "Manage your VAMO business tier, publishing quotas, and invoice receipts.",
+      "DISMISS": "Dismiss",
+      "LOADING": "Loading subscription details…",
+
+      "STATUS_ACTIVE": "Active Subscription",
+      "STATUS_CANCELING": "Cancels at Period End",
+      "ACCESS_UNTIL": "Access until",
+      "RENEWS_ON": "Renews on",
+
+      "SCHEDULED_CHANGE_TITLE": "Scheduled Plan Change:",
+      "PENDING_DOWNGRADE_DESC": "Downgrade to {{plan}} will take effect on {{date}}.",
+      "CANCEL_DOWNGRADE_BTN": "Cancel Downgrade",
+
+      "CURRENT_PLAN": "Current Plan",
+      "PLAN_NOTE": "Billed through Stripe. Manage your active events and campaign tier below.",
+      "INTERVAL_MONTH": "month",
+      "INTERVAL_YEAR": "year",
+      "CHANGE_PLAN_BTN": "Change Plan",
+      "KEEP_PLAN_BTN": "Keep Current Plan",
+      "CANCEL_SUB_BTN": "Cancel Subscription",
+      "REACTIVATE_SUB_BTN": "Reactivate Subscription",
+
+      "QUOTA_TITLE": "Publishing Quota",
+      "QUOTA_COUNT": "{{used}} / {{limit}} Posts",
+      "QUOTA_DESC": "{{used}} active listing(s) published on VAMO discovery. Upgrade your plan to increase your active post capacity.",
+
+      "PLANS_TITLE_NEW": "Choose Your Business Plan",
+      "PLANS_TITLE_CHANGE": "Select a New Plan",
+      "PLANS_SUBTITLE": "Select the option that matches your event calendar and promotion frequency.",
+      "BADGE_CURRENT": "Current Plan",
+      "BADGE_SCHEDULED": "Scheduled",
+      "ENTITLEMENTS_LABEL": "Included Entitlements:",
+      "BTN_ACTIVE": "Active",
+      "BTN_SELECTED": "Selected",
+      "BTN_SELECT": "Select Plan",
+      "EMPTY_PLANS": "We couldn't load current plan pricing. Please try again.",
+
+      "DOWNGRADE_WARN_TITLE": "Notice: Some posts will be moved to drafts",
+      "DOWNGRADE_WARN_DESC": "You currently have {{activePosts}} active post(s), but your new plan only allows {{newLimit}}. The excess posts will be moved to drafts automatically when your new plan activates.",
+      "BTN_DOWNGRADE_ANYWAY": "Downgrade Anyway",
+
+      "CHECKOUT_TITLE_NEW": "Complete Your Subscription",
+      "CHECKOUT_TITLE_CHANGE": "Confirm Plan Change",
+      "CHECKOUT_SUBTITLE": "Upgrading or changing to {{name}} ({{price}} / {{interval}}).",
+
+      "PROMO_TAG": "Promo Code",
+      "PROMO_FREE": "100% Free Period",
+      "PROMO_OFF": "{{percent}}% off",
+      "PROMO_REMOVE": "Remove code",
+      "COUPON_PLACEHOLDER": "Have a promotion code?",
+      "COUPON_APPLY": "Apply",
+      "COUPON_APPLYING": "Applying…",
+      "COUPON_INVALID": "That promotion code isn't valid.",
+      "COUPON_ERROR": "Could not validate promotion code. Please try again.",
+
+      "SELECT_PAYMENT_METHOD": "Select Payment Method:",
+      "USE_NEW_CARD": "Use a new card",
+      "EXP_DATE": "Exp {{month}}/{{year}}",
+      "EXPIRES": "Expires {{month}}/{{year}}",
+
+      "SAVED_METHODS_TITLE": "Saved Payment Methods",
+      "BTN_REMOVE": "Remove",
+      "BTN_REMOVING": "Removing…",
+
+      "BTN_PROCESSING": "Processing…",
+      "BTN_SAVE_ACTIVATE": "Save Card & Activate",
+      "BTN_PAY_SUBSCRIBE": "Pay & Subscribe",
+      "BTN_PAY_SAVED": "Pay with Saved Card",
+      "BTN_CONTINUE_PAYMENT": "Continue to Payment",
+      "BTN_UPDATING_PLAN": "Updating Plan…",
+      "BTN_CONFIRM_PLAN_CHANGE": "Confirm Plan Change",
+
+      "HISTORY_TITLE": "Invoice & Billing Receipts",
+      "HISTORY_LOADING": "Loading invoices…",
+      "HISTORY_EMPTY": "No billing invoices recorded yet.",
+      "TH_DATE": "Date",
+      "TH_DESC": "Description",
+      "TH_AMOUNT": "Amount",
+      "TH_STATUS": "Status",
+      "TH_RECEIPT": "Receipt",
+      "VIEW_RECEIPT": "View Receipt ↗",
+      "VIEW_RECEIPT_TITLE": "View official receipt",
+
+      "CANCEL_MODAL_TITLE": "Cancel Subscription?",
+      "CANCEL_MODAL_DESC": "Are you sure you want to cancel your VAMO Business subscription?",
+      "CANCEL_MODAL_SUBTEXT": "You will continue to keep full access to your plan and published listings until the end of your current billing period.",
+      "CANCEL_MODAL_KEEP": "Keep Subscription",
+      "CANCEL_MODAL_CONFIRM": "Confirm Cancellation",
+      "CANCEL_MODAL_CANCELING": "Canceling…",
+      "CLOSE_DIALOG": "Close cancel dialog",
+
+      "SUCCESS_ACTIVE": "Success! Your account is now active on the {{plan}}.",
+      "SUCCESS_UPGRADED": "Your plan has been upgraded to {{plan}}.",
+      "SUCCESS_DOWNGRADE_SCHEDULED": "Your downgrade to {{plan}} is scheduled for the end of your billing cycle.",
+      "SUCCESS_DOWNGRADE_CANCELED": "Scheduled downgrade has been canceled. Your current plan remains active.",
+      "SUCCESS_CANCELED": "Subscription canceled. You will continue to have access until {{date}}.",
+      "SUCCESS_REACTIVATED": "Welcome back! Your subscription renewal has been reactivated."
+    },
+    "PLACEHOLDER": {
+      "BADGE_DEVELOPMENT": "Under Active Development",
+      "PLANNED_CAPABILITIES": "Planned capabilities for this module:",
+      "RETURN_OVERVIEW": "← Return to Overview",
+      "FUTURE_MODULE": "Future Module",
+      "FUTURE_PHASE": "Phase 1B Roadmap",
+      "FUTURE_DESC": "This feature is part of upcoming development phases.",
+      "FUTURE_FEAT_DESKTOP": "Desktop optimization",
+      "FUTURE_FEAT_SEAMLESS": "Seamless data integration",
+
+      "SETTINGS": {
+        "TITLE": "Account Settings",
+        "PHASE": "Phase 1B Roadmap",
+        "DESC": "Manage your user credentials, notification preferences, and team collaborator permissions.",
+        "FEAT_PROFILE": "User profile editing (first name, last name, email)",
+        "FEAT_SECURITY": "Security: Password update and session management",
+        "FEAT_NOTIFS": "Operational email notification alerts",
+        "FEAT_TEAM": "Future team member accounts and role delegation"
+      },
+      "PROMOTIONS": {
+        "TITLE": "VAMO Promotions & Placements",
+        "PHASE": "Phase 1C Roadmap",
+        "DESC": "Supercharge your visibility with premium home feed banners and What’s Hot placements.",
+        "FEAT_MAIN_BANNER": "Top of Discovery: Main Banner promotion placement",
+        "FEAT_WHATS_HOT": "Trending Tonight: What’s Hot highlight slots",
+        "FEAT_METRICS": "Transparent impression and tap performance metrics",
+        "FEAT_BILLING": "Stripe billing integration for automated campaign checkouts"
+      },
+      "INSIGHTS": {
+        "TITLE": "Audience & Performance Insights",
+        "PHASE": "Phase 1C Roadmap",
+        "DESC": "Deep analytics tracking impressions, profile views, event bookmarks, and customer engagement over time.",
+        "FEAT_TIMELINE": "Interactive timeline charts for daily impressions and profile visits",
+        "FEAT_GROWTH": "Bookmark growth metrics and audience retention analytics",
+        "FEAT_GEOGRAPHIC": "Geographic visitor breakdown by province and traveler origin",
+        "FEAT_EXPORTS": "Exportable CSV and PDF performance summaries"
+      }
+    },
     "ERRORS": {
       "AUTH_HEADLINE": "Session expired",
       "AUTH_MSG": "Your session has expired. Please sign in again.",

@@ -1,24 +1,26 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
+import { I18nService } from '../../core/i18n/i18n.service';
 
 interface ModuleConfig {
-  title: string;
-  phase: string;
-  description: string;
-  features: string[];
+  titleKey: string;
+  phaseKey: string;
+  descriptionKey: string;
+  featureKeys: string[];
 }
 
 @Component({
   selector: 'app-placeholder',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, TranslatePipe],
   template: `
     <div class="placeholder-container">
       <div class="placeholder-header">
-        <span class="phase-pill">{{ currentConfig.phase }}</span>
-        <h1 class="module-title">{{ currentConfig.title }}</h1>
-        <p class="module-desc">{{ currentConfig.description }}</p>
+        <span class="phase-pill">{{ currentConfig().phaseKey | translate }}</span>
+        <h1 class="module-title">{{ currentConfig().titleKey | translate }}</h1>
+        <p class="module-desc">{{ currentConfig().descriptionKey | translate }}</p>
       </div>
 
       <div class="module-preview-card card">
@@ -28,20 +30,20 @@ interface ModuleConfig {
             <line x1="12" y1="16" x2="12" y2="12"></line>
             <line x1="12" y1="8" x2="12.01" y2="8"></line>
           </svg>
-          <span>Under Active Development</span>
+          <span>{{ 'PORTAL.PLACEHOLDER.BADGE_DEVELOPMENT' | translate }}</span>
         </div>
 
-        <h3 class="preview-heading">Planned capabilities for this module:</h3>
+        <h3 class="preview-heading">{{ 'PORTAL.PLACEHOLDER.PLANNED_CAPABILITIES' | translate }}</h3>
         <ul class="feature-list">
-          <li *ngFor="let feat of currentConfig.features" class="feature-item">
+          <li *ngFor="let featKey of currentConfig().featureKeys" class="feature-item">
             <span class="bullet">✓</span>
-            <span>{{ feat }}</span>
+            <span>{{ featKey | translate }}</span>
           </li>
         </ul>
 
         <div class="preview-actions">
           <a routerLink="/app/overview" class="btn btn-secondary">
-            ← Return to Overview
+            {{ 'PORTAL.PLACEHOLDER.RETURN_OVERVIEW' | translate }}
           </a>
         </div>
       </div>
@@ -149,97 +151,55 @@ export class PlaceholderComponent implements OnInit {
   private route = inject(ActivatedRoute);
 
   moduleMap: Record<string, ModuleConfig> = {
-    business: {
-      title: 'My Business Profile',
-      phase: 'Phase 1B Roadmap',
-      description: 'Manage your verified business identity, locations, contact info, and opening hours across the VAMO discovery network.',
-      features: [
-        'Profile details editing (name, description, category, offerings)',
-        'Operating hours & weekly schedule manager',
-        'Logo and photo gallery image management',
-        'Social media & WhatsApp direct booking links',
-        'Location pinning and GPS coordinates',
-      ],
-    },
-    posts: {
-      title: 'Post & Event Management',
-      phase: 'Phase 1B Roadmap',
-      description: 'Review, manage, filter, and schedule your business events and happenings.',
-      features: [
-        'Comprehensive post table with status filtering (published, draft, archived)',
-        'Rich preview of active listings with image previews',
-        'Quick actions: pause, duplicate, or archive existing posts',
-        'Recurring event schedule viewer',
-      ],
-    },
-    create: {
-      title: 'Create Post',
-      phase: 'Phase 1B Roadmap',
-      description: 'Create engaging single and recurring events that broadcast directly to tourists and locals on the VAMO mobile app.',
-      features: [
-        'High-resolution promotional banner upload & image cropper',
-        'Date & time pickers with single and recurring cadence rules',
-        'Multi-area targeting across Las Terrenas, Samaná, and the Dominican Republic',
-        'Draft saving and live preview',
+    settings: {
+      titleKey: 'PORTAL.PLACEHOLDER.SETTINGS.TITLE',
+      phaseKey: 'PORTAL.PLACEHOLDER.SETTINGS.PHASE',
+      descriptionKey: 'PORTAL.PLACEHOLDER.SETTINGS.DESC',
+      featureKeys: [
+        'PORTAL.PLACEHOLDER.SETTINGS.FEAT_PROFILE',
+        'PORTAL.PLACEHOLDER.SETTINGS.FEAT_SECURITY',
+        'PORTAL.PLACEHOLDER.SETTINGS.FEAT_NOTIFS',
+        'PORTAL.PLACEHOLDER.SETTINGS.FEAT_TEAM',
       ],
     },
     promotions: {
-      title: 'VAMO Promotions & Placements',
-      phase: 'Phase 1C Roadmap',
-      description: 'Supercharge your visibility with premium home feed banners and What’s Hot placements.',
-      features: [
-        'Top of Discovery: Main Banner promotion placement',
-        'Trending Tonight: What’s Hot highlight slots',
-        'Transparent impression and tap performance metrics',
-        'Stripe billing integration for automated campaign checkouts',
+      titleKey: 'PORTAL.PLACEHOLDER.PROMOTIONS.TITLE',
+      phaseKey: 'PORTAL.PLACEHOLDER.PROMOTIONS.PHASE',
+      descriptionKey: 'PORTAL.PLACEHOLDER.PROMOTIONS.DESC',
+      featureKeys: [
+        'PORTAL.PLACEHOLDER.PROMOTIONS.FEAT_MAIN_BANNER',
+        'PORTAL.PLACEHOLDER.PROMOTIONS.FEAT_WHATS_HOT',
+        'PORTAL.PLACEHOLDER.PROMOTIONS.FEAT_METRICS',
+        'PORTAL.PLACEHOLDER.PROMOTIONS.FEAT_BILLING',
       ],
     },
     insights: {
-      title: 'Audience & Performance Insights',
-      phase: 'Phase 1C Roadmap',
-      description: 'Deep analytics tracking impressions, profile views, event bookmarks, and customer engagement over time.',
-      features: [
-        'Interactive timeline charts for daily impressions and profile visits',
-        'Bookmark growth metrics and audience retention analytics',
-        'Geographic visitor breakdown by province and traveler origin',
-        'Exportable CSV and PDF performance summaries',
-      ],
-    },
-    billing: {
-      title: 'Subscription & Invoices',
-      phase: 'Phase 1C Roadmap',
-      description: 'Manage your VAMO Business tier subscription, payment methods, and historical invoices.',
-      features: [
-        'Current subscription tier details (Starter, Basic, Advanced)',
-        'Seamless Stripe Customer Portal self-service',
-        'Downloadable tax invoices and billing receipts',
-        'Plan upgrade and renewal preferences',
-      ],
-    },
-    settings: {
-      title: 'Account Settings',
-      phase: 'Phase 1B Roadmap',
-      description: 'Manage your user credentials, notification preferences, and team collaborator permissions.',
-      features: [
-        'User profile editing (first name, last name, email)',
-        'Security: Password update and session management',
-        'Operational email notification alerts',
-        'Future team member accounts and role delegation',
+      titleKey: 'PORTAL.PLACEHOLDER.INSIGHTS.TITLE',
+      phaseKey: 'PORTAL.PLACEHOLDER.INSIGHTS.PHASE',
+      descriptionKey: 'PORTAL.PLACEHOLDER.INSIGHTS.DESC',
+      featureKeys: [
+        'PORTAL.PLACEHOLDER.INSIGHTS.FEAT_TIMELINE',
+        'PORTAL.PLACEHOLDER.INSIGHTS.FEAT_GROWTH',
+        'PORTAL.PLACEHOLDER.INSIGHTS.FEAT_GEOGRAPHIC',
+        'PORTAL.PLACEHOLDER.INSIGHTS.FEAT_EXPORTS',
       ],
     },
   };
 
-  currentConfig: ModuleConfig = {
-    title: 'Future Module',
-    phase: 'Phase 1B Roadmap',
-    description: 'This feature is part of upcoming development phases.',
-    features: ['Desktop optimization', 'Seamless data integration'],
-  };
+  currentConfig = signal<ModuleConfig>({
+    titleKey: 'PORTAL.PLACEHOLDER.FUTURE_MODULE',
+    phaseKey: 'PORTAL.PLACEHOLDER.FUTURE_PHASE',
+    descriptionKey: 'PORTAL.PLACEHOLDER.FUTURE_DESC',
+    featureKeys: [
+      'PORTAL.PLACEHOLDER.FUTURE_FEAT_DESKTOP',
+      'PORTAL.PLACEHOLDER.FUTURE_FEAT_SEAMLESS',
+    ],
+  });
 
   ngOnInit(): void {
-    const moduleKey = this.route.snapshot.data['module'] || 'business';
+    const moduleKey = this.route.snapshot.data['module'] || 'settings';
     if (this.moduleMap[moduleKey]) {
-      this.currentConfig = this.moduleMap[moduleKey];
+      this.currentConfig.set(this.moduleMap[moduleKey]);
     }
   }
 }
