@@ -536,15 +536,15 @@ export class BusinessService {
     return this.authService.safeRequest(async () => {
       // 1. Build canonical payload matching create-event.page.ts buildPayload()
       const payload: Record<string, any> = {
-        name: data.name !== undefined ? data.name.trim() : undefined,
-        category: data.category !== undefined ? data.category : undefined,
-        description: data.description !== undefined ? data.description.trim() : undefined,
+        name: data.name ?? undefined,
+        category: data.category ?? undefined,
+        description: data.description ?? undefined,
         location_point: data.location_point ?? null,
-        address: data.address !== undefined ? (data.address ? data.address.trim() : null) : null,
+        address: data.address ?? null,
         startDate: data.startDate ? new Date(data.startDate).toISOString().split('T')[0] : undefined,
         endDate: data.endDate ? new Date(data.endDate).toISOString().split('T')[0] : undefined,
-        allDay: !!data.allDay,
-        mode: data.mode ?? 'single',
+        allDay: data.allDay,
+        mode: data.mode!,
         recurring: typeof data.recurring === 'object' && data.recurring !== null
           ? JSON.stringify(data.recurring)
           : (typeof data.recurring === 'string' ? data.recurring : JSON.stringify({ days: [] })),
@@ -553,18 +553,18 @@ export class BusinessService {
         promotionStart: data.promotionStart !== undefined
           ? data.promotionStart
           : new Date().toISOString(),
-        hasPromotion: !!data.hasPromotion,
-        promoText: data.hasPromotion ? (data.promoText ? data.promoText.trim() : null) : null,
-        isFree: !!data.isFree,
-        contactForPrice: !!data.contactForPrice,
-        price: data.price ?? 0,
-        currency: data.isFree ? undefined : (data.currency || 'USD'),
-        status: data.status || 'draft',
+        hasPromotion: data.hasPromotion,
+        promoText: data.promoText,
+        isFree: data.isFree,
+        contactForPrice: data.contactForPrice,
+        price: data.price,
+        currency: data.isFree ? undefined : data.currency,
         areas: {
           create: areaIds.map((aid) => ({ areas_id: aid })),
           update: [],
           delete: [],
         },
+        status: data.status,
       };
 
       // Directus createItem

@@ -31,8 +31,8 @@ import { AuthService } from '../../core/services/auth.service';
               <strong>Are you a business owner in the Dominican Republic?</strong>
               <span>Claim or register your business profile to start managing posts and promotions.</span>
             </div>
-            <a href="https://vamo-app.com" target="_blank" rel="noopener" class="btn btn-primary">
-              Register Business Profile →
+            <a routerLink="/onboarding" [queryParams]="{ mode: 'business' }" class="btn btn-primary">
+              Set up Business Profile →
             </a>
           </div>
         </div>

@@ -318,4 +318,186 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
     expect(updatePayload.to).toBeUndefined();
     expect(updatePayload.currency).toBeUndefined();
   });
+
+  describe('Strict Full-Object Canonical Payload Equality (Phase 4A.3B)', () => {
+    const fixedIso = '2026-10-04T12:00:00.000Z';
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(fixedIso));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('16. strict full object equality: single timed paid event', async () => {
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-16' });
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-16', name: 'Jazz Night' });
+
+      await service.createEvent(
+        {
+          name: 'Jazz Night',
+          category: 'live',
+          description: 'Live jazz under the stars',
+          startDate: '2026-11-15',
+          endDate: '2026-11-15',
+          allDay: false,
+          openEnd: false,
+          mode: 'single',
+          from: '20:00',
+          to: '23:30',
+          hasPromotion: true,
+          promoText: '2x1 Cocktails before 21:00',
+          isFree: false,
+          contactForPrice: false,
+          price: 15,
+          currency: 'USD',
+          address: 'Playa Bonita 14',
+          location_point: { type: 'Point', coordinates: [-69.54, 19.31] },
+          status: 'published',
+        },
+        [],
+        ['area-lt']
+      );
+
+      const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      expect(payload).toEqual({
+        name: 'Jazz Night',
+        category: 'live',
+        description: 'Live jazz under the stars',
+        location_point: { type: 'Point', coordinates: [-69.54, 19.31] },
+        address: 'Playa Bonita 14',
+        startDate: '2026-11-15',
+        endDate: '2026-11-15',
+        allDay: false,
+        mode: 'single',
+        recurring: JSON.stringify({ days: [] }),
+        from: '20:00:00',
+        to: '23:30:00',
+        promotionStart: fixedIso,
+        hasPromotion: true,
+        promoText: '2x1 Cocktails before 21:00',
+        isFree: false,
+        contactForPrice: false,
+        price: 15,
+        currency: 'USD',
+        areas: {
+          create: [{ areas_id: 'area-lt' }],
+          update: [],
+          delete: [],
+        },
+        status: 'published',
+      });
+    });
+
+    it('17. strict full object equality: single all-day free event', async () => {
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-17' });
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-17', name: 'Beach Clean Up' });
+
+      await service.createEvent(
+        {
+          name: 'Beach Clean Up',
+          category: 'community',
+          description: 'Join us to clean the beach',
+          startDate: '2026-11-20',
+          allDay: true,
+          mode: 'single',
+          isFree: true,
+          contactForPrice: false,
+          price: 0,
+          currency: 'USD',
+          status: 'published',
+        },
+        [],
+        ['area-samana']
+      );
+
+      const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      expect(payload).toEqual({
+        name: 'Beach Clean Up',
+        category: 'community',
+        description: 'Join us to clean the beach',
+        location_point: null,
+        address: null,
+        startDate: '2026-11-20',
+        endDate: undefined,
+        allDay: true,
+        mode: 'single',
+        recurring: JSON.stringify({ days: [] }),
+        from: undefined,
+        to: undefined,
+        promotionStart: fixedIso,
+        hasPromotion: undefined,
+        promoText: undefined,
+        isFree: true,
+        contactForPrice: false,
+        price: 0,
+        currency: undefined,
+        areas: {
+          create: [{ areas_id: 'area-samana' }],
+          update: [],
+          delete: [],
+        },
+        status: 'published',
+      });
+    });
+
+    it('18. strict full object equality: recurring timed event', async () => {
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-18' });
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-18', name: 'Salsa Saturdays' });
+
+      await service.createEvent(
+        {
+          name: 'Salsa Saturdays',
+          category: 'dance',
+          description: 'Weekly salsa classes and social dancing',
+          startDate: '2026-10-10',
+          endDate: '2026-12-31',
+          allDay: false,
+          openEnd: true,
+          mode: 'recurring',
+          recurring: { days: ['sat'] },
+          from: '21:00',
+          to: '02:00',
+          isFree: false,
+          contactForPrice: true,
+          price: 0,
+          currency: 'DOP',
+          status: 'draft',
+        },
+        [],
+        ['area-pc']
+      );
+
+      const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      expect(payload).toEqual({
+        name: 'Salsa Saturdays',
+        category: 'dance',
+        description: 'Weekly salsa classes and social dancing',
+        location_point: null,
+        address: null,
+        startDate: '2026-10-10',
+        endDate: '2026-12-31',
+        allDay: false,
+        mode: 'recurring',
+        recurring: JSON.stringify({ days: ['sat'] }),
+        from: '21:00:00',
+        to: undefined,
+        promotionStart: fixedIso,
+        hasPromotion: undefined,
+        promoText: undefined,
+        isFree: false,
+        contactForPrice: true,
+        price: 0,
+        currency: 'DOP',
+        areas: {
+          create: [{ areas_id: 'area-pc' }],
+          update: [],
+          delete: [],
+        },
+        status: 'draft',
+      });
+    });
+  });
 });

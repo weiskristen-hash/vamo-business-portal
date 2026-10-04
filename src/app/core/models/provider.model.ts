@@ -64,3 +64,20 @@ export interface Provider {
   subscription_tier?: 'starter' | 'basic' | 'advanced' | null;
   bookmarkCount?: number;
 }
+
+export const BUSINESS_TYPES = [
+  { value: 'restaurant_and_bar', label: 'Restaurant & Bar' },
+  { value: 'restaurant',         label: 'Restaurant' },
+  { value: 'bar',                label: 'Bar' },
+  { value: 'disco_club',         label: 'Disco / Club' },
+  { value: 'bakery',             label: 'Bakery / Café' },
+  { value: 'wellness',           label: 'Wellness & Spa' },
+  { value: 'car_rental',         label: 'Car Rental' },
+  { value: 'excursions',         label: 'Excursions & Tours' },
+  { value: 'sports',             label: 'Sports & Outdoor' },
+  { value: 'shopping',           label: 'Shopping' },
+  { value: 'hair-dresser',       label: 'Hair & Beauty' },
+  { value: 'arts_and_culture',   label: 'Art & Culture' },
+  { value: 'services',           label: 'Other Services' },
+  { value: 'other',              label: 'Other' },
+];

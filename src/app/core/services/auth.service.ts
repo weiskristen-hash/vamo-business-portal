@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
-import { passwordRequest, readMe, registerUser } from '@directus/sdk';
+import { createItem, passwordRequest, readMe, registerUser } from '@directus/sdk';
 import { directusClient } from '../directus/directus-client';
 import { runtimeConfig } from '../config/runtime-config';
 import { createBrowserAuthStorage } from '../directus/browser-auth.storage';
@@ -244,6 +244,24 @@ export class AuthService {
         last_name: payload.last_name,
       })
     );
+  }
+
+  async createProviderAndLink(data: Record<string, any>): Promise<VamoUser> {
+    // Creating the provider triggers the "Provider → Link to Creator" Directus Flow,
+    // which automatically sets provider_link on the current user server-side.
+    const createdProvider = await this.safeRequest(() =>
+      directusClient.request(createItem('providers', data as any))
+    );
+    let user = await this.loadCurrentUser();
+    if (!user?.provider_link?.id && (createdProvider as any)?.id) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await new Promise((res) => setTimeout(res, 350));
+        user = await this.loadCurrentUser();
+        if (user?.provider_link?.id) break;
+      }
+    }
+    this.userSubject.next(user);
+    return user;
   }
 
   async login(email: string, password: string): Promise<VamoUser> {
