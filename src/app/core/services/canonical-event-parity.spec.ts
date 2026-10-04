@@ -716,11 +716,11 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
       expect(payload.promotionStart).toBeUndefined(); // omitted
     });
 
-    it('24. updateEvent preserves non-USD currency when paid and passes promotionStart when explicitly provided', async () => {
-      clientRequestMock.mockResolvedValueOnce({ id: 'ev-paid-dop' });
-      clientRequestMock.mockResolvedValueOnce({ id: 'ev-paid-dop' });
+    it('24. updateEvent strictly omits promotionStart even if caller supplies it, preserving all other canonical fields', async () => {
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-omit-promo' });
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-omit-promo' });
 
-      await service.updateEvent('ev-paid-dop', {
+      await service.updateEvent('ev-omit-promo', {
         name: 'Paid DOP Event',
         mode: 'single',
         isFree: false,
@@ -731,10 +731,13 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
       });
 
       const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
-      expect(payload.currency).toBe('DOP');
-      expect(payload.price).toBe(500);
+      expect(payload.promotionStart).toBeUndefined();
+      expect(payload.name).toBe('Paid DOP Event');
+      expect(payload.mode).toBe('single');
       expect(payload.isFree).toBe(false);
-      expect(payload.promotionStart).toBe(fixedIso);
+      expect(payload.price).toBe(500);
+      expect(payload.currency).toBe('DOP');
+      expect(payload.status).toBe('published');
     });
   });
 });

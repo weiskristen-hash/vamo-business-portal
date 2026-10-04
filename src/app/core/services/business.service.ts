@@ -649,9 +649,6 @@ export class BusinessService {
       if (data.openEnd !== undefined || data.to !== undefined) {
         payload['to'] = data.openEnd ? undefined : (data.to ? this.extractTime(data.to) : undefined);
       }
-      if (data.promotionStart !== undefined) {
-        payload['promotionStart'] = data.promotionStart;
-      }
       if (data.hasPromotion !== undefined) payload['hasPromotion'] = data.hasPromotion;
       if (data.promoText !== undefined) payload['promoText'] = data.promoText;
       if (data.isFree !== undefined) payload['isFree'] = data.isFree;
@@ -671,10 +668,11 @@ export class BusinessService {
         };
       }
 
-      // Ensure translations, translation_status, and images are never in the primary event payload
+      // Ensure translations, translation_status, images, and promotionStart are never in the primary event payload on edit
       delete payload['translations'];
       delete payload['translation_status'];
       delete payload['images'];
+      delete payload['promotionStart'];
 
       // 1. Primary write: update event record with metadata (including status, triggering Translate Event Flow if published)
       await directusClient.request(updateItem('events', eventId, payload as any));
