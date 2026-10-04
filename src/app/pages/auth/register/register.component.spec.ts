@@ -191,7 +191,10 @@ describe('RegisterComponent (Canonical Source Parity)', () => {
     expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('google', '/app/overview');
   });
 
-  it('11. should trigger Apple sign-up flow via authService.loginWithProvider', () => {
+  it('11. should not render Apple action button while preserving component Apple sign-up method and Google action', () => {
+    expect(fixture.nativeElement.querySelector('.apple-btn')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.google-btn')).toBeTruthy();
+
     component.onAppleSignUp();
     expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('apple', '/app/overview');
   });

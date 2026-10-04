@@ -308,12 +308,26 @@ describe('OnboardingComponent (Canonical Source Parity)', () => {
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/app/listings/create'], { replaceUrl: true });
   });
 
-  it('15. social registration invokes authService.loginWithProvider targeting listings create', () => {
+  it('15. social registration preserves loginWithProvider methods and hides Apple action from UI', () => {
     component.onGoogleSignUp();
     expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('google', '/app/listings/create');
 
     component.onAppleSignUp();
     expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('apple', '/app/listings/create');
+
+    // Verify UI rendering in browse-account step
+    component.currentStep.set('browse-account');
+    fixture.detectChanges();
+    const browseButtons = Array.from(fixture.nativeElement.querySelectorAll('.ob-social-row button')) as HTMLButtonElement[];
+    expect(browseButtons.some((b) => b.textContent?.includes('Apple'))).toBe(false);
+    expect(browseButtons.some((b) => b.textContent?.includes('Google'))).toBe(true);
+
+    // Verify UI rendering in business-register step
+    component.currentStep.set('business-register');
+    fixture.detectChanges();
+    const bizButtons = Array.from(fixture.nativeElement.querySelectorAll('.ob-social-row button')) as HTMLButtonElement[];
+    expect(bizButtons.some((b) => b.textContent?.includes('Apple'))).toBe(false);
+    expect(bizButtons.some((b) => b.textContent?.includes('Google'))).toBe(true);
   });
 
   it('16. progress dots return correct total and active states', () => {

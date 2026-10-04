@@ -143,14 +143,26 @@ describe('LoginComponent', () => {
     expect(component.loading).toBe(true);
   });
 
-  it('should trigger Apple SSO via AuthService with returnUrl', () => {
+  it('should not render Apple action button while preserving component Apple SSO method and Google action', () => {
     authServiceSpy.loginWithProvider = vi.fn();
-    const appleBtn = fixture.nativeElement.querySelector('.apple-btn') as HTMLButtonElement;
+    const appleBtn = fixture.nativeElement.querySelector('.apple-btn');
+    const googleBtn = fixture.nativeElement.querySelector('.google-btn');
 
-    appleBtn.click();
+    expect(appleBtn).toBeNull();
+    expect(googleBtn).toBeTruthy();
 
+    component.onAppleLogin();
     expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('apple', '/app/overview');
     expect(component.loading).toBe(true);
+  });
+
+  it('should display neutral VAMO Business preview card copy without cross-platform claims', () => {
+    const previewCard = fixture.nativeElement.querySelector('.hero-preview-card');
+    expect(previewCard).toBeTruthy();
+    expect(previewCard.textContent).toContain('Your VAMO Business');
+    expect(previewCard.textContent).toContain('Manage your profile, events, and promotions in one place.');
+    expect(previewCard.textContent).not.toContain('Dominican Discovery Network');
+    expect(previewCard.textContent).not.toContain('Instant sync across iOS, Android, and Web');
   });
 
   it('should translate unexpected backend errors into customer-safe message without leaking Directus internals', async () => {
