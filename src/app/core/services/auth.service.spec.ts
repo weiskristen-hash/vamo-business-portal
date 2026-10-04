@@ -60,6 +60,27 @@ describe('AuthService', () => {
     setItemSpy.mockRestore();
   });
 
+  it('should preserve business-signup intent in sessionStorage when provided in loginWithProvider and clear when not provided', () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    const removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem');
+
+    try {
+      service.loginWithProvider('google', '/onboarding?social=business', 'business');
+    } catch {}
+
+    expect(setItemSpy).toHaveBeenCalledWith('vamo_auth_return_url', '/onboarding?social=business');
+    expect(setItemSpy).toHaveBeenCalledWith('vamo_auth_signup_intent', 'business');
+
+    try {
+      service.loginWithProvider('google', '/app/overview');
+    } catch {}
+
+    expect(removeItemSpy).toHaveBeenCalledWith('vamo_auth_signup_intent');
+
+    setItemSpy.mockRestore();
+    removeItemSpy.mockRestore();
+  });
+
   it('should ingest tokens, update user, and store session in handleSsoTokens', async () => {
     const mockUser = {
       id: 'usr-sso',
@@ -75,5 +96,38 @@ describe('AuthService', () => {
 
     expect(user.id).toBe('usr-sso');
     expect(service.currentUser?.email).toBe('alex@vamo.com');
+  });
+
+  it('should call registerUser with canonical verification_url on register when email is not taken', async () => {
+    const directusClient = (await import('../directus/directus-client')).directusClient;
+    const loginSpy = vi.spyOn(directusClient, 'login').mockRejectedValue(new Error('Invalid credentials'));
+    const requestSpy = vi.spyOn(directusClient, 'request').mockResolvedValue(undefined as any);
+
+    await service.register({
+      first_name: 'Carlos',
+      last_name: 'Pérez',
+      email: 'carlos@vamo.com',
+      password: 'password123',
+    });
+
+    expect(loginSpy).toHaveBeenCalledWith({ email: 'carlos@vamo.com', password: 'password123' });
+    expect(requestSpy).toHaveBeenCalled();
+  });
+
+  it('should reject with RECORD_NOT_UNIQUE if login pre-check succeeds during register', async () => {
+    const directusClient = (await import('../directus/directus-client')).directusClient;
+    vi.spyOn(directusClient, 'login').mockResolvedValue(undefined as any);
+    vi.spyOn(directusClient, 'logout').mockResolvedValue(undefined as any);
+
+    await expect(
+      service.register({
+        first_name: 'Existing',
+        last_name: 'User',
+        email: 'taken@vamo.com',
+        password: 'password123',
+      })
+    ).rejects.toMatchObject({
+      errors: [{ extensions: { code: 'RECORD_NOT_UNIQUE' } }],
+    });
   });
 });

@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
-import { passwordRequest, readMe } from '@directus/sdk';
+import { createItem, passwordRequest, readMe, registerUser } from '@directus/sdk';
 import { directusClient } from '../directus/directus-client';
 import { runtimeConfig } from '../config/runtime-config';
 import { createBrowserAuthStorage } from '../directus/browser-auth.storage';
@@ -218,6 +218,52 @@ export class AuthService {
   // 🔹 LOGIN & SSO
   // ======================================================
 
+  async register(payload: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    password: string;
+  }): Promise<void> {
+    // Canonical VAMO pre-check: Directus returns 204 even for duplicate emails without throwing.
+    // If login succeeds with these credentials, the email is already registered.
+    try {
+      await directusClient.login({ email: payload.email, password: payload.password });
+      try { await directusClient.logout(); } catch { /* ignore */ }
+      const takenErr: any = new Error('Email already taken');
+      takenErr.errors = [{ extensions: { code: 'RECORD_NOT_UNIQUE' }, message: 'Email already taken' }];
+      throw takenErr;
+    } catch (preLoginErr: any) {
+      if (preLoginErr?.errors?.[0]?.extensions?.code === 'RECORD_NOT_UNIQUE') throw preLoginErr;
+      // Login failed -> email is not registered with this password, proceed to registerUser
+    }
+
+    await directusClient.request(
+      registerUser(payload.email, payload.password, {
+        verification_url: 'https://vamo-app.com/verify.html',
+        first_name: payload.first_name,
+        last_name: payload.last_name,
+      })
+    );
+  }
+
+  async createProviderAndLink(data: Record<string, any>): Promise<VamoUser> {
+    // Creating the provider triggers the "Provider → Link to Creator" Directus Flow,
+    // which automatically sets provider_link on the current user server-side.
+    const createdProvider = await this.safeRequest(() =>
+      directusClient.request(createItem('providers', data as any))
+    );
+    let user = await this.loadCurrentUser();
+    if (!user?.provider_link?.id && (createdProvider as any)?.id) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await new Promise((res) => setTimeout(res, 350));
+        user = await this.loadCurrentUser();
+        if (user?.provider_link?.id) break;
+      }
+    }
+    this.userSubject.next(user);
+    return user;
+  }
+
   async login(email: string, password: string): Promise<VamoUser> {
     await directusClient.login({ email, password });
 
@@ -232,11 +278,20 @@ export class AuthService {
    * Hand off to Directus hosted OAuth flow (e.g. google).
    * Directus redirects back to /auth/callback with access_token, refresh_token, expires.
    */
-  loginWithProvider(provider: 'google' | 'apple', returnUrl: string = '/app/overview'): void {
+  loginWithProvider(
+    provider: 'google' | 'apple',
+    returnUrl: string = '/app/overview',
+    signupIntent?: 'business' | 'browse'
+  ): void {
     if (typeof window === 'undefined') return;
 
     try {
       window.sessionStorage.setItem('vamo_auth_return_url', returnUrl);
+      if (signupIntent) {
+        window.sessionStorage.setItem('vamo_auth_signup_intent', signupIntent);
+      } else {
+        window.sessionStorage.removeItem('vamo_auth_signup_intent');
+      }
     } catch {
       // Ignore storage restrictions
     }
