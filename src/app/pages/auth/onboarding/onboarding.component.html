@@ -1,0 +1,806 @@
+<div class="onboarding-page">
+  <div class="ob-container">
+    <!-- Top Bar -->
+    <header class="ob-topbar">
+      <div class="ob-topbar-left">
+        <button
+          *ngIf="currentStep() !== 'location-permission'"
+          type="button"
+          class="ob-nav-btn ob-back-btn"
+          (click)="goBack()"
+          [attr.aria-label]="'COMMON.BACK' | translate"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+        </button>
+        <div class="ob-logo-wrap">
+          <img src="/assets/vamo-logo.png" alt="VAMO" class="ob-logo" onerror="this.style.display='none'" />
+          <span class="ob-brand-text">VAMO</span>
+        </div>
+      </div>
+
+      <div class="ob-progress">
+        <span
+          *ngFor="let dot of progressDots; let i = index"
+          class="ob-dot"
+          [class.ob-dot--active]="dot.active"
+        ></span>
+      </div>
+
+      <div class="ob-topbar-right">
+        <app-language-selector></app-language-selector>
+        <button
+          type="button"
+          class="ob-nav-btn ob-close-btn"
+          (click)="cancelOnboarding()"
+          [attr.aria-label]="'COMMON.CANCEL' | translate"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Error Banner -->
+    <div *ngIf="errorMessage()" class="ob-alert ob-alert-error" role="alert">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <span>{{ errorMessage() }}</span>
+    </div>
+
+    <!-- Duplicate Email Notice -->
+    <div *ngIf="emailTaken()" class="ob-alert ob-alert-warning" role="alert">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+      <div class="warning-text">
+        <span>{{ 'ONBOARDING.ERROR_EMAIL_TAKEN' | translate }}</span>
+        <a routerLink="/login" class="warning-link">{{ 'ONBOARDING.ERROR_EMAIL_TAKEN_LOGIN' | translate }} &rarr;</a>
+      </div>
+    </div>
+
+    <!-- STEP 0: LOCATION PERMISSION -->
+    <section *ngIf="currentStep() === 'location-permission'" class="ob-step ob-step--location">
+      <div class="ob-location-visual">
+        <div class="ob-location-ring ob-location-ring--outer"></div>
+        <div class="ob-location-ring ob-location-ring--inner"></div>
+        <div class="ob-location-pin">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+          </svg>
+        </div>
+      </div>
+
+      <div class="ob-header ob-header--center">
+        <h1 class="ob-title">{{ 'ONBOARDING.LOCATION_TITLE' | translate }}</h1>
+        <p class="ob-subtitle">{{ 'ONBOARDING.LOCATION_SUB' | translate }}</p>
+      </div>
+
+      <div class="ob-benefits">
+        <div class="ob-benefit-row">
+          <div class="benefit-icon-wrap" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+          </div>
+          <span>{{ 'ONBOARDING.LOCATION_BENEFIT_1' | translate }}</span>
+        </div>
+        <div class="ob-benefit-row">
+          <div class="benefit-icon-wrap" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+              <line x1="8" y1="2" x2="8" y2="18"></line>
+              <line x1="16" y1="6" x2="16" y2="22"></line>
+            </svg>
+          </div>
+          <span>{{ 'ONBOARDING.LOCATION_BENEFIT_2' | translate }}</span>
+        </div>
+        <div class="ob-benefit-row">
+          <div class="benefit-icon-wrap" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+          </div>
+          <span>{{ 'ONBOARDING.LOCATION_BENEFIT_3' | translate }}</span>
+        </div>
+      </div>
+
+      <div class="ob-footer ob-footer--stack">
+        <button
+          type="button"
+          class="btn btn-primary ob-btn-full"
+          [disabled]="locationLoading()"
+          (click)="requestLocation()"
+        >
+          <span *ngIf="!locationLoading()">{{ 'ONBOARDING.CONTINUE' | translate }}</span>
+          <span *ngIf="locationLoading()" class="spinner-row">
+            <span class="spinner"></span>
+            <span>{{ 'PORTAL.ONBOARDING.DETECTING_LOCATION' | translate }}</span>
+          </span>
+        </button>
+
+        <button type="button" class="btn btn-ghost ob-skip-btn" (click)="skipLocation()">
+          {{ 'ONBOARDING.LOCATION_SKIP' | translate }}
+        </button>
+
+        <div class="ob-login-link-wrap">
+          <span class="ob-login-text">{{ 'ONBOARDING.ALREADY_HAVE_ACCOUNT' | translate }}</span>
+          <a routerLink="/login" class="ob-login-link">{{ 'ONBOARDING.LOGIN' | translate }}</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 1: AREA SELECTION -->
+    <section *ngIf="currentStep() === 'area'" class="ob-step ob-step--area">
+      <div class="ob-header">
+        <h1 class="ob-title">{{ 'ONBOARDING.AREA_TITLE' | translate }}</h1>
+        <p class="ob-subtitle">{{ 'ONBOARDING.AREA_SUBTITLE' | translate }}</p>
+      </div>
+
+      <div *ngIf="nearestArea()" class="ob-banner ob-banner--found">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+          <circle cx="12" cy="10" r="3"></circle>
+        </svg>
+        <span>{{ 'ONBOARDING.AREA_DETECTED' | translate: { area: nearestArea()!.name } }}</span>
+      </div>
+
+      <div *ngIf="notInDR()" class="ob-banner ob-banner--outside">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="2" y1="12" x2="22" y2="12"></line>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+        </svg>
+        <span>{{ 'ONBOARDING.AREA_NOT_IN_DR' | translate }}</span>
+      </div>
+
+      <div *ngIf="areasLoading()" class="ob-loading-state">
+        <span class="spinner"></span>
+        <span>{{ 'PORTAL.ONBOARDING.LOADING_REGIONS' | translate }}</span>
+      </div>
+
+      <div *ngIf="!areasLoading()" class="ob-area-grid">
+        <button
+          *ngFor="let area of areas()"
+          type="button"
+          class="ob-area-card"
+          [class.ob-area-card--selected]="selectedArea()?.id === area.id"
+          (click)="selectArea(area)"
+        >
+          <span class="ob-area-emoji">{{ area.emoji }}</span>
+          <span class="ob-area-name">{{ area.name }}</span>
+          <span *ngIf="selectedArea()?.id === area.id" class="ob-area-check">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </span>
+        </button>
+      </div>
+
+      <div class="ob-footer">
+        <button
+          type="button"
+          class="btn btn-primary ob-btn-full"
+          [disabled]="!selectedArea()"
+          (click)="goToIntent()"
+        >
+          {{ 'ONBOARDING.CONTINUE' | translate }}
+        </button>
+      </div>
+    </section>
+
+    <!-- STEP 2: INTENT SELECTION -->
+    <section *ngIf="currentStep() === 'intent'" class="ob-step ob-step--intent">
+      <div class="ob-header">
+        <h1 class="ob-title">{{ 'ONBOARDING.INTENT_TITLE' | translate }}</h1>
+      </div>
+
+      <div class="ob-intent-cards">
+        <button type="button" class="ob-intent-card" (click)="selectIntent('browse')">
+          <div class="ob-intent-icon ob-intent-icon--browse">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </div>
+          <div class="ob-intent-text">
+            <strong>{{ 'ONBOARDING.INTENT_BROWSE_TITLE' | translate }}</strong>
+            <span>{{ 'ONBOARDING.INTENT_BROWSE_SUB' | translate }}</span>
+          </div>
+          <span class="ob-intent-arrow">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </span>
+        </button>
+
+        <button type="button" class="ob-intent-card" (click)="selectIntent('business')">
+          <div class="ob-intent-icon ob-intent-icon--business">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+            </svg>
+          </div>
+          <div class="ob-intent-text">
+            <strong>{{ 'ONBOARDING.INTENT_BUSINESS_TITLE' | translate }}</strong>
+            <span>{{ 'ONBOARDING.INTENT_BUSINESS_SUB' | translate }}</span>
+          </div>
+          <span class="ob-intent-arrow">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <!-- STEP 3a: BROWSE ACCOUNT CREATION -->
+    <section *ngIf="currentStep() === 'browse-account'" class="ob-step ob-step--form">
+      <div class="ob-header">
+        <h1 class="ob-title">{{ 'ONBOARDING.BROWSE_ACCOUNT_TITLE' | translate }}</h1>
+        <p class="ob-subtitle">{{ 'ONBOARDING.BROWSE_ACCOUNT_SUB' | translate }}</p>
+      </div>
+
+      <div class="ob-card">
+        <ng-container *ngTemplateOutlet="userFormTpl"></ng-container>
+
+        <div class="ob-footer ob-footer--stack">
+          <button
+            type="button"
+            class="btn btn-primary ob-btn-full"
+            [disabled]="loading() || !isUserFormValid()"
+            (click)="registerBrowseUser()"
+          >
+            <span *ngIf="!loading()">{{ 'ONBOARDING.CREATE_ACCOUNT' | translate }}</span>
+            <span *ngIf="loading()" class="spinner-row">
+              <span class="spinner"></span>
+              <span>{{ 'PORTAL.ONBOARDING.CREATING_ACCOUNT' | translate }}</span>
+            </span>
+          </button>
+
+          <div class="ob-social-divider"><span>{{ 'AUTH.OR_CONTINUE_WITH' | translate | uppercase }}</span></div>
+
+          <div class="ob-social-row">
+            <button type="button" class="btn btn-secondary ob-social-btn" [disabled]="loading()" (click)="onGoogleSignUp()">
+              <svg width="18" height="18" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+              <span>{{ 'AUTH.LOGIN_GOOGLE' | translate }}</span>
+            </button>
+          </div>
+
+          <div class="ob-login-link-wrap">
+            <span class="ob-login-text">{{ 'ONBOARDING.ALREADY_HAVE_ACCOUNT' | translate }}</span>
+            <a routerLink="/login" class="ob-login-link">{{ 'ONBOARDING.LOGIN' | translate }}</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 3b: BUSINESS PITCH (3 Slides) -->
+    <section *ngIf="currentStep() === 'business-pitch'" class="ob-step ob-step--pitch">
+      <!-- Slide 0 -->
+      <div *ngIf="pitchSlide() === 0" class="pitch-slide">
+        <div class="pitch-content">
+          <span class="pitch-badge">VAMO Business</span>
+          <h2 class="pitch-title">
+            {{ 'ONBOARDING.PITCH_SLIDE1_TITLE' | translate }}<br>
+            <span class="pitch-highlight">{{ 'ONBOARDING.PITCH_SLIDE1_TITLE_HIGHLIGHT' | translate }}</span>
+          </h2>
+          <p class="pitch-sub">{{ 'ONBOARDING.PITCH_SLIDE1_SUB' | translate }}</p>
+        </div>
+        <div class="pitch-visual">
+          <div class="visual-card">
+            <span class="visual-stat">10,000+</span>
+            <span class="visual-label">{{ 'ONBOARDING.PITCH_STAT_VIEWS' | translate }}</span>
+          </div>
+        </div>
+        <div class="pitch-footer">
+          <div class="pitch-dots">
+            <span class="pitch-dot pitch-dot--active"></span>
+            <span class="pitch-dot"></span>
+            <span class="pitch-dot"></span>
+          </div>
+          <button type="button" class="btn btn-primary ob-btn-full" (click)="nextPitchSlide()">
+            {{ 'ONBOARDING.PITCH_NEXT' | translate }} &rarr;
+          </button>
+        </div>
+      </div>
+
+      <!-- Slide 1 -->
+      <div *ngIf="pitchSlide() === 1" class="pitch-slide">
+        <div class="pitch-content">
+          <span class="pitch-badge">VAMO Business</span>
+          <h2 class="pitch-title">
+            {{ 'ONBOARDING.PITCH_SLIDE2_TITLE' | translate }}<br>
+            <span class="pitch-highlight">{{ 'ONBOARDING.PITCH_SLIDE2_TITLE_HIGHLIGHT' | translate }}</span>
+          </h2>
+          <div class="pitch-features">
+            <div class="pitch-feature">
+              <div class="pitch-feature-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                  <circle cx="12" cy="10" r="3"></circle>
+                </svg>
+              </div>
+              <div class="pitch-feature-text">
+                <strong>{{ 'ONBOARDING.PITCH_FEATURE_REACH' | translate }}</strong>
+              </div>
+            </div>
+            <div class="pitch-feature">
+              <div class="pitch-feature-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+              </div>
+              <div class="pitch-feature-text">
+                <strong>{{ 'ONBOARDING.PITCH_FEATURE_PROMOTE' | translate }}</strong>
+              </div>
+            </div>
+            <div class="pitch-feature">
+              <div class="pitch-feature-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                  <polyline points="17 6 23 6 23 12"></polyline>
+                </svg>
+              </div>
+              <div class="pitch-feature-text">
+                <strong>{{ 'ONBOARDING.PITCH_FEATURE_REVENUE' | translate }}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pitch-footer">
+          <div class="pitch-dots">
+            <span class="pitch-dot"></span>
+            <span class="pitch-dot pitch-dot--active"></span>
+            <span class="pitch-dot"></span>
+          </div>
+          <button type="button" class="btn btn-primary ob-btn-full" (click)="nextPitchSlide()">
+            {{ 'ONBOARDING.PITCH_NEXT' | translate }} &rarr;
+          </button>
+        </div>
+      </div>
+
+      <!-- Slide 2 -->
+      <div *ngIf="pitchSlide() === 2" class="pitch-slide">
+        <div class="pitch-content">
+          <span class="pitch-badge">VAMO Business</span>
+          <h2 class="pitch-title">
+            {{ 'ONBOARDING.PITCH_SLIDE3_TITLE' | translate }}<br>
+            <span class="pitch-highlight">{{ 'ONBOARDING.PITCH_SLIDE3_TITLE_HIGHLIGHT' | translate }}</span>
+          </h2>
+          <p class="pitch-sub">{{ 'ONBOARDING.PITCH_SLIDE3_SUB' | translate }}</p>
+        </div>
+        <div class="pitch-mockup">
+          <div class="mockup-header">
+            <span class="mockup-dot red"></span>
+            <span class="mockup-dot yellow"></span>
+            <span class="mockup-dot green"></span>
+            <span class="mockup-title">VAMO Business</span>
+          </div>
+          <div class="mockup-body">
+            <div class="mockup-event-title">Live Music & Events</div>
+            <div class="mockup-field"></div>
+            <div class="mockup-field sm"></div>
+          </div>
+        </div>
+        <div class="pitch-footer">
+          <div class="pitch-dots">
+            <span class="pitch-dot"></span>
+            <span class="pitch-dot"></span>
+            <span class="pitch-dot pitch-dot--active"></span>
+          </div>
+          <button type="button" class="btn btn-primary ob-btn-full" (click)="nextPitchSlide()">
+            {{ 'ONBOARDING.PITCH_REGISTER' | translate }} &rarr;
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 4: BUSINESS ACCOUNT REGISTRATION -->
+    <section *ngIf="currentStep() === 'business-register'" class="ob-step ob-step--form">
+      <div class="ob-header">
+        <h1 class="ob-title">{{ 'ONBOARDING.BUSINESS_REGISTER_TITLE' | translate }}</h1>
+        <p class="ob-subtitle">{{ 'ONBOARDING.BUSINESS_REGISTER_SUB' | translate }}</p>
+      </div>
+
+      <div class="ob-card">
+        <ng-container *ngTemplateOutlet="userFormTpl"></ng-container>
+
+        <div class="ob-footer ob-footer--stack">
+          <button
+            type="button"
+            class="btn btn-primary ob-btn-full"
+            [disabled]="loading() || !isUserFormValid()"
+            (click)="registerBusinessUser()"
+          >
+            <span *ngIf="!loading()">{{ 'ONBOARDING.CONTINUE' | translate }}</span>
+            <span *ngIf="loading()" class="spinner-row">
+              <span class="spinner"></span>
+              <span>{{ 'PORTAL.ONBOARDING.CREATING_ACCOUNT' | translate }}</span>
+            </span>
+          </button>
+
+          <div class="ob-social-divider"><span>{{ 'AUTH.OR_CONTINUE_WITH' | translate | uppercase }}</span></div>
+
+          <div class="ob-social-row">
+            <button type="button" class="btn btn-secondary ob-social-btn" [disabled]="loading()" (click)="onGoogleSignUp()">
+              <svg width="18" height="18" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+              <span>{{ 'AUTH.LOGIN_GOOGLE' | translate }}</span>
+            </button>
+          </div>
+
+          <div class="ob-login-link-wrap">
+            <span class="ob-login-text">{{ 'ONBOARDING.ALREADY_HAVE_ACCOUNT' | translate }}</span>
+            <a routerLink="/login" class="ob-login-link">{{ 'ONBOARDING.LOGIN' | translate }}</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 5: BUSINESS DETAILS FORM -->
+    <section *ngIf="currentStep() === 'business-details'" class="ob-step ob-step--form">
+      <div class="ob-header">
+        <h1 class="ob-title">{{ 'ONBOARDING.BUSINESS_DETAILS_TITLE' | translate }}</h1>
+        <p class="ob-subtitle">{{ 'ONBOARDING.BUSINESS_DETAILS_SUB' | translate }}</p>
+      </div>
+
+      <div class="ob-card">
+        <form (ngSubmit)="submitBusinessDetails()" class="ob-form">
+          <!-- Business Name -->
+          <div class="form-group">
+            <label for="businessName" class="form-label">{{ 'ONBOARDING.BUSINESS_NAME' | translate }} *</label>
+            <input
+              type="text"
+              id="businessName"
+              name="businessName"
+              [(ngModel)]="businessName"
+              (blur)="touch('businessName')"
+              required
+              class="form-input"
+              placeholder="e.g. Las Terrenas Beach Club"
+              [disabled]="loading()"
+            />
+            <p *ngIf="touched.businessName && !businessName.trim()" class="field-error">
+              {{ 'ONBOARDING.ERROR_BUSINESS_NAME_REQUIRED' | translate }}
+            </p>
+          </div>
+
+          <!-- Business Type -->
+          <div class="form-group">
+            <label for="businessType" class="form-label">{{ 'ONBOARDING.BUSINESS_TYPE' | translate }} *</label>
+            <select
+              id="businessType"
+              name="businessType"
+              [(ngModel)]="businessType"
+              (change)="touch('businessType')"
+              required
+              class="form-input form-select"
+              [disabled]="loading()"
+            >
+              <option value="" disabled selected>{{ 'PORTAL.ONBOARDING.SELECT_BUSINESS_TYPE' | translate }}</option>
+              <option *ngFor="let type of businessTypes()" [value]="type.value">
+                {{ type.label }}
+              </option>
+            </select>
+            <p *ngIf="touched.businessType && !businessType" class="field-error">
+              {{ 'ONBOARDING.ERROR_BUSINESS_TYPE_REQUIRED' | translate }}
+            </p>
+          </div>
+
+          <!-- Business Description -->
+          <div class="form-group">
+            <label for="businessDescription" class="form-label">
+              {{ 'ONBOARDING.BUSINESS_DESCRIPTION' | translate }} *
+            </label>
+            <textarea
+              id="businessDescription"
+              name="businessDescription"
+              rows="3"
+              [(ngModel)]="businessDescription"
+              (blur)="touch('businessDescription')"
+              required
+              minlength="20"
+              class="form-input form-textarea"
+              placeholder="Describe your venue, offerings, and special atmosphere…"
+              [disabled]="loading()"
+            ></textarea>
+            <p
+              *ngIf="touched.businessDescription && businessDescription.trim().length < 20"
+              class="field-error"
+            >
+              {{ 'PORTAL.ONBOARDING.DESCRIPTION_CHAR_COUNT' | translate: { count: businessDescription.trim().length } }}
+            </p>
+          </div>
+
+          <!-- Business Phone -->
+          <div class="form-group">
+            <label for="businessPhone" class="form-label">{{ 'ONBOARDING.BUSINESS_PHONE' | translate }} *</label>
+            <input
+              type="tel"
+              id="businessPhone"
+              name="businessPhone"
+              [(ngModel)]="businessPhone"
+              (blur)="touch('businessPhone')"
+              required
+              class="form-input"
+              placeholder="+1 809-555-0199"
+              [disabled]="loading()"
+            />
+            <p *ngIf="touched.businessPhone && !businessPhone.trim()" class="field-error">
+              {{ 'ONBOARDING.ERROR_PHONE_REQUIRED' | translate }}
+            </p>
+            <p
+              *ngIf="touched.businessPhone && businessPhone.trim() && !isValidPhone(businessPhone)"
+              class="field-error"
+            >
+              {{ 'PORTAL.ONBOARDING.INVALID_PHONE' | translate }}
+            </p>
+          </div>
+
+          <!-- WhatsApp Toggle -->
+          <div class="form-group toggle-group">
+            <label class="toggle-label">
+              <input
+                type="checkbox"
+                name="waNumberSameAsPhone"
+                [(ngModel)]="waNumberSameAsPhone"
+                [disabled]="loading()"
+              />
+              <span class="toggle-custom"></span>
+              <span class="toggle-text">{{ 'ONBOARDING.WA_SAME_AS_PHONE' | translate }}</span>
+            </label>
+          </div>
+
+          <!-- WhatsApp Number (Conditional) -->
+          <div *ngIf="!waNumberSameAsPhone" class="form-group">
+            <label for="businessWhatsapp" class="form-label">{{ 'ONBOARDING.BUSINESS_WHATSAPP' | translate }}</label>
+            <input
+              type="tel"
+              id="businessWhatsapp"
+              name="businessWhatsapp"
+              [(ngModel)]="businessWhatsapp"
+              (blur)="touch('businessWhatsapp')"
+              class="form-input"
+              placeholder="+1 809-555-0199"
+              [disabled]="loading()"
+            />
+            <p
+              *ngIf="
+                touched.businessWhatsapp &&
+                businessWhatsapp.trim() &&
+                !isValidPhone(businessWhatsapp)
+              "
+              class="field-error"
+            >
+              {{ 'PORTAL.ONBOARDING.INVALID_WHATSAPP' | translate }}
+            </p>
+          </div>
+
+          <!-- Business Address -->
+          <div class="form-group">
+            <label for="businessAddress" class="form-label">{{ 'ONBOARDING.BUSINESS_ADDRESS' | translate }} *</label>
+            <input
+              type="text"
+              id="businessAddress"
+              name="businessAddress"
+              [(ngModel)]="businessAddress"
+              (blur)="touch('businessAddress')"
+              required
+              class="form-input"
+              placeholder="e.g. Calle Principal #14, Las Terrenas"
+              [disabled]="loading()"
+            />
+            <p *ngIf="touched.businessAddress && !businessAddress.trim()" class="field-error">
+              {{ 'ONBOARDING.ERROR_ADDRESS_REQUIRED' | translate }}
+            </p>
+          </div>
+
+          <div class="ob-footer">
+            <button
+              type="submit"
+              class="btn btn-primary ob-btn-full"
+              [disabled]="loading() || !isBusinessFormValid()"
+            >
+              <span *ngIf="!loading()">{{ 'PORTAL.ONBOARDING.CREATE_BUSINESS_PROFILE' | translate }}</span>
+              <span *ngIf="loading()" class="spinner-row">
+                <span class="spinner"></span>
+                <span>{{ 'PORTAL.ONBOARDING.SETTING_UP' | translate }}</span>
+              </span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- SHARED USER FORM TEMPLATE -->
+<ng-template #userFormTpl>
+  <form class="ob-form">
+    <div class="form-row">
+      <div class="form-group flex-1">
+        <label for="firstName" class="form-label">{{ 'ONBOARDING.FIRST_NAME' | translate }} *</label>
+        <input
+          type="text"
+          id="firstName"
+          name="firstName"
+          [(ngModel)]="firstName"
+          (blur)="touch('firstName')"
+          required
+          class="form-input"
+          placeholder="Juan"
+          autocomplete="given-name"
+          [disabled]="loading()"
+        />
+        <p *ngIf="touched.firstName && !firstName.trim()" class="field-error">
+          {{ 'ONBOARDING.ERROR_FIRST_NAME_REQUIRED' | translate }}
+        </p>
+      </div>
+
+      <div class="form-group flex-1">
+        <label for="lastName" class="form-label">{{ 'ONBOARDING.LAST_NAME' | translate }} *</label>
+        <input
+          type="text"
+          id="lastName"
+          name="lastName"
+          [(ngModel)]="lastName"
+          (blur)="touch('lastName')"
+          required
+          class="form-input"
+          placeholder="Pérez"
+          autocomplete="family-name"
+          [disabled]="loading()"
+        />
+        <p *ngIf="touched.lastName && !lastName.trim()" class="field-error">
+          {{ 'ONBOARDING.ERROR_LAST_NAME_REQUIRED' | translate }}
+        </p>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="email" class="form-label">{{ 'ONBOARDING.EMAIL' | translate }} *</label>
+      <input
+        type="email"
+        id="email"
+        name="email"
+        [(ngModel)]="email"
+        (blur)="touch('email')"
+        required
+        class="form-input"
+        placeholder="operator@yourbusiness.com"
+        autocomplete="email"
+        inputmode="email"
+        [disabled]="loading()"
+      />
+      <p *ngIf="touched.email && !email.trim()" class="field-error">
+        {{ 'ONBOARDING.ERROR_EMAIL_REQUIRED' | translate }}
+      </p>
+      <p *ngIf="touched.email && email.trim() && !isEmailValid()" class="field-error">
+        {{ 'ONBOARDING.ERROR_EMAIL_INVALID' | translate }}
+      </p>
+    </div>
+
+    <div class="form-group">
+      <label for="password" class="form-label">{{ 'ONBOARDING.PASSWORD' | translate }} *</label>
+      <div class="password-wrapper">
+        <input
+          [type]="showPassword ? 'text' : 'password'"
+          id="password"
+          name="password"
+          [(ngModel)]="password"
+          (blur)="touch('password')"
+          required
+          minlength="6"
+          class="form-input password-input"
+          placeholder="••••••••••••"
+          autocomplete="new-password"
+          [disabled]="loading()"
+        />
+        <button
+          type="button"
+          class="password-toggle"
+          (click)="togglePasswordVisibility()"
+          [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'"
+        >
+          <svg *ngIf="showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+          <svg *ngIf="!showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        </button>
+      </div>
+      <p *ngIf="touched.password && password.length < 6" class="field-error">
+        {{ 'ONBOARDING.ERROR_PASSWORD_MIN_LENGTH' | translate }}
+      </p>
+    </div>
+
+    <div class="form-group">
+      <label for="confirmPassword" class="form-label">{{ 'ONBOARDING.CONFIRM_PASSWORD' | translate }} *</label>
+      <div class="password-wrapper">
+        <input
+          [type]="showConfirmPassword ? 'text' : 'password'"
+          id="confirmPassword"
+          name="confirmPassword"
+          [(ngModel)]="confirmPassword"
+          (blur)="touch('confirmPassword')"
+          required
+          class="form-input password-input"
+          placeholder="••••••••••••"
+          autocomplete="new-password"
+          [disabled]="loading()"
+        />
+        <button
+          type="button"
+          class="password-toggle"
+          (click)="toggleConfirmPasswordVisibility()"
+          [attr.aria-label]="showConfirmPassword ? 'Hide password' : 'Show password'"
+        >
+          <svg *ngIf="showConfirmPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+          <svg *ngIf="!showConfirmPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        </button>
+      </div>
+      <p *ngIf="touched.confirmPassword && !confirmPassword.trim()" class="field-error">
+        {{ 'ONBOARDING.ERROR_CONFIRM_PASSWORD_REQUIRED' | translate }}
+      </p>
+      <p
+        *ngIf="touched.confirmPassword && confirmPassword && password !== confirmPassword"
+        class="field-error"
+      >
+        {{ 'ONBOARDING.ERROR_PASSWORD_MISMATCH' | translate }}
+      </p>
+    </div>
+
+    <div class="form-group checkbox-group">
+      <label class="checkbox-label">
+        <input
+          type="checkbox"
+          name="agreedToTerms"
+          [(ngModel)]="agreedToTerms"
+          (change)="touch('agreedToTerms')"
+          [disabled]="loading()"
+        />
+        <span class="checkbox-custom"></span>
+        <span class="terms-text">
+          {{ 'ONBOARDING.TERMS_AGREE_PRE' | translate }}
+          <a href="https://vamo-app.com/terms" target="_blank" rel="noopener noreferrer">{{ 'ONBOARDING.TERMS_OF_USE' | translate }}</a>
+          {{ 'ONBOARDING.TERMS_AGREE_AND' | translate }}
+          <a href="https://vamo-app.com/privacy" target="_blank" rel="noopener noreferrer">{{ 'ONBOARDING.PRIVACY_POLICY' | translate }}</a>.
+        </span>
+      </label>
+      <p *ngIf="touched.agreedToTerms && !agreedToTerms" class="field-error">
+        {{ 'ONBOARDING.ERROR_TERMS_REQUIRED' | translate }}
+      </p>
+    </div>
+  </form>
+</ng-template>
