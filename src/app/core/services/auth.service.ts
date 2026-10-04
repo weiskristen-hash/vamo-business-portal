@@ -278,11 +278,20 @@ export class AuthService {
    * Hand off to Directus hosted OAuth flow (e.g. google).
    * Directus redirects back to /auth/callback with access_token, refresh_token, expires.
    */
-  loginWithProvider(provider: 'google' | 'apple', returnUrl: string = '/app/overview'): void {
+  loginWithProvider(
+    provider: 'google' | 'apple',
+    returnUrl: string = '/app/overview',
+    signupIntent?: 'business' | 'browse'
+  ): void {
     if (typeof window === 'undefined') return;
 
     try {
       window.sessionStorage.setItem('vamo_auth_return_url', returnUrl);
+      if (signupIntent) {
+        window.sessionStorage.setItem('vamo_auth_signup_intent', signupIntent);
+      } else {
+        window.sessionStorage.removeItem('vamo_auth_signup_intent');
+      }
     } catch {
       // Ignore storage restrictions
     }

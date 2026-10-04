@@ -99,7 +99,7 @@ describe('SsoCallbackComponent', () => {
     expect(sessionStorage.getItem('vamo_auth_return_url')).toBeNull();
   });
 
-  it('should ingest tokens and route unlinked account to /no-business', async () => {
+  it('should ingest tokens and route unlinked account to /no-business for normal login', async () => {
     queryParamsMock['access_token'] = 'test_access_token_no_biz';
 
     authServiceSpy.handleSsoTokens.mockResolvedValue({
@@ -112,6 +112,64 @@ describe('SsoCallbackComponent', () => {
     await component.ngOnInit();
 
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/no-business']);
+  });
+
+  it('should resume business onboarding when unlinked Google user has business signup intent', async () => {
+    queryParamsMock['access_token'] = 'test_access_token_new_biz';
+
+    authServiceSpy.handleSsoTokens.mockResolvedValue({
+      id: 'usr-new-biz',
+      email: 'newoperator@gmail.com',
+      provider_link: null,
+    });
+
+    sessionStorage.setItem('vamo_auth_signup_intent', 'business');
+    sessionStorage.setItem('vamo_auth_return_url', '/onboarding?social=business');
+
+    createComponent();
+    await component.ngOnInit();
+
+    expect(routerSpy.navigate).toHaveBeenCalledWith(['/onboarding'], {
+      queryParams: { social: 'business' },
+    });
+    expect(sessionStorage.getItem('vamo_auth_signup_intent')).toBeNull();
+    expect(sessionStorage.getItem('vamo_auth_return_url')).toBeNull();
+  });
+
+  it('should route linked provider normally to /app/overview when user already has linked business despite business signup intent', async () => {
+    queryParamsMock['access_token'] = 'test_access_token_linked';
+
+    authServiceSpy.handleSsoTokens.mockResolvedValue({
+      id: 'usr-linked-biz',
+      email: 'existingowner@beachbar.com',
+      provider_link: { id: 'prov-existing', name: 'Existing Beach Bar' },
+    });
+
+    sessionStorage.setItem('vamo_auth_signup_intent', 'business');
+    sessionStorage.setItem('vamo_auth_return_url', '/onboarding?social=business');
+
+    createComponent();
+    await component.ngOnInit();
+
+    expect(routerSpy.navigateByUrl).toHaveBeenCalledWith('/app/overview');
+  });
+
+  it('should reject external or malformed returnUrl values and fall back to safe internal destination', async () => {
+    queryParamsMock['access_token'] = 'test_access_token_safe';
+
+    authServiceSpy.handleSsoTokens.mockResolvedValue({
+      id: 'usr-1',
+      email: 'owner@beachbar.com',
+      provider_link: { id: 'prov-1', name: 'Las Terrenas Beach Bar' },
+    });
+
+    sessionStorage.setItem('vamo_auth_return_url', 'https://attacker.com/steal-session');
+
+    createComponent();
+    await component.ngOnInit();
+
+    expect(routerSpy.navigateByUrl).toHaveBeenCalledWith('/app/overview');
+    expect(routerSpy.navigateByUrl).not.toHaveBeenCalledWith('https://attacker.com/steal-session');
   });
 
   it('should redirect to /login with sso_failed if no session is returned', async () => {

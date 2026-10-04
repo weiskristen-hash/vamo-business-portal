@@ -60,6 +60,27 @@ describe('AuthService', () => {
     setItemSpy.mockRestore();
   });
 
+  it('should preserve business-signup intent in sessionStorage when provided in loginWithProvider and clear when not provided', () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    const removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem');
+
+    try {
+      service.loginWithProvider('google', '/onboarding?social=business', 'business');
+    } catch {}
+
+    expect(setItemSpy).toHaveBeenCalledWith('vamo_auth_return_url', '/onboarding?social=business');
+    expect(setItemSpy).toHaveBeenCalledWith('vamo_auth_signup_intent', 'business');
+
+    try {
+      service.loginWithProvider('google', '/app/overview');
+    } catch {}
+
+    expect(removeItemSpy).toHaveBeenCalledWith('vamo_auth_signup_intent');
+
+    setItemSpy.mockRestore();
+    removeItemSpy.mockRestore();
+  });
+
   it('should ingest tokens, update user, and store session in handleSsoTokens', async () => {
     const mockUser = {
       id: 'usr-sso',

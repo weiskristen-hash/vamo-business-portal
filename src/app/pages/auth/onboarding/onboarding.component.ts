@@ -94,9 +94,40 @@ export class OnboardingComponent implements OnInit {
 
   async ngOnInit(): Promise<void> {
     const mode = this.route.snapshot.queryParamMap.get('mode');
-    const currentUser = this.authService.currentUser;
+    const social = this.route.snapshot.queryParamMap.get('social');
+    let currentUser = this.authService.currentUser;
 
-    if (mode === 'business' && currentUser) {
+    if (!currentUser && (social === 'business' || mode === 'business')) {
+      try {
+        currentUser = await this.authService.waitForInitialAuth();
+      } catch {
+        // Fallback
+      }
+    }
+
+    // Returning from Google OAuth in business onboarding path
+    if (social === 'business' && currentUser) {
+      this.intent.set('business');
+      this.firstName = currentUser.first_name ?? '';
+      this.lastName = currentUser.last_name ?? '';
+      this.email = currentUser.email ?? '';
+      let areaRaw: string | null = null;
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          areaRaw = sessionStorage.getItem('ob_area');
+          sessionStorage.removeItem('ob_area');
+        }
+      } catch {}
+      if (areaRaw) {
+        try {
+          const area = JSON.parse(areaRaw) as Area;
+          this.selectedArea.set(area);
+        } catch {}
+      }
+      this.currentStep.set('business-details');
+    }
+    // Already-authenticated user entering via "List your business" CTA
+    else if (mode === 'business' && currentUser) {
       this.isLoggedInUser.set(true);
       this.intent.set('business');
       this.firstName = currentUser.first_name ?? '';
@@ -107,6 +138,10 @@ export class OnboardingComponent implements OnInit {
     try {
       const areasList = await this.businessService.getAreas();
       this.areas.set(areasList || []);
+      if (this.selectedArea()) {
+        const matched = (areasList || []).find((a: Area) => a.id === this.selectedArea()?.id);
+        if (matched) this.selectedArea.set(matched);
+      }
     } catch {
       this.areas.set([]);
     } finally {
@@ -397,7 +432,19 @@ export class OnboardingComponent implements OnInit {
 
   onGoogleSignUp(): void {
     this.errorMessage.set(null);
-    this.authService.loginWithProvider('google', '/app/listings/create');
+    const isBusiness = this.intent() === 'business' || this.currentStep() === 'business-register';
+    if (isBusiness) {
+      if (this.selectedArea()) {
+        try {
+          sessionStorage.setItem('ob_area', JSON.stringify(this.selectedArea()));
+        } catch {
+          // Ignore storage restrictions
+        }
+      }
+      this.authService.loginWithProvider('google', '/onboarding?social=business', 'business');
+    } else {
+      this.authService.loginWithProvider('google', '/no-business', 'browse');
+    }
   }
 
   onAppleSignUp(): void {

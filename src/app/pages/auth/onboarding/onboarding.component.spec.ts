@@ -308,9 +308,13 @@ describe('OnboardingComponent (Canonical Source Parity)', () => {
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/app/listings/create'], { replaceUrl: true });
   });
 
-  it('15. social registration preserves loginWithProvider methods and hides Apple action from UI', () => {
+  it('15. social registration preserves loginWithProvider methods, does not route unlinked user to listings create, and hides Apple action from UI', () => {
+    component.intent.set('business');
+    component.currentStep.set('business-register');
+
     component.onGoogleSignUp();
-    expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('google', '/app/listings/create');
+    expect(authServiceSpy.loginWithProvider).not.toHaveBeenCalledWith(expect.anything(), '/app/listings/create');
+    expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('google', '/onboarding?social=business', 'business');
 
     component.onAppleSignUp();
     expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('apple', '/app/listings/create');
@@ -340,5 +344,62 @@ describe('OnboardingComponent (Canonical Source Parity)', () => {
     component.currentStep.set('business-details');
     expect(component.progressDots.length).toBe(5);
     expect(component.progressDots.every((d) => d.active)).toBe(true);
+  });
+
+  it('17. Google business signup initiates OAuth targeting /onboarding?social=business with business intent and saves ob_area', () => {
+    const area = {
+      id: 'area-st',
+      name: 'Santo Domingo',
+      emoji: '🏙️',
+      latitude: 18.4861,
+      longitude: -69.9312,
+    };
+    component.selectedArea.set(area as any);
+    component.intent.set('business');
+    component.currentStep.set('business-register');
+
+    component.onGoogleSignUp();
+
+    expect(authServiceSpy.loginWithProvider).not.toHaveBeenCalledWith(expect.anything(), '/app/listings/create');
+    expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('google', '/onboarding?social=business', 'business');
+
+    const storedArea = sessionStorage.getItem('ob_area');
+    expect(storedArea).toBeTruthy();
+    expect(JSON.parse(storedArea!).id).toBe('area-st');
+    sessionStorage.removeItem('ob_area');
+  });
+
+  it('18. ngOnInit resumes business onboarding at business-details step when social=business query param is present', async () => {
+    const route = TestBed.inject(ActivatedRoute);
+    (route.snapshot as any).queryParamMap = {
+      get: (key: string) => (key === 'social' ? 'business' : null),
+    };
+    const mockGoogleUser = {
+      id: 'usr-google',
+      first_name: 'Mateo',
+      last_name: 'Peralta',
+      email: 'mateo@google.com',
+      provider_link: null,
+    };
+    userSubject.next(mockGoogleUser);
+    authServiceSpy.waitForInitialAuth = vi.fn().mockResolvedValue(mockGoogleUser);
+    sessionStorage.setItem('ob_area', JSON.stringify({
+      id: 'area-lt',
+      name: 'Las Terrenas/Samana',
+      emoji: '🌴',
+      latitude: 19.31,
+      longitude: -69.5444,
+    }));
+
+    const fixtureNew = TestBed.createComponent(OnboardingComponent);
+    const compNew = fixtureNew.componentInstance;
+    await compNew.ngOnInit();
+
+    expect(compNew.intent()).toBe('business');
+    expect(compNew.currentStep()).toBe('business-details');
+    expect(compNew.firstName).toBe('Mateo');
+    expect(compNew.lastName).toBe('Peralta');
+    expect(compNew.email).toBe('mateo@google.com');
+    expect(compNew.selectedArea()?.id).toBe('area-lt');
   });
 });

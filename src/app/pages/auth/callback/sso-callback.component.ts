@@ -134,30 +134,57 @@ export class SsoCallbackComponent implements OnInit {
         return;
       }
 
-      // Retrieve preserved returnUrl from sessionStorage if set
+      // Retrieve preserved signupIntent and returnUrl from sessionStorage if set
+      let signupIntent: string | null = null;
       let returnUrl = '/app/overview';
       try {
         if (typeof window !== 'undefined' && window.sessionStorage) {
+          signupIntent = window.sessionStorage.getItem('vamo_auth_signup_intent');
+          window.sessionStorage.removeItem('vamo_auth_signup_intent');
+
           const stored = window.sessionStorage.getItem('vamo_auth_return_url');
-          if (stored && stored.startsWith('/')) {
+          if (stored && this.isSafeInternalUrl(stored)) {
             returnUrl = stored;
-            window.sessionStorage.removeItem('vamo_auth_return_url');
           }
+          window.sessionStorage.removeItem('vamo_auth_return_url');
         }
       } catch {
         // Ignore session storage error
       }
 
-      if (user.provider_link && user.provider_link.id) {
-        await this.router.navigateByUrl(returnUrl);
+      const hasLinkedBusiness = !!(user.provider_link && user.provider_link.id);
+
+      if (signupIntent === 'business' || returnUrl.includes('social=business')) {
+        if (hasLinkedBusiness) {
+          // User already has a linked business: route normally to /app/overview or canonical destination
+          const dest = (returnUrl && !returnUrl.startsWith('/onboarding') && returnUrl !== '/app/listings/create')
+            ? returnUrl
+            : '/app/overview';
+          await this.router.navigateByUrl(dest);
+        } else {
+          // User does not have a linked business: resume business onboarding flow
+          await this.router.navigate(['/onboarding'], { queryParams: { social: 'business' } });
+        }
       } else {
-        await this.router.navigate(['/no-business']);
+        // Normal Google login
+        if (hasLinkedBusiness) {
+          await this.router.navigateByUrl(returnUrl);
+        } else {
+          await this.router.navigate(['/no-business']);
+        }
       }
     } catch (err: any) {
       clearTimeout(timeoutId);
       console.warn('[SsoCallback] Callback processing error:', err);
       this.errorMessage = 'Could not verify your authentication session. Please try again.';
     }
+  }
+
+  private isSafeInternalUrl(url: string | null | undefined): boolean {
+    if (!url || typeof url !== 'string') return false;
+    if (!url.startsWith('/') || url.startsWith('//') || url.startsWith('/\\')) return false;
+    if (/[\r\n\t\\]/.test(url)) return false;
+    return true;
   }
 
   async returnToLogin(): Promise<void> {
