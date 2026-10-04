@@ -97,6 +97,20 @@ export class OnboardingComponent implements OnInit {
   readonly isValidPhone = isValidPhone;
 
   async ngOnInit(): Promise<void> {
+    const stepParam = this.route.snapshot.queryParamMap.get('step') as OnboardingStep | null;
+    const validSteps: OnboardingStep[] = [
+      'location-permission',
+      'area',
+      'intent',
+      'browse-account',
+      'business-pitch',
+      'business-register',
+      'business-details',
+    ];
+    if (stepParam && validSteps.includes(stepParam)) {
+      this.currentStep.set(stepParam);
+    }
+
     const mode = this.route.snapshot.queryParamMap.get('mode');
     const social = this.route.snapshot.queryParamMap.get('social');
     let currentUser = this.authService.currentUser;
