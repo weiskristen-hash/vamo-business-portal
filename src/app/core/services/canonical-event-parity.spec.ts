@@ -513,7 +513,7 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
       vi.useRealTimers();
     });
 
-    it('19. updateEvent full-object parity: sends complete canonical payload with status published without images', async () => {
+    it('19. updateEvent full-object parity: sends complete canonical payload matching edit-event buildPayload()', async () => {
       clientRequestMock.mockResolvedValueOnce({ id: 'ev-full-update' }); // updateItem
       clientRequestMock.mockResolvedValueOnce({ id: 'ev-full-update', name: 'Updated Festival' }); // read back
 
@@ -533,7 +533,6 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
           recurring: { days: [] },
           from: '16:00',
           to: '23:00',
-          promotionStart: fixedIso,
           hasPromotion: true,
           promoText: 'Early Bird discount 20%',
           isFree: false,
@@ -566,7 +565,6 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
         recurring: JSON.stringify({ days: [] }),
         from: '16:00:00',
         to: '23:00:00',
-        promotionStart: fixedIso,
         hasPromotion: true,
         promoText: 'Early Bird discount 20%',
         isFree: false,
@@ -580,6 +578,8 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
         },
         status: 'published',
       });
+      // promotionStart is NOT part of canonical edit-event buildPayload() and must not be overwritten
+      expect(payload.promotionStart).toBeUndefined();
       expect(payload.images).toBeUndefined();
       expect(payload.translations).toBeUndefined();
       expect(payload.translation_status).toBeUndefined();
@@ -662,6 +662,79 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
       const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
       expect(payload.status).toBe('draft');
       expect(payload.name).toBe('Draft Edit');
+    });
+
+    it('23. updateEvent strict edge case canonical parity: preserves whitespace, empty descriptions, false booleans, nulls, and currency rules without invention', async () => {
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-edge' });
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-edge' });
+
+      await service.updateEvent('ev-edge', {
+        name: '  Whitespace Title  ',
+        category: 'art',
+        description: '',
+        location_point: null,
+        address: '  Untrimmed Address 123  ',
+        startDate: '2026-11-01',
+        endDate: undefined,
+        allDay: false,
+        openEnd: true,
+        mode: 'single',
+        recurring: { days: [] },
+        from: '19:00',
+        to: '23:00',
+        hasPromotion: false,
+        promoText: null,
+        isFree: true,
+        contactForPrice: false,
+        price: 0,
+        currency: 'DOP',
+        status: 'published',
+      });
+
+      const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      expect(payload).toEqual({
+        name: '  Whitespace Title  ', // NOT trimmed
+        category: 'art',
+        description: '', // NOT trimmed or replaced with undefined
+        location_point: null,
+        address: '  Untrimmed Address 123  ', // NOT trimmed
+        startDate: '2026-11-01',
+        endDate: undefined,
+        allDay: false, // NOT coerced to truthy
+        mode: 'single',
+        recurring: JSON.stringify({ days: [] }),
+        from: '19:00:00',
+        to: undefined, // openEnd: true omits to
+        hasPromotion: false, // strictly false
+        promoText: null, // strictly null, not trimmed
+        isFree: true,
+        contactForPrice: false, // strictly false
+        price: 0,
+        currency: undefined, // free event omits currency
+        status: 'published',
+      });
+      expect(payload.promotionStart).toBeUndefined(); // omitted
+    });
+
+    it('24. updateEvent preserves non-USD currency when paid and passes promotionStart when explicitly provided', async () => {
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-paid-dop' });
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-paid-dop' });
+
+      await service.updateEvent('ev-paid-dop', {
+        name: 'Paid DOP Event',
+        mode: 'single',
+        isFree: false,
+        price: 500,
+        currency: 'DOP',
+        promotionStart: fixedIso,
+        status: 'published',
+      });
+
+      const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      expect(payload.currency).toBe('DOP');
+      expect(payload.price).toBe(500);
+      expect(payload.isFree).toBe(false);
+      expect(payload.promotionStart).toBe(fixedIso);
     });
   });
 });

@@ -625,18 +625,18 @@ export class BusinessService {
     return this.authService.safeRequest(async () => {
       const payload: Record<string, any> = {};
 
-      if (data.name !== undefined) payload['name'] = data.name.trim();
-      if (data.category !== undefined) payload['category'] = data.category;
-      if (data.description !== undefined) payload['description'] = data.description.trim();
+      if (data.name !== undefined) payload['name'] = data.name ?? undefined;
+      if (data.category !== undefined) payload['category'] = data.category ?? undefined;
+      if (data.description !== undefined) payload['description'] = data.description ?? undefined;
       if (data.location_point !== undefined) payload['location_point'] = data.location_point ?? null;
-      if (data.address !== undefined) payload['address'] = data.address ? data.address.trim() : null;
+      if (data.address !== undefined) payload['address'] = data.address ?? null;
       if (data.startDate !== undefined) {
         payload['startDate'] = data.startDate ? new Date(data.startDate).toISOString().split('T')[0] : undefined;
       }
       if (data.endDate !== undefined) {
         payload['endDate'] = data.endDate ? new Date(data.endDate).toISOString().split('T')[0] : undefined;
       }
-      if (data.allDay !== undefined) payload['allDay'] = !!data.allDay;
+      if (data.allDay !== undefined) payload['allDay'] = data.allDay;
       if (data.mode !== undefined) payload['mode'] = data.mode;
       if (data.recurring !== undefined) {
         payload['recurring'] = typeof data.recurring === 'object' && data.recurring !== null
@@ -646,23 +646,19 @@ export class BusinessService {
       if (data.from !== undefined) {
         payload['from'] = data.from ? this.extractTime(data.from) : undefined;
       }
-      if (data.allDay !== undefined || data.openEnd !== undefined || data.to !== undefined) {
-        const isAllDay = !!data.allDay;
-        const isOpenEnd = !!data.openEnd;
-        payload['to'] = (isAllDay || isOpenEnd || !data.to) ? undefined : this.extractTime(data.to);
+      if (data.openEnd !== undefined || data.to !== undefined) {
+        payload['to'] = data.openEnd ? undefined : (data.to ? this.extractTime(data.to) : undefined);
       }
       if (data.promotionStart !== undefined) {
         payload['promotionStart'] = data.promotionStart;
       }
-      if (data.hasPromotion !== undefined) payload['hasPromotion'] = !!data.hasPromotion;
-      if (data.promoText !== undefined) {
-        payload['promoText'] = data.hasPromotion ? (data.promoText ? data.promoText.trim() : null) : null;
-      }
-      if (data.isFree !== undefined) payload['isFree'] = !!data.isFree;
-      if (data.contactForPrice !== undefined) payload['contactForPrice'] = !!data.contactForPrice;
+      if (data.hasPromotion !== undefined) payload['hasPromotion'] = data.hasPromotion;
+      if (data.promoText !== undefined) payload['promoText'] = data.promoText;
+      if (data.isFree !== undefined) payload['isFree'] = data.isFree;
+      if (data.contactForPrice !== undefined) payload['contactForPrice'] = data.contactForPrice;
       if (data.price !== undefined) payload['price'] = data.price;
       if (data.currency !== undefined || data.isFree !== undefined) {
-        payload['currency'] = (data.isFree || payload['isFree']) ? undefined : (data.currency || 'USD');
+        payload['currency'] = data.isFree ? undefined : data.currency;
       }
       if (data.status !== undefined) payload['status'] = data.status;
 
