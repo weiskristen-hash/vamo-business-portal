@@ -4,6 +4,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
 import { Router, provideRouter } from '@angular/router';
 import { VamoEvent } from '../../core/models/event.model';
+import { I18nService } from '../../core/i18n/i18n.service';
 
 describe('ListingsComponent', () => {
   let component: ListingsComponent;
@@ -11,6 +12,7 @@ describe('ListingsComponent', () => {
   let authServiceSpy: any;
   let businessServiceSpy: any;
   let router: Router;
+  let i18nService: I18nService;
 
   const mockUser = {
     id: 'user-1',
@@ -103,6 +105,8 @@ describe('ListingsComponent', () => {
 
     router = TestBed.inject(Router);
     vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    i18nService = TestBed.inject(I18nService);
+    i18nService.setLang('en');
 
     fixture = TestBed.createComponent(ListingsComponent);
     component = fixture.componentInstance;
@@ -209,5 +213,174 @@ describe('ListingsComponent', () => {
     expect(component.error).not.toContain('collection');
     expect(component.error).not.toContain('events');
     expect(component.error).toBe("We couldn't make that change. This action is not available for your account.");
+  });
+
+  describe('Phase 2C.3 Listings UI Localization', () => {
+    it('1. should translate page heading in EN and ES', () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+      const titleEl = fixture.nativeElement.querySelector('.page-title');
+      expect(titleEl.textContent.trim()).toBe('Listings & Posts');
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      expect(titleEl.textContent.trim()).toBe('Publicaciones y Eventos');
+    });
+
+    it('2. should translate page subtitle in EN and ES', () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+      const subEl = fixture.nativeElement.querySelector('.page-subtitle');
+      expect(subEl.textContent.trim()).toBe('Manage your business events, recurring activities, excursions, and special promotions on VAMO.');
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      expect(subEl.textContent.trim()).toBe('Administra tus eventos, actividades recurrentes, excursiones y promociones especiales en VAMO.');
+    });
+
+    it('3. should translate Create Listing button in EN and ES', () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+      const createBtn = fixture.nativeElement.querySelector('.header-actions .btn-primary');
+      expect(createBtn.textContent.trim()).toBe('Create Listing');
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      expect(createBtn.textContent.trim()).toBe('Crear Publicación');
+    });
+
+    it('4. should translate status filter tabs in EN and ES', () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+      const tabTextsEn = Array.from(fixture.nativeElement.querySelectorAll('.filter-tabs .filter-tab'))
+        .map((el: any) => el.textContent.trim());
+      expect(tabTextsEn.some((t) => t.includes('All'))).toBe(true);
+      expect(tabTextsEn.some((t) => t.includes('Active'))).toBe(true);
+      expect(tabTextsEn.some((t) => t.includes('Drafts'))).toBe(true);
+      expect(tabTextsEn.some((t) => t.includes('Past'))).toBe(true);
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      const tabTextsEs = Array.from(fixture.nativeElement.querySelectorAll('.filter-tabs .filter-tab'))
+        .map((el: any) => el.textContent.trim());
+      expect(tabTextsEs.some((t) => t.includes('Todos'))).toBe(true);
+      expect(tabTextsEs.some((t) => t.includes('Activos'))).toBe(true);
+      expect(tabTextsEs.some((t) => t.includes('Borradores'))).toBe(true);
+      expect(tabTextsEs.some((t) => t.includes('Pasados'))).toBe(true);
+    });
+
+    it('5. should translate empty account and empty filter states', () => {
+      component.events = [];
+      component.filteredEvents = [];
+
+      i18nService.setLang('en');
+      fixture.detectChanges();
+      let emptyTitle = fixture.nativeElement.querySelector('.empty-state .empty-title');
+      let emptyAction = fixture.nativeElement.querySelector('.empty-state .empty-action');
+      expect(emptyTitle.textContent.trim()).toBe('You have no listings yet');
+      expect(emptyAction.textContent.trim()).toBe('+ Create Your First Listing');
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      emptyTitle = fixture.nativeElement.querySelector('.empty-state .empty-title');
+      emptyAction = fixture.nativeElement.querySelector('.empty-state .empty-action');
+      expect(emptyTitle.textContent.trim()).toBe('Aún no tienes publicaciones');
+      expect(emptyAction.textContent.trim()).toBe('+ Crea tu primera publicación');
+
+      // Empty filter state
+      component.events = [...mockEvents];
+      component.searchQuery = 'NonExistentMatch';
+      component.applyFilters();
+
+      i18nService.setLang('en');
+      fixture.detectChanges();
+      emptyTitle = fixture.nativeElement.querySelector('.empty-state .empty-title');
+      emptyAction = fixture.nativeElement.querySelector('.empty-state .empty-action');
+      expect(emptyTitle.textContent.trim()).toBe('No listings match your filters');
+      expect(emptyAction.textContent.trim()).toBe('Clear All Filters');
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      emptyTitle = fixture.nativeElement.querySelector('.empty-state .empty-title');
+      emptyAction = fixture.nativeElement.querySelector('.empty-state .empty-action');
+      expect(emptyTitle.textContent.trim()).toBe('Ninguna publicación coincide con tus filtros');
+      expect(emptyAction.textContent.trim()).toBe('Borrar todos los filtros');
+    });
+
+    it('6. should translate action menu labels in EN and ES', () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+      const cardActionsEn = Array.from(fixture.nativeElement.querySelectorAll('.action-buttons .btn'))
+        .map((b: any) => b.textContent.trim());
+      expect(cardActionsEn.some((t) => t.includes('Edit'))).toBe(true);
+      expect(cardActionsEn.some((t) => t.includes('Duplicate'))).toBe(true);
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      const cardActionsEs = Array.from(fixture.nativeElement.querySelectorAll('.action-buttons .btn'))
+        .map((b: any) => b.textContent.trim());
+      expect(cardActionsEs.some((t) => t.includes('Editar'))).toBe(true);
+      expect(cardActionsEs.some((t) => t.includes('Copiar'))).toBe(true);
+    });
+
+    it('7. should translate delete confirmation dialog copy in EN and ES', () => {
+      component.openDeleteConfirm(mockEvents[0]);
+
+      i18nService.setLang('en');
+      fixture.detectChanges();
+      let modalTitle = fixture.nativeElement.querySelector('.modal-title');
+      let cancelBtn = fixture.nativeElement.querySelector('.modal-footer .btn-secondary');
+      let deleteBtn = fixture.nativeElement.querySelector('.modal-footer .btn-danger');
+      expect(modalTitle.textContent.trim()).toBe('Delete Listing');
+      expect(cancelBtn.textContent.trim()).toBe('Cancel');
+      expect(deleteBtn.textContent.trim()).toBe('Delete Listing');
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      modalTitle = fixture.nativeElement.querySelector('.modal-title');
+      cancelBtn = fixture.nativeElement.querySelector('.modal-footer .btn-secondary');
+      deleteBtn = fixture.nativeElement.querySelector('.modal-footer .btn-danger');
+      expect(modalTitle.textContent.trim()).toBe('Eliminar Publicación');
+      expect(cancelBtn.textContent.trim()).toBe('Cancelar');
+      expect(deleteBtn.textContent.trim()).toBe('Eliminar Publicación');
+    });
+
+    it('8. should format dates using the active locale via i18nService', () => {
+      i18nService.setLang('en');
+      const formattedEn = component.formatSchedule(mockEvents[0]);
+      expect(formattedEn).toContain('2026');
+      expect(formattedEn.toLowerCase()).toContain('oct');
+
+      i18nService.setLang('es');
+      const formattedEs = component.formatSchedule(mockEvents[0]);
+      expect(formattedEs).toContain('2026');
+      expect(formattedEs.toLowerCase()).toContain('oct');
+    });
+
+    it('9. should NEVER translate owner-entered event name on language switch', () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+      const firstCardNameEn = fixture.nativeElement.querySelector('.listing-title');
+      expect(firstCardNameEn.textContent.trim()).toBe('Live Salsa by the Ocean');
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      const firstCardNameEs = fixture.nativeElement.querySelector('.listing-title');
+      expect(firstCardNameEs.textContent.trim()).toBe('Live Salsa by the Ocean');
+      expect(mockEvents[0].name).toBe('Live Salsa by the Ocean');
+    });
+
+    it('10. should NEVER translate owner-entered event address on language switch', () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+      const firstCardAddrEn = fixture.nativeElement.querySelector('.location-row .meta-text');
+      expect(firstCardAddrEn.textContent.trim()).toBe('Kite Beach, Cabarete');
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      const firstCardAddrEs = fixture.nativeElement.querySelector('.location-row .meta-text');
+      expect(firstCardAddrEs.textContent.trim()).toBe('Kite Beach, Cabarete');
+      expect(mockEvents[0].address).toBe('Kite Beach, Cabarete');
+    });
   });
 });
