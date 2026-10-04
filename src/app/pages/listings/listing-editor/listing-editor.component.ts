@@ -1834,6 +1834,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     currency: 'USD',
     hasPromotion: false,
     promoText: null,
+    promotionStart: null,
     address: '',
     recurring: { days: ['fri', 'sat'] },
   };
@@ -1913,6 +1914,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   initNewDraft(): void {
     const today = this.businessService.drTodayStr();
     this.draft.startDate = today;
+    this.draft.promotionStart = new Date().toISOString();
     this.draft.address = this.providerAddress;
     this.lat = this.providerLat;
     this.lng = this.providerLng;
@@ -1951,6 +1953,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         openEnd: !!event.openEnd,
         from: event.from ? event.from.substring(0, 5) : '19:00',
         to: event.to ? event.to.substring(0, 5) : '22:00',
+        promotionStart: event.promotionStart ?? new Date().toISOString(),
         isFree: event.isFree !== undefined ? !!event.isFree : true,
         contactForPrice: !!event.contactForPrice,
         price: event.price ?? 0,
@@ -2409,24 +2412,27 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
     try {
       const payload: Partial<VamoEvent> = {
-        name: this.draft.name,
-        category: this.draft.category,
-        description: this.draft.description,
-        mode: this.draft.mode,
+        name: this.draft.name ?? undefined,
+        category: this.draft.category ?? undefined,
+        description: this.draft.description ?? undefined,
+        mode: this.draft.mode!,
         status,
         startDate: this.draft.startDate || undefined,
         endDate: this.multiDay ? (this.draft.endDate || undefined) : undefined,
-        allDay: !!this.draft.allDay,
+        allDay: this.draft.allDay,
         from: this.draft.allDay ? undefined : (this.draft.from || undefined),
-        to: this.draft.allDay || this.draft.openEnd ? undefined : (this.draft.to || undefined),
+        to: this.draft.openEnd ? undefined : (this.draft.to || undefined),
         recurring: this.draft.mode === 'recurring' ? this.draft.recurring : { days: [] },
-        isFree: !!this.draft.isFree,
-        contactForPrice: !!this.draft.contactForPrice,
-        price: this.draft.isFree || this.draft.contactForPrice ? 0 : (this.draft.price || 0),
-        currency: this.draft.isFree ? undefined : (this.draft.currency || 'USD'),
-        hasPromotion: !!this.draft.hasPromotion,
-        promoText: this.draft.hasPromotion ? this.draft.promoText : null,
-        address: this.draft.address || null,
+        ...(this.isEditMode ? {} : {
+          promotionStart: this.draft.promotionStart || new Date().toISOString(),
+        }),
+        isFree: this.draft.isFree,
+        contactForPrice: this.draft.contactForPrice,
+        price: this.draft.price,
+        currency: this.draft.isFree ? undefined : this.draft.currency,
+        hasPromotion: this.draft.hasPromotion,
+        promoText: this.draft.promoText,
+        address: this.draft.address ?? null,
         location_point: this.lat !== null && this.lng !== null
           ? { type: 'Point', coordinates: [Number(this.lng), Number(this.lat)] }
           : null,
