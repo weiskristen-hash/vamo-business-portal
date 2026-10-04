@@ -14,39 +14,32 @@ const LANG_TO_LOCALE: Record<SupportedLang, string> = {
   es: 'es-DO',
 };
 
+// UI localization is separate from VAMO's content translation workflow.
+// Dynamic content translation, Directus translation records, and translation_status
+// will be handled in a dedicated Language & Translation Parity project.
+
+// Exact canonical business types from Isla-Labs-DR/vamo-app (onboarding.service.ts).
+// Canonical VAMO renders type.label directly for all languages without inventing translations.
+export const BUSINESS_TYPES = [
+  { value: 'restaurant_and_bar', label: 'Restaurant & Bar' },
+  { value: 'restaurant',         label: 'Restaurant' },
+  { value: 'bar',                label: 'Bar' },
+  { value: 'disco_club',         label: 'Disco / Club' },
+  { value: 'bakery',             label: 'Bakery / Café' },
+  { value: 'wellness',           label: 'Wellness & Spa' },
+  { value: 'car_rental',         label: 'Car Rental' },
+  { value: 'excursions',         label: 'Excursions & Tours' },
+  { value: 'sports',             label: 'Sports & Outdoor' },
+  { value: 'shopping',           label: 'Shopping' },
+  { value: 'hair-dresser',       label: 'Hair & Beauty' },
+  { value: 'arts_and_culture',   label: 'Art & Culture' },
+  { value: 'services',           label: 'Other Services' },
+  { value: 'other',              label: 'Other' },
+];
+
 export const BUSINESS_TYPE_OPTIONS: Record<SupportedLang, { value: string; label: string }[]> = {
-  en: [
-    { value: 'restaurant_and_bar', label: 'Restaurant & Bar' },
-    { value: 'restaurant', label: 'Restaurant' },
-    { value: 'bar', label: 'Bar' },
-    { value: 'disco_club', label: 'Disco / Club' },
-    { value: 'bakery', label: 'Bakery / Café' },
-    { value: 'wellness', label: 'Wellness & Spa' },
-    { value: 'car_rental', label: 'Car Rental' },
-    { value: 'excursions', label: 'Excursions & Tours' },
-    { value: 'sports', label: 'Sports & Outdoor' },
-    { value: 'shopping', label: 'Shopping' },
-    { value: 'hair-dresser', label: 'Hair & Beauty' },
-    { value: 'arts_and_culture', label: 'Art & Culture' },
-    { value: 'services', label: 'Other Services' },
-    { value: 'other', label: 'Other' },
-  ],
-  es: [
-    { value: 'restaurant_and_bar', label: 'Restaurante y Bar' },
-    { value: 'restaurant', label: 'Restaurante' },
-    { value: 'bar', label: 'Bar' },
-    { value: 'disco_club', label: 'Discoteca / Club' },
-    { value: 'bakery', label: 'Panadería / Café' },
-    { value: 'wellness', label: 'Bienestar y Spa' },
-    { value: 'car_rental', label: 'Alquiler de Vehículos' },
-    { value: 'excursions', label: 'Excursiones y Tours' },
-    { value: 'sports', label: 'Deportes y Aire Libre' },
-    { value: 'shopping', label: 'Compras' },
-    { value: 'hair-dresser', label: 'Peluquería y Belleza' },
-    { value: 'arts_and_culture', label: 'Arte y Cultura' },
-    { value: 'services', label: 'Otros Servicios' },
-    { value: 'other', label: 'Otro' },
-  ],
+  en: BUSINESS_TYPES,
+  es: BUSINESS_TYPES,
 };
 
 @Injectable({ providedIn: 'root' })

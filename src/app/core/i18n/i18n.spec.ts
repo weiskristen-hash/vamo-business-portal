@@ -85,18 +85,20 @@ describe('I18n Parity & Language Switching System', () => {
   });
 
   describe('Business Types Parity', () => {
-    it('provides all 14 canonical business types in English and Spanish', () => {
+    it('provides all 14 canonical business types with identical canonical labels in English and Spanish', () => {
       expect(BUSINESS_TYPE_OPTIONS.en.length).toBe(14);
       expect(BUSINESS_TYPE_OPTIONS.es.length).toBe(14);
 
       service.setLang('en');
       const enTypes = service.businessTypes();
       expect(enTypes.find((t) => t.value === 'restaurant_and_bar')?.label).toBe('Restaurant & Bar');
+      expect(enTypes.find((t) => t.value === 'hair-dresser')?.label).toBe('Hair & Beauty');
 
       service.setLang('es');
       const esTypes = service.businessTypes();
-      expect(esTypes.find((t) => t.value === 'restaurant_and_bar')?.label).toBe('Restaurante y Bar');
-      expect(esTypes.find((t) => t.value === 'hair-dresser')?.label).toBe('Peluquería y Belleza');
+      // Canonical VAMO renders type.label directly for all languages without inventing translations
+      expect(esTypes.find((t) => t.value === 'restaurant_and_bar')?.label).toBe('Restaurant & Bar');
+      expect(esTypes.find((t) => t.value === 'hair-dresser')?.label).toBe('Hair & Beauty');
     });
 
     it('preserves canonical English enum values regardless of language', () => {
