@@ -8,6 +8,7 @@ import { runtimeConfig } from '../config/runtime-config';
 import { createBrowserAuthStorage } from '../directus/browser-auth.storage';
 import { VamoUser } from '../models/user.model';
 import { environment } from '../../../environments/environment';
+import { GoogleAuthService } from './google-auth.service';
 
 export type AuthState = 'loading' | 'authenticated' | 'unauthenticated';
 
@@ -16,6 +17,7 @@ export type AuthState = 'loading' | 'authenticated' | 'unauthenticated';
 })
 export class AuthService {
   private router = inject(Router);
+  private googleAuthService = inject(GoogleAuthService);
 
   // undefined = checking session, null = not logged in, VamoUser = logged in
   private userSubject = new BehaviorSubject<VamoUser | null | undefined>(undefined);
@@ -303,6 +305,71 @@ export class AuthService {
     const callbackUrl = `${window.location.origin}/auth/callback`;
     const authUrl = `${runtimeConfig.directusUrl}/auth/login/${provider}?redirect=${encodeURIComponent(callbackUrl)}`;
     window.location.href = authUrl;
+  }
+
+  /**
+   * Exchanges a Google ID token with the VAMO Google Sign-In Directus Flow.
+   * Stores the returned Directus session tokens and loads the current user.
+   */
+  async loginWithGoogleCredential(idToken: string): Promise<VamoUser> {
+    if (!idToken || typeof idToken !== 'string' || !idToken.trim()) {
+      throw new Error('GOOGLE_TOKEN_MISSING');
+    }
+
+    const flowId = runtimeConfig.googleSignInFlow;
+    if (!flowId) {
+      throw new Error('GOOGLE_FLOW_NOT_CONFIGURED');
+    }
+
+    const flowUrl = `${runtimeConfig.directusUrl}/flows/trigger/${flowId}`;
+
+    let response: Response;
+    try {
+      response = await fetch(flowUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id_token: idToken.trim() }),
+      });
+    } catch {
+      throw new Error('NETWORK_ERROR');
+    }
+
+    if (!response.ok) {
+      throw new Error(`GOOGLE_FLOW_FAILED_${response.status}`);
+    }
+
+    let data: any;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error('MALFORMED_FLOW_RESPONSE');
+    }
+
+    if (!data || typeof data !== 'object' || !data.access_token || typeof data.access_token !== 'string') {
+      throw new Error('MALFORMED_FLOW_RESPONSE');
+    }
+
+    const user = await this.handleSsoTokens(
+      data.access_token,
+      data.refresh_token ?? null,
+      data.expires ? Number(data.expires) : null
+    );
+
+    if (!user) {
+      throw new Error('USER_LOAD_FAILED');
+    }
+
+    return user;
+  }
+
+  /**
+   * Initiates Google Sign-In, retrieves Google ID token, and authenticates via Directus Flow.
+   */
+  async loginWithGoogle(): Promise<VamoUser> {
+    const idToken = await this.googleAuthService.promptForIdToken();
+    return await this.loginWithGoogleCredential(idToken);
   }
 
   /**

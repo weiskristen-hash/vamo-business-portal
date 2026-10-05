@@ -8,6 +8,7 @@ import { I18nService } from '../../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../../core/i18n/translate.pipe';
 import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.component';
 import { environment } from '../../../../environments/environment';
+import { GoogleAuthService } from '../../../core/services/google-auth.service';
 
 @Component({
   selector: 'app-login',
@@ -977,6 +978,7 @@ import { environment } from '../../../../environments/environment';
 })
 export class LoginComponent implements OnInit {
   private authService = inject(AuthService);
+  private googleAuthService = inject(GoogleAuthService);
   private customerErrorService = inject(CustomerErrorService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
@@ -1000,6 +1002,9 @@ export class LoginComponent implements OnInit {
 
   ngOnInit(): void {
     this.returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/app/overview';
+    if (typeof window !== 'undefined') {
+      this.googleAuthService.loadGoogleScript().catch(() => {});
+    }
   }
 
   async onSubmit(): Promise<void> {
@@ -1067,10 +1072,98 @@ export class LoginComponent implements OnInit {
     this.showPassword = !this.showPassword;
   }
 
-  onGoogleLogin(): void {
+  async onGoogleLogin(): Promise<void> {
     this.loading = true;
     this.errorMessage = '';
-    this.authService.loginWithProvider('google', this.returnUrl);
+
+    try {
+      const user = await this.authService.loginWithGoogle();
+      await this.navigateAfterSocialLogin(user);
+    } catch (err: any) {
+      this.handleGoogleError(err);
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  private handleGoogleError(err: any): void {
+    const msg = err?.message || '';
+    if (msg === 'GOOGLE_POPUP_CLOSED' || msg === 'GOOGLE_CANCELLED') {
+      this.errorMessage = this.i18n.lang() === 'es'
+        ? 'Se canceló el inicio de sesión con Google.'
+        : 'Google Sign-In was cancelled.';
+      return;
+    }
+
+    if (
+      msg === 'GOOGLE_SDK_UNAVAILABLE' ||
+      msg === 'GOOGLE_SDK_ERROR' ||
+      msg === 'GOOGLE_PROMPT_NOT_DISPLAYED' ||
+      msg === 'GOOGLE_CLIENT_ID_NOT_CONFIGURED'
+    ) {
+      this.errorMessage = this.i18n.lang() === 'es'
+        ? 'El inicio de sesión con Google no está disponible actualmente. Inténtalo de nuevo o usa correo y contraseña.'
+        : 'Google Sign-In is currently unavailable. Please try again or use email and password.';
+      return;
+    }
+
+    if (msg === 'GOOGLE_TOKEN_MISSING') {
+      this.errorMessage = this.i18n.lang() === 'es'
+        ? 'No se pudieron obtener las credenciales de Google. Por favor, inténtalo de nuevo.'
+        : 'Could not retrieve your Google credentials. Please try again.';
+      return;
+    }
+
+    const fallback = this.i18n.lang() === 'es'
+      ? 'Error al iniciar sesión con Google. Por favor, inténtalo de nuevo.'
+      : 'Google Sign-In failed. Please try again.';
+    this.errorMessage = this.customerErrorService.toCustomerMessage(err, 'auth', fallback);
+  }
+
+  private async navigateAfterSocialLogin(user: any): Promise<void> {
+    let signupIntent: string | null = null;
+    let returnUrl = this.returnUrl || '/app/overview';
+
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        signupIntent = window.sessionStorage.getItem('vamo_auth_signup_intent');
+        window.sessionStorage.removeItem('vamo_auth_signup_intent');
+
+        const storedReturnUrl = window.sessionStorage.getItem('vamo_auth_return_url');
+        if (storedReturnUrl && this.isSafeInternalUrl(storedReturnUrl)) {
+          returnUrl = storedReturnUrl;
+        }
+        window.sessionStorage.removeItem('vamo_auth_return_url');
+      }
+    } catch {
+      // Ignore storage restrictions
+    }
+
+    const hasLinkedBusiness = !!(user?.provider_link && user.provider_link.id);
+
+    if (signupIntent === 'business' || returnUrl.includes('social=business')) {
+      if (hasLinkedBusiness) {
+        const dest = (returnUrl && !returnUrl.startsWith('/onboarding') && returnUrl !== '/app/listings/create')
+          ? returnUrl
+          : '/app/overview';
+        await this.router.navigateByUrl(dest);
+      } else {
+        await this.router.navigate(['/onboarding'], { queryParams: { social: 'business' } });
+      }
+    } else {
+      if (hasLinkedBusiness) {
+        await this.router.navigateByUrl(returnUrl);
+      } else {
+        await this.router.navigate(['/no-business']);
+      }
+    }
+  }
+
+  private isSafeInternalUrl(url: string | null | undefined): boolean {
+    if (!url || typeof url !== 'string') return false;
+    if (!url.startsWith('/') || url.startsWith('//') || url.startsWith('/\\')) return false;
+    if (/[\r\n\t\\]/.test(url)) return false;
+    return true;
   }
 
   onAppleLogin(): void {

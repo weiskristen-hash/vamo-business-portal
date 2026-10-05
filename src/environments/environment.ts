@@ -3,7 +3,9 @@ export const environment = {
   directusUrl: 'https://api.vamo-app.com',
   appName: 'VAMO Business Portal',
   defaultResetRedirect: 'https://business.vamo-app.com/login',
-  googleLoginEnabled: false, // Phase 1A: Architected for SSO, gated until backend redirect URI allowlist configured
+  googleLoginEnabled: true,
+  googleClientId: '654016609429-5995je1smpgrlov4uv92pn637a7dlp0t.apps.googleusercontent.com',
+  googleSignInFlow: 'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',
   allowedHosts: ['api.vamo-app.com', 'quepasa-api.c1oud7.de', 'vamo-app.com'],
 
   // Stripe & Billing Flow Configuration (canonical source keys from Isla-Labs-DR/vamo-app)

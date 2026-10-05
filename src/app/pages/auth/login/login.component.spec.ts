@@ -14,6 +14,8 @@ describe('LoginComponent', () => {
     authServiceSpy = {
       login: vi.fn(),
       requestPasswordReset: vi.fn(),
+      loginWithGoogle: vi.fn().mockReturnValue(new Promise(() => {})),
+      loginWithProvider: vi.fn(),
     };
 
     routerSpy = {
@@ -133,13 +135,13 @@ describe('LoginComponent', () => {
     expect(toggleBtn.getAttribute('aria-label')).toBe('Show password');
   });
 
-  it('should trigger Google SSO via AuthService with returnUrl', () => {
-    authServiceSpy.loginWithProvider = vi.fn();
+  it('should trigger Google SSO via AuthService', () => {
+    authServiceSpy.loginWithGoogle = vi.fn().mockReturnValue(new Promise(() => {}));
     const googleBtn = fixture.nativeElement.querySelector('.google-btn') as HTMLButtonElement;
 
     googleBtn.click();
 
-    expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('google', '/app/overview');
+    expect(authServiceSpy.loginWithGoogle).toHaveBeenCalled();
     expect(component.loading).toBe(true);
   });
 
