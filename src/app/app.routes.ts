@@ -2,33 +2,26 @@ import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
 import { noAuthGuard } from './core/guards/no-auth.guard';
 import { businessGuard } from './core/guards/business.guard';
-import { ShellComponent } from './layout/shell/shell.component';
-import { LoginComponent } from './pages/auth/login/login.component';
-import { RegisterComponent } from './pages/auth/register/register.component';
-import { OnboardingComponent } from './pages/auth/onboarding/onboarding.component';
-import { SsoCallbackComponent } from './pages/auth/callback/sso-callback.component';
-import { NoBusinessComponent } from './pages/no-business/no-business.component';
-import { OverviewComponent } from './pages/overview/overview.component';
-import { PlaceholderComponent } from './pages/placeholder/placeholder.component';
-import { BusinessProfileComponent } from './pages/business/business-profile.component';
-import { ListingsComponent } from './pages/listings/listings.component';
-import { ListingEditorComponent } from './pages/listings/listing-editor/listing-editor.component';
-import { BillingComponent } from './pages/billing/billing.component';
 
+// Every page is lazy-loaded so only the code for the current route is fetched.
+// Guards stay eager (they are tiny and must run before any lazy chunk loads).
 export const routes: Routes = [
   // Public Auth Routes
   {
     path: 'login',
-    component: LoginComponent,
+    loadComponent: () =>
+      import('./pages/auth/login/login.component').then((m) => m.LoginComponent),
     canActivate: [noAuthGuard],
   },
   {
     path: 'onboarding',
-    component: OnboardingComponent,
+    loadComponent: () =>
+      import('./pages/auth/onboarding/onboarding.component').then((m) => m.OnboardingComponent),
   },
   {
     path: 'register',
-    component: OnboardingComponent,
+    loadComponent: () =>
+      import('./pages/auth/onboarding/onboarding.component').then((m) => m.OnboardingComponent),
   },
   {
     path: 'auth/register',
@@ -42,20 +35,23 @@ export const routes: Routes = [
   },
   {
     path: 'auth/callback',
-    component: SsoCallbackComponent,
+    loadComponent: () =>
+      import('./pages/auth/callback/sso-callback.component').then((m) => m.SsoCallbackComponent),
   },
 
   // Authenticated Non-Business Account Notice
   {
     path: 'no-business',
-    component: NoBusinessComponent,
+    loadComponent: () =>
+      import('./pages/no-business/no-business.component').then((m) => m.NoBusinessComponent),
     canActivate: [authGuard],
   },
 
   // Protected Business Portal Shell
   {
     path: 'app',
-    component: ShellComponent,
+    loadComponent: () =>
+      import('./layout/shell/shell.component').then((m) => m.ShellComponent),
     canActivate: [authGuard, businessGuard],
     children: [
       {
@@ -65,23 +61,34 @@ export const routes: Routes = [
       },
       {
         path: 'overview',
-        component: OverviewComponent,
+        loadComponent: () =>
+          import('./pages/overview/overview.component').then((m) => m.OverviewComponent),
       },
       {
         path: 'business',
-        component: BusinessProfileComponent,
+        loadComponent: () =>
+          import('./pages/business/business-profile.component').then(
+            (m) => m.BusinessProfileComponent
+          ),
       },
       {
         path: 'listings',
-        component: ListingsComponent,
+        loadComponent: () =>
+          import('./pages/listings/listings.component').then((m) => m.ListingsComponent),
       },
       {
         path: 'listings/create',
-        component: ListingEditorComponent,
+        loadComponent: () =>
+          import('./pages/listings/listing-editor/listing-editor.component').then(
+            (m) => m.ListingEditorComponent
+          ),
       },
       {
         path: 'listings/edit/:id',
-        component: ListingEditorComponent,
+        loadComponent: () =>
+          import('./pages/listings/listing-editor/listing-editor.component').then(
+            (m) => m.ListingEditorComponent
+          ),
       },
       {
         path: 'posts',
@@ -95,21 +102,25 @@ export const routes: Routes = [
       },
       {
         path: 'promotions',
-        component: PlaceholderComponent,
+        loadComponent: () =>
+          import('./pages/placeholder/placeholder.component').then((m) => m.PlaceholderComponent),
         data: { module: 'promotions' },
       },
       {
         path: 'insights',
-        component: PlaceholderComponent,
+        loadComponent: () =>
+          import('./pages/placeholder/placeholder.component').then((m) => m.PlaceholderComponent),
         data: { module: 'insights' },
       },
       {
         path: 'billing',
-        component: BillingComponent,
+        loadComponent: () =>
+          import('./pages/billing/billing.component').then((m) => m.BillingComponent),
       },
       {
         path: 'settings',
-        component: PlaceholderComponent,
+        loadComponent: () =>
+          import('./pages/placeholder/placeholder.component').then((m) => m.PlaceholderComponent),
         data: { module: 'settings' },
       },
     ],

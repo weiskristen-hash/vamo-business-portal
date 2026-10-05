@@ -794,6 +794,7 @@ export const enTranslations: Record<string, any> = {
       "MAIN_NAV": "Main Navigation",
       "OPEN_MENU": "Open navigation menu",
       "CLOSE_MENU": "Close navigation menu",
+      "LANGUAGE_SELECTION": "Language selection",
       "USER_MENU": "User menu",
       "SIGN_OUT": "Sign Out",
       "SIGN_OUT_ARIA": "Sign out of VAMO Business Portal",

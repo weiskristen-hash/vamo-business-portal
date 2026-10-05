@@ -794,6 +794,7 @@ export const esTranslations: Record<string, any> = {
       "MAIN_NAV": "Navegación principal",
       "OPEN_MENU": "Abrir menú de navegación",
       "CLOSE_MENU": "Cerrar menú de navegación",
+      "LANGUAGE_SELECTION": "Selección de idioma",
       "USER_MENU": "Menú de usuario",
       "SIGN_OUT": "Cerrar sesión",
       "SIGN_OUT_ARIA": "Cerrar sesión en VAMO Business Portal",

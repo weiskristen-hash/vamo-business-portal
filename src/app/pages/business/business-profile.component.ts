@@ -429,6 +429,7 @@ export interface OfferingOption {
                         step="0.000001"
                         class="form-control"
                         [ngModel]="lat()"
+                        [attr.aria-label]="'PORTAL.PROFILE.LATITUDE' | translate"
                         (ngModelChange)="onLatChange($event)"
                         [placeholder]="'PORTAL.PROFILE.LAT_PLACEHOLDER' | translate"
                       />
@@ -440,6 +441,7 @@ export interface OfferingOption {
                         step="0.000001"
                         class="form-control"
                         [ngModel]="lng()"
+                        [attr.aria-label]="'PORTAL.PROFILE.LONGITUDE' | translate"
                         (ngModelChange)="onLngChange($event)"
                         [placeholder]="'PORTAL.PROFILE.LNG_PLACEHOLDER' | translate"
                       />
@@ -618,6 +620,7 @@ export interface OfferingOption {
                       <input
                         type="checkbox"
                         [checked]="!hour.closed"
+                        [attr.aria-label]="getDayLabel(hour.day)"
                         (change)="toggleDayOpen(i, $event)"
                       />
                       <span class="toggle-slider"></span>
@@ -632,6 +635,7 @@ export interface OfferingOption {
                         type="time"
                         class="form-control time-input"
                         [(ngModel)]="hour.opens_at"
+                        [attr.aria-label]="getDayLabel(hour.day) + ' - ' + ('PORTAL.PROFILE.HOURS_OPENS' | translate)"
                         (change)="markDirty()"
                       />
                     </div>
@@ -642,6 +646,7 @@ export interface OfferingOption {
                         type="time"
                         class="form-control time-input"
                         [(ngModel)]="hour.closes_at"
+                        [attr.aria-label]="getDayLabel(hour.day) + ' - ' + ('PORTAL.PROFILE.HOURS_CLOSES' | translate)"
                         (change)="markDirty()"
                       />
                     </div>
@@ -654,6 +659,7 @@ export interface OfferingOption {
                           type="time"
                           class="form-control time-input"
                           [(ngModel)]="hour.break_from"
+                        [attr.aria-label]="getDayLabel(hour.day) + ' - ' + ('PORTAL.PROFILE.HOURS_BREAK_FROM' | translate)"
                           (change)="markDirty()"
                         />
                       </div>
@@ -664,6 +670,7 @@ export interface OfferingOption {
                           type="time"
                           class="form-control time-input"
                           [(ngModel)]="hour.break_to"
+                        [attr.aria-label]="getDayLabel(hour.day) + ' - ' + ('PORTAL.PROFILE.HOURS_BREAK_TO' | translate)"
                           (change)="markDirty()"
                         />
                       </div>
