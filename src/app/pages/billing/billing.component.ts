@@ -329,6 +329,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
                 type="radio"
                 name="savedMethodChoice"
                 [checked]="selectedSavedMethod()?.id === pm.id"
+                [attr.aria-label]="(pm.brand | uppercase) + ' ' + pm.last4"
               />
               <span class="card-brand">{{ pm.brand | uppercase }}</span>
               <span class="card-last4">•••• {{ pm.last4 }}</span>
@@ -339,7 +340,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               [class.saved-card-radio-item--selected]="selectedSavedMethod() === null"
               (click)="selectedSavedMethod.set(null)"
             >
-              <input type="radio" name="savedMethodChoice" [checked]="selectedSavedMethod() === null" />
+              <input type="radio" name="savedMethodChoice" [checked]="selectedSavedMethod() === null" [attr.aria-label]="'PORTAL.BILLING.USE_NEW_CARD' | translate" />
               <span>{{ 'PORTAL.BILLING.USE_NEW_CARD' | translate }}</span>
             </div>
           </div>

@@ -7,7 +7,7 @@ import { I18nService, SupportedLang } from './i18n.service';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="lang-selector" [class.lang-selector--dark]="theme === 'dark'" role="group" aria-label="Language selection">
+    <div class="lang-selector" [class.lang-selector--dark]="theme === 'dark'" role="group" [attr.aria-label]="i18n.t('PORTAL.SHELL.LANGUAGE_SELECTION')">
       <button
         type="button"
         class="lang-btn"
