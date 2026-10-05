@@ -6,20 +6,22 @@ import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
 import { CustomerErrorService } from '../../core/services/customer-error.service';
 import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/event.model';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 @Component({
   selector: 'app-listings',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule],
+  imports: [CommonModule, RouterModule, FormsModule, TranslatePipe],
   template: `
     <div class="listings-page">
       <!-- Page Header -->
       <header class="page-header">
         <div class="header-content">
           <div class="header-titles">
-            <h1 class="page-title">Listings & Posts</h1>
+            <h1 class="page-title">{{ 'PORTAL.LISTINGS.TITLE' | translate }}</h1>
             <p class="page-subtitle">
-              Manage your business events, recurring activities, excursions, and special promotions on VAMO.
+              {{ 'PORTAL.LISTINGS.SUBTITLE' | translate }}
             </p>
           </div>
           <div class="header-actions">
@@ -28,14 +30,14 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
               class="btn btn-secondary refresh-btn"
               [disabled]="loading"
               (click)="loadEvents()"
-              title="Refresh listings"
+              [title]="'PORTAL.LISTINGS.REFRESH_TITLE' | translate"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M23 4v6h-6"></path>
                 <path d="M1 20v-6h6"></path>
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
               </svg>
-              <span>Refresh</span>
+              <span>{{ 'PORTAL.LISTINGS.REFRESH_BTN' | translate }}</span>
             </button>
             <a routerLink="/app/listings/create" class="btn btn-primary create-btn">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -43,7 +45,7 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
                 <line x1="12" y1="8" x2="12" y2="16"></line>
                 <line x1="8" y1="12" x2="16" y2="12"></line>
               </svg>
-              <span>Create Listing</span>
+              <span>{{ 'PORTAL.LISTINGS.CREATE_BTN' | translate }}</span>
             </a>
           </div>
         </div>
@@ -52,32 +54,32 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
         <div *ngIf="actionSuccessMessage" class="alert alert-success alert-dismissible" role="status">
           <div class="alert-icon">✓</div>
           <div class="alert-message">{{ actionSuccessMessage }}</div>
-          <button type="button" class="alert-close" (click)="actionSuccessMessage = null" aria-label="Dismiss">✕</button>
+          <button type="button" class="alert-close" (click)="actionSuccessMessage = null" [attr.aria-label]="'PORTAL.LISTINGS.DISMISS_ALERT' | translate">✕</button>
         </div>
 
         <!-- Error Banner -->
         <div *ngIf="error" class="alert alert-danger" role="alert">
           <div class="alert-icon">⚠️</div>
           <div class="alert-message">{{ error }}</div>
-          <button type="button" class="btn btn-sm btn-ghost" (click)="loadEvents()">Retry</button>
+          <button type="button" class="btn btn-sm btn-ghost" (click)="loadEvents()">{{ 'PORTAL.COMMON.RETRY' | translate }}</button>
         </div>
 
         <!-- Metrics Overview Bar -->
         <div class="metrics-row">
           <div class="metric-card" (click)="setStatusFilter('all')" [class.active-metric]="statusFilter === 'all'">
-            <div class="metric-label">All Listings</div>
+            <div class="metric-label">{{ 'PORTAL.LISTINGS.METRICS.ALL' | translate }}</div>
             <div class="metric-value">{{ stats.total }}</div>
           </div>
           <div class="metric-card metric-success" (click)="setStatusFilter('active')" [class.active-metric]="statusFilter === 'active'">
-            <div class="metric-label">Active / Upcoming</div>
+            <div class="metric-label">{{ 'PORTAL.LISTINGS.METRICS.ACTIVE' | translate }}</div>
             <div class="metric-value">{{ stats.active }}</div>
           </div>
           <div class="metric-card metric-warning" (click)="setStatusFilter('draft')" [class.active-metric]="statusFilter === 'draft'">
-            <div class="metric-label">Drafts & Paused</div>
+            <div class="metric-label">{{ 'PORTAL.LISTINGS.METRICS.DRAFTS' | translate }}</div>
             <div class="metric-value">{{ stats.draft }}</div>
           </div>
           <div class="metric-card metric-neutral" (click)="setStatusFilter('past')" [class.active-metric]="statusFilter === 'past'">
-            <div class="metric-label">Past / Expired</div>
+            <div class="metric-label">{{ 'PORTAL.LISTINGS.METRICS.PAST' | translate }}</div>
             <div class="metric-value">{{ stats.past }}</div>
           </div>
         </div>
@@ -93,17 +95,17 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
           <input
             type="search"
             class="form-control search-input"
-            placeholder="Search listings by title or address…"
+            [placeholder]="'PORTAL.LISTINGS.SEARCH_PLACEHOLDER' | translate"
             [(ngModel)]="searchQuery"
             (ngModelChange)="applyFilters()"
-            aria-label="Search listings"
+            [attr.aria-label]="'PORTAL.LISTINGS.SEARCH_ARIA' | translate"
           />
           <button *ngIf="searchQuery" type="button" class="search-clear" (click)="clearSearch()">✕</button>
         </div>
 
         <div class="filter-controls">
           <!-- Status Pill Tabs -->
-          <div class="filter-tabs" role="tablist" aria-label="Listing Status Filters">
+          <div class="filter-tabs" role="tablist" [attr.aria-label]="'PORTAL.LISTINGS.STATUS_FILTERS_ARIA' | translate">
             <button
               type="button"
               role="tab"
@@ -112,7 +114,7 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
               [attr.aria-selected]="statusFilter === 'all'"
               (click)="setStatusFilter('all')"
             >
-              All ({{ stats.total }})
+              {{ 'PORTAL.LISTINGS.FILTER_ALL' | translate }} ({{ stats.total }})
             </button>
             <button
               type="button"
@@ -122,7 +124,7 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
               [attr.aria-selected]="statusFilter === 'active'"
               (click)="setStatusFilter('active')"
             >
-              Active ({{ stats.active }})
+              {{ 'PORTAL.LISTINGS.FILTER_ACTIVE' | translate }} ({{ stats.active }})
             </button>
             <button
               type="button"
@@ -132,7 +134,7 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
               [attr.aria-selected]="statusFilter === 'draft'"
               (click)="setStatusFilter('draft')"
             >
-              Drafts ({{ stats.draft }})
+              {{ 'PORTAL.LISTINGS.FILTER_DRAFTS' | translate }} ({{ stats.draft }})
             </button>
             <button
               type="button"
@@ -142,7 +144,7 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
               [attr.aria-selected]="statusFilter === 'past'"
               (click)="setStatusFilter('past')"
             >
-              Past ({{ stats.past }})
+              {{ 'PORTAL.LISTINGS.FILTER_PAST' | translate }} ({{ stats.past }})
             </button>
           </div>
 
@@ -152,11 +154,11 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
               class="form-select filter-select"
               [(ngModel)]="categoryFilter"
               (ngModelChange)="applyFilters()"
-              aria-label="Filter by Category"
+              [attr.aria-label]="'PORTAL.LISTINGS.CATEGORY_FILTER_ARIA' | translate"
             >
-              <option value="all">All Categories</option>
+              <option value="all">{{ 'PORTAL.LISTINGS.ALL_CATEGORIES' | translate }}</option>
               <option *ngFor="let cat of categories" [value]="cat.value">
-                {{ cat.emoji }} {{ cat.label }}
+                {{ cat.emoji }} {{ 'CATEGORIES.' + cat.value.toUpperCase() | translate }}
               </option>
             </select>
 
@@ -165,11 +167,11 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
               class="form-select filter-select"
               [(ngModel)]="modeFilter"
               (ngModelChange)="applyFilters()"
-              aria-label="Filter by Mode"
+              [attr.aria-label]="'PORTAL.LISTINGS.MODE_FILTER_ARIA' | translate"
             >
-              <option value="all">All Schedules</option>
-              <option value="single">Single Date / Multi-day</option>
-              <option value="recurring">Weekly Recurring</option>
+              <option value="all">{{ 'PORTAL.LISTINGS.ALL_SCHEDULES' | translate }}</option>
+              <option value="single">{{ 'PORTAL.LISTINGS.MODE_SINGLE' | translate }}</option>
+              <option value="recurring">{{ 'PORTAL.LISTINGS.MODE_RECURRING' | translate }}</option>
             </select>
           </div>
         </div>
@@ -177,7 +179,7 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
 
       <!-- Content Area -->
       <!-- Loading Skeleton -->
-      <div *ngIf="loading" class="listings-grid-loading" aria-label="Loading listings">
+      <div *ngIf="loading" class="listings-grid-loading" [attr.aria-label]="'PORTAL.LISTINGS.LOADING_ARIA' | translate">
         <div *ngFor="let i of [1, 2, 3, 4, 5, 6]" class="skeleton-card card">
           <div class="skeleton-img"></div>
           <div class="skeleton-body">
@@ -198,12 +200,12 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
             <line x1="3" y1="10" x2="21" y2="10"></line>
           </svg>
         </div>
-        <h2 class="empty-title">You have no listings yet</h2>
+        <h2 class="empty-title">{{ 'PORTAL.LISTINGS.EMPTY_ACCOUNT_TITLE' | translate }}</h2>
         <p class="empty-description">
-          Create events, recurring specials, live entertainment, or tours to engage customers in the Dominican Republic.
+          {{ 'PORTAL.LISTINGS.EMPTY_ACCOUNT_DESC' | translate }}
         </p>
         <a routerLink="/app/listings/create" class="btn btn-primary btn-lg empty-action">
-          + Create Your First Listing
+          {{ 'PORTAL.LISTINGS.CREATE_FIRST_BTN' | translate }}
         </a>
       </div>
 
@@ -215,12 +217,12 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
         </div>
-        <h2 class="empty-title">No listings match your filters</h2>
+        <h2 class="empty-title">{{ 'PORTAL.LISTINGS.EMPTY_FILTER_TITLE' | translate }}</h2>
         <p class="empty-description">
-          Try clearing your search query or switching your status and category filters.
+          {{ 'PORTAL.LISTINGS.EMPTY_FILTER_DESC' | translate }}
         </p>
         <button type="button" class="btn btn-secondary empty-action" (click)="resetFilters()">
-          Clear All Filters
+          {{ 'PORTAL.LISTINGS.CLEAR_FILTERS_BTN' | translate }}
         </button>
       </div>
 
@@ -246,11 +248,11 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
 
             <!-- Boost indicators if active -->
             <div class="boost-tags" *ngIf="event.is_main_banner || event.is_whats_hot">
-              <span *ngIf="event.is_main_banner" class="boost-pill pill-banner" title="Featured in Main Banner">
-                ⭐ Main Banner
+              <span *ngIf="event.is_main_banner" class="boost-pill pill-banner" [title]="'PORTAL.LISTINGS.BOOST_BANNER_TITLE' | translate">
+                {{ 'PORTAL.LISTINGS.BOOST_BANNER' | translate }}
               </span>
-              <span *ngIf="event.is_whats_hot" class="boost-pill pill-hot" title="Featured in What's Hot">
-                🔥 What's Hot
+              <span *ngIf="event.is_whats_hot" class="boost-pill pill-hot" [title]="'PORTAL.LISTINGS.BOOST_HOT_TITLE' | translate">
+                {{ 'PORTAL.LISTINGS.BOOST_HOT' | translate }}
               </span>
             </div>
           </div>
@@ -259,7 +261,7 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
           <div class="listing-body">
             <div class="mode-tag-row">
               <span class="mode-pill" [class.mode-recurring]="event.mode === 'recurring'">
-                {{ event.mode === 'recurring' ? '🔁 Weekly Recurring' : '📅 Single Event' }}
+                {{ event.mode === 'recurring' ? ('PORTAL.LISTINGS.MODE_PILL_RECURRING' | translate) : ('PORTAL.LISTINGS.MODE_PILL_SINGLE' | translate) }}
               </span>
               <span class="price-pill">
                 {{ formatPrice(event) }}
@@ -326,7 +328,7 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                 </svg>
-                <span>Edit</span>
+                <span>{{ 'PORTAL.LISTINGS.EDIT_BTN' | translate }}</span>
               </button>
 
               <!-- Duplicate Action -->
@@ -335,14 +337,14 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
                 class="btn btn-ghost btn-sm action-btn duplicate-btn"
                 (click)="onDuplicate(event)"
                 [disabled]="actionInProgressId === event.id"
-                title="Duplicate as new draft"
+                [title]="'PORTAL.LISTINGS.DUPLICATE_TITLE' | translate"
               >
                 <svg *ngIf="actionInProgressId !== event.id" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                 </svg>
                 <span *ngIf="actionInProgressId === event.id" class="spinner-inline"></span>
-                <span>Duplicate</span>
+                <span>{{ 'PORTAL.LISTINGS.DUPLICATE_BTN' | translate }}</span>
               </button>
 
               <!-- Pause / Publish Toggle -->
@@ -352,14 +354,14 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
                 class="btn btn-ghost btn-sm action-btn pause-btn"
                 (click)="onPause(event)"
                 [disabled]="actionInProgressId === event.id"
-                title="Pause active listing"
+                [title]="'PORTAL.LISTINGS.PAUSE_TITLE' | translate"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
                   <line x1="10" y1="15" x2="10" y2="9"></line>
                   <line x1="14" y1="15" x2="14" y2="9"></line>
                 </svg>
-                <span>Pause</span>
+                <span>{{ 'PORTAL.LISTINGS.PAUSE_BTN' | translate }}</span>
               </button>
 
               <button
@@ -368,13 +370,13 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
                 class="btn btn-ghost btn-sm action-btn publish-btn"
                 (click)="onPublish(event)"
                 [disabled]="actionInProgressId === event.id"
-                title="Publish draft listing"
+                [title]="'PORTAL.LISTINGS.PUBLISH_TITLE' | translate"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
                   <polygon points="10 8 16 12 10 16 10 8"></polygon>
                 </svg>
-                <span>Publish</span>
+                <span>{{ 'PORTAL.LISTINGS.PUBLISH_BTN' | translate }}</span>
               </button>
 
               <!-- Delete Action -->
@@ -383,7 +385,7 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
                 class="btn btn-ghost btn-sm action-btn delete-btn"
                 (click)="openDeleteConfirm(event)"
                 [disabled]="actionInProgressId === event.id"
-                title="Delete listing"
+                [title]="'PORTAL.LISTINGS.DELETE_TITLE' | translate"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="3 6 5 6 21 6"></polyline>
@@ -401,19 +403,19 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
           <div class="modal-content card">
             <div class="modal-header">
               <div class="warning-icon-bubble">⚠️</div>
-              <h2 id="delete-dialog-title" class="modal-title">Delete Listing</h2>
+              <h2 id="delete-dialog-title" class="modal-title">{{ 'PORTAL.LISTINGS.DELETE_DIALOG_TITLE' | translate }}</h2>
             </div>
             <div class="modal-body">
               <p class="modal-desc">
-                Are you sure you want to permanently delete <strong>"{{ deletingEvent.name }}"</strong>?
+                {{ 'PORTAL.LISTINGS.DELETE_CONFIRM_DESC' | translate:{ name: deletingEvent.name } }}
               </p>
               <p class="modal-subtext">
-                This will remove the listing from VAMO immediately. This action cannot be undone.
+                {{ 'PORTAL.LISTINGS.DELETE_CONFIRM_SUBTEXT' | translate }}
               </p>
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-secondary" (click)="cancelDelete()">
-                Cancel
+                {{ 'PORTAL.COMMON.CANCEL' | translate }}
               </button>
               <button
                 type="button"
@@ -422,7 +424,7 @@ import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/ev
                 (click)="executeDelete()"
               >
                 <span *ngIf="actionInProgressId === deletingEvent.id" class="spinner-inline"></span>
-                <span>Delete Listing</span>
+                <span>{{ 'PORTAL.LISTINGS.DELETE_CONFIRM_BTN' | translate }}</span>
               </button>
             </div>
           </div>
@@ -1086,6 +1088,7 @@ export class ListingsComponent implements OnInit {
   private customerErrorService = inject(CustomerErrorService);
   private router = inject(Router);
   private cdr = inject(ChangeDetectorRef);
+  private i18n = inject(I18nService);
 
   categories: EventCategory[] = EVENT_CATEGORIES;
 
@@ -1124,7 +1127,7 @@ export class ListingsComponent implements OnInit {
       const providerId = user?.provider_link?.id;
 
       if (!providerId) {
-        this.error = 'No business profile is associated with your account.';
+        this.error = this.i18n.t('PORTAL.ERRORS.NO_BUSINESS');
         this.events = [];
         this.filteredEvents = [];
         this.updateStats();
@@ -1227,8 +1230,14 @@ export class ListingsComponent implements OnInit {
   }
 
   getCategoryLabel(categoryKey?: string): string {
+    if (!categoryKey) return this.i18n.t('CATEGORIES.OTHER');
+    const key = 'CATEGORIES.' + categoryKey.toUpperCase();
+    const translated = this.i18n.t(key);
+    if (translated && !translated.startsWith('CATEGORIES.')) {
+      return translated;
+    }
     const found = this.categories.find((c) => c.value === categoryKey);
-    return found ? found.label : (categoryKey || 'General');
+    return found ? found.label : categoryKey;
   }
 
   getCategoryEmoji(categoryKey?: string): string {
@@ -1250,38 +1259,52 @@ export class ListingsComponent implements OnInit {
 
   getStatusBadge(event: VamoEvent): { text: string; class: string } {
     if (event.status === 'draft') {
-      return { text: 'Draft / Paused', class: 'badge-warning' };
+      return { text: this.i18n.t('PORTAL.LISTINGS.STATUS_DRAFT'), class: 'badge-warning' };
     }
     if (event.status === 'archived') {
-      return { text: 'Archived', class: 'badge-neutral' };
+      return { text: this.i18n.t('PORTAL.LISTINGS.STATUS_ARCHIVED'), class: 'badge-neutral' };
     }
     const isOngoing = event.mode === 'recurring' || this.businessService.isEventUpcomingOrOngoing(event);
     if (isOngoing) {
-      return { text: 'Active', class: 'badge-success' };
+      return { text: this.i18n.t('PORTAL.LISTINGS.STATUS_ACTIVE'), class: 'badge-success' };
     }
-    return { text: 'Past', class: 'badge-neutral' };
+    return { text: this.i18n.t('PORTAL.LISTINGS.STATUS_PAST'), class: 'badge-neutral' };
   }
 
   formatSchedule(event: VamoEvent): string {
     if (event.mode === 'recurring') {
       const days = (event.recurring as any)?.days;
       if (Array.isArray(days) && days.length > 0) {
-        const capitalized = days.map((d: string) => d.charAt(0).toUpperCase() + d.slice(1)).join(', ');
-        return `Every ${capitalized}`;
+        const localizedDays = days.map((d: string) => {
+          const shortKey = 'EVENTS.RECURRING.DAYS.' + d.toLowerCase();
+          const translatedShort = this.i18n.t(shortKey);
+          if (translatedShort && !translatedShort.startsWith('EVENTS.')) {
+            return translatedShort;
+          }
+          const fullKey = 'DAYS.' + this.normalizeDayToFull(d);
+          const translatedFull = this.i18n.t(fullKey);
+          if (translatedFull && !translatedFull.startsWith('DAYS.')) {
+            return translatedFull;
+          }
+          return d.charAt(0).toUpperCase() + d.slice(1);
+        }).join(', ');
+        const everyPrefix = this.i18n.t('EVENTS.RECURRING.EVERY');
+        return `${everyPrefix || 'Every'} ${localizedDays}`;
       }
-      return 'Weekly Recurring';
+      return this.i18n.t('PORTAL.LISTINGS.MODE_RECURRING');
     }
 
-    if (!event.startDate) return 'Date TBA';
+    if (!event.startDate) return this.i18n.t('PORTAL.LISTINGS.DATE_TBA');
 
-    const start = new Date(event.startDate).toLocaleDateString('en-US', {
+    const locale = this.i18n.dateLocale();
+    const start = new Date(event.startDate).toLocaleDateString(locale, {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
     });
 
     if (event.endDate) {
-      const end = new Date(event.endDate).toLocaleDateString('en-US', {
+      const end = new Date(event.endDate).toLocaleDateString(locale, {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
@@ -1292,25 +1315,38 @@ export class ListingsComponent implements OnInit {
     return start;
   }
 
+  private normalizeDayToFull(d: string): string {
+    const map: Record<string, string> = {
+      mon: 'monday',
+      tue: 'tuesday',
+      wed: 'wednesday',
+      thu: 'thursday',
+      fri: 'friday',
+      sat: 'saturday',
+      sun: 'sunday',
+    };
+    return map[d.toLowerCase()] || d.toLowerCase();
+  }
+
   formatTimeWindow(event: VamoEvent): string {
-    if (event.allDay) return 'All Day';
+    if (event.allDay) return this.i18n.t('PORTAL.LISTINGS.ALL_DAY');
     if (!event.from) return '';
 
     const start = event.from.substring(0, 5);
-    if (event.openEnd || !event.to) return `${start} · Open End`;
+    if (event.openEnd || !event.to) return `${start} · ${this.i18n.t('PORTAL.LISTINGS.OPEN_END')}`;
 
     const end = event.to.substring(0, 5);
     return `${start} – ${end}`;
   }
 
   formatPrice(event: VamoEvent): string {
-    if (event.isFree) return 'Free';
-    if (event.contactForPrice) return 'Contact for price';
-    if (event.price !== undefined && event.price !== null) {
+    if (event.isFree) return this.i18n.t('PORTAL.LISTINGS.FREE');
+    if (event.contactForPrice) return this.i18n.t('PORTAL.LISTINGS.CONTACT_FOR_PRICE');
+    if (event.price !== undefined && event.price !== null && Number(event.price) > 0) {
       const currency = event.currency || 'USD';
       return `${currency} $${Number(event.price).toFixed(2)}`;
     }
-    return 'Free';
+    return this.i18n.t('PORTAL.LISTINGS.FREE');
   }
 
   onEdit(event: VamoEvent): void {
@@ -1346,7 +1382,7 @@ export class ListingsComponent implements OnInit {
 
     try {
       await this.businessService.pauseEvent(event.id);
-      this.actionSuccessMessage = `"${event.name}" was paused and moved to Drafts.`;
+      this.actionSuccessMessage = this.i18n.t('PORTAL.LISTINGS.TOAST_PAUSED', { name: event.name });
       await this.loadEvents();
     } catch (err: any) {
       this.error = this.customerErrorService.toCustomerMessage(err, 'save');
@@ -1362,7 +1398,7 @@ export class ListingsComponent implements OnInit {
 
     try {
       await this.businessService.publishEvent(event.id);
-      this.actionSuccessMessage = `"${event.name}" is now live and published!`;
+      this.actionSuccessMessage = this.i18n.t('PORTAL.LISTINGS.TOAST_PUBLISHED', { name: event.name });
       await this.loadEvents();
     } catch (err: any) {
       this.error = this.customerErrorService.toCustomerMessage(err, 'save');
@@ -1391,7 +1427,7 @@ export class ListingsComponent implements OnInit {
 
     try {
       await this.businessService.deleteEvent(eventToDelete.id);
-      this.actionSuccessMessage = `"${eventToDelete.name}" was permanently deleted.`;
+      this.actionSuccessMessage = this.i18n.t('PORTAL.LISTINGS.TOAST_DELETED', { name: eventToDelete.name });
       this.deletingEvent = null;
       await this.loadEvents();
     } catch (err: any) {

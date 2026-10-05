@@ -3,11 +3,13 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
+import { LanguageSelectorComponent } from '../../core/i18n/language-selector.component';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 @Component({
   selector: 'app-topbar',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, LanguageSelectorComponent, TranslatePipe],
   template: `
     <header class="topbar" role="banner">
       <div class="topbar-left">
@@ -16,7 +18,7 @@ import { BusinessService } from '../../core/services/business.service';
           type="button"
           class="hamburger-btn"
           (click)="toggleSidebar.emit()"
-          aria-label="Open navigation menu"
+          [attr.aria-label]="'PORTAL.SHELL.OPEN_MENU' | translate"
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -25,15 +27,17 @@ import { BusinessService } from '../../core/services/business.service';
           </svg>
         </button>
 
-        <h1 class="page-title">{{ pageTitle }}</h1>
+        <h1 class="page-title">{{ pageTitle | translate }}</h1>
       </div>
 
-      <!-- Business Identity / User Menu -->
+      <!-- Business Identity / User Menu & Language Selector -->
       <div class="topbar-right" *ngIf="authService.currentUser as user">
+        <app-language-selector></app-language-selector>
+
         <!-- Business Identity Pill -->
-        <div class="business-pill" (click)="toggleDropdown()" [attr.aria-expanded]="dropdownOpen">
+        <div class="business-pill" (click)="toggleDropdown()" [attr.aria-expanded]="dropdownOpen" [attr.aria-label]="'PORTAL.SHELL.USER_MENU' | translate">
           <div class="business-avatar" *ngIf="getBusinessLogoUrl(user) as logoUrl; else textAvatar">
-            <img [src]="logoUrl" [alt]="user.provider_link?.name || 'Business'" />
+            <img [src]="logoUrl" [alt]="user.provider_link?.name || ('PORTAL.SHELL.DEFAULT_BUSINESS_NAME' | translate)" />
           </div>
           <ng-template #textAvatar>
             <div class="business-avatar business-avatar-text">
@@ -42,10 +46,10 @@ import { BusinessService } from '../../core/services/business.service';
           </ng-template>
 
           <div class="business-meta">
-            <span class="business-name">{{ user.provider_link?.name || 'My Business' }}</span>
+            <span class="business-name">{{ user.provider_link?.name || ('PORTAL.SHELL.DEFAULT_BUSINESS_NAME' | translate) }}</span>
             <span class="business-status">
               <span class="status-dot"></span>
-              {{ user.provider_link?.subscription_tier ? (user.provider_link?.subscription_tier | uppercase) : 'Active' }}
+              {{ user.provider_link?.subscription_tier ? (user.provider_link?.subscription_tier | uppercase) : ('PORTAL.SHELL.STATUS_ACTIVE' | translate) }}
             </span>
           </div>
 
@@ -57,7 +61,7 @@ import { BusinessService } from '../../core/services/business.service';
         <!-- User Dropdown Menu -->
         <div class="dropdown-menu" *ngIf="dropdownOpen">
           <div class="dropdown-header">
-            <div class="dropdown-user-name">{{ user.first_name }} {{ user.last_name }}</div>
+            <div class="dropdown-user-name">{{ user.first_name || ('PORTAL.SHELL.DEFAULT_USER_NAME' | translate) }} {{ user.last_name || '' }}</div>
             <div class="dropdown-user-email">{{ user.email }}</div>
           </div>
           <div class="dropdown-divider"></div>
@@ -66,14 +70,14 @@ import { BusinessService } from '../../core/services/business.service';
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
               <circle cx="12" cy="7" r="4"></circle>
             </svg>
-            <span>Business Profile</span>
+            <span>{{ 'PORTAL.SHELL.NAV_PROFILE' | translate }}</span>
           </a>
           <a routerLink="/app/settings" (click)="dropdownOpen = false" class="dropdown-item">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3"></circle>
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
             </svg>
-            <span>Account Settings</span>
+            <span>{{ 'PORTAL.SHELL.NAV_SETTINGS' | translate }}</span>
           </a>
           <div class="dropdown-divider"></div>
           <button type="button" class="dropdown-item dropdown-item-danger" (click)="signOut()">
@@ -82,7 +86,7 @@ import { BusinessService } from '../../core/services/business.service';
               <polyline points="16 17 21 12 16 7"></polyline>
               <line x1="21" y1="12" x2="9" y2="12"></line>
             </svg>
-            <span>Sign Out</span>
+            <span>{{ 'PORTAL.SHELL.SIGN_OUT' | translate }}</span>
           </button>
         </div>
       </div>
@@ -131,6 +135,9 @@ import { BusinessService } from '../../core/services/business.service';
     }
 
     .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
       position: relative;
     }
 
@@ -303,6 +310,9 @@ import { BusinessService } from '../../core/services/business.service';
       }
       .page-title {
         font-size: 1.1rem;
+      }
+      .topbar-right {
+        gap: 8px;
       }
       .business-meta {
         display: none;

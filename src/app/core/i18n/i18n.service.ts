@@ -11,7 +11,7 @@ export const LANG_PARAM = 'lang';
 
 const LANG_TO_LOCALE: Record<SupportedLang, string> = {
   en: 'en-US',
-  es: 'es-DO',
+  es: 'es',
 };
 
 // UI localization is separate from VAMO's content translation workflow.

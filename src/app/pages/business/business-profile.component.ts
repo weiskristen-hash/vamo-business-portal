@@ -5,6 +5,8 @@ import { RouterModule } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
 import { CustomerErrorService } from '../../core/services/customer-error.service';
+import { I18nService, BUSINESS_TYPES } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { Provider, OpeningHour } from '../../core/models/provider.model';
 
 export interface BusinessTypeOption {
@@ -21,21 +23,21 @@ export interface OfferingOption {
 @Component({
   selector: 'app-business-profile',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [CommonModule, FormsModule, RouterModule, TranslatePipe],
   template: `
     <div class="profile-container">
       <!-- ── Loading State ─────────────────────────────────────────────── -->
       <div *ngIf="loading()" class="state-card" role="status" aria-live="polite">
         <div class="spinner spinner-primary"></div>
-        <h3 class="state-title">Loading Business Profile…</h3>
-        <p class="state-desc">Loading your business profile…</p>
+        <h3 class="state-title">{{ 'PORTAL.PROFILE.LOADING_TITLE' | translate }}</h3>
+        <p class="state-desc">{{ 'PORTAL.PROFILE.LOADING_DESC' | translate }}</p>
       </div>
 
       <!-- ── Error State ───────────────────────────────────────────────── -->
       <div *ngIf="!loading() && loadError()" class="alert alert-error" role="alert">
         <span>⚠️ {{ loadError() }}</span>
         <button type="button" class="btn btn-secondary btn-sm" (click)="loadProfile()">
-          Retry
+          {{ 'PORTAL.COMMON.RETRY' | translate }}
         </button>
       </div>
 
@@ -45,19 +47,19 @@ export interface OfferingOption {
         <header class="profile-header">
           <div class="header-titles">
             <div class="header-breadcrumbs">
-              <span>Manage</span>
+              <span>{{ 'PORTAL.PROFILE.BREADCRUMB_MANAGE' | translate }}</span>
               <span class="bc-sep">/</span>
-              <span class="bc-current">Business Profile</span>
+              <span class="bc-current">{{ 'PORTAL.PROFILE.BREADCRUMB_CURRENT' | translate }}</span>
             </div>
-            <h1 class="header-main-title">{{ form().name || 'Business Profile' }}</h1>
+            <h1 class="header-main-title">{{ form().name || ('PORTAL.PROFILE.DEFAULT_TITLE' | translate) }}</h1>
             <p class="header-subtitle">
-              Manage your business identity, verified contact details, location, gallery, and operating hours.
+              {{ 'PORTAL.PROFILE.HEADER_SUBTITLE' | translate }}
             </p>
           </div>
 
           <div class="header-actions">
             <span *ngIf="isDirty()" class="unsaved-badge">
-              <span class="status-dot"></span> Unsaved changes
+              <span class="status-dot"></span> {{ 'PORTAL.PROFILE.UNSAVED_CHANGES' | translate }}
             </span>
             <button
               type="button"
@@ -65,7 +67,7 @@ export interface OfferingOption {
               (click)="resetForm()"
               [disabled]="saving() || !isDirty()"
             >
-              Discard
+              {{ 'PORTAL.PROFILE.DISCARD' | translate }}
             </button>
             <button
               type="button"
@@ -74,7 +76,7 @@ export interface OfferingOption {
               [disabled]="saving() || !isFormValid()"
             >
               <span *ngIf="saving()" class="spinner"></span>
-              <span>{{ saving() ? 'Saving Changes…' : 'Save Changes' }}</span>
+              <span>{{ saving() ? ('PORTAL.PROFILE.SAVING_CHANGES' | translate) : ('PORTAL.PROFILE.SAVE_CHANGES' | translate) }}</span>
             </button>
           </div>
         </header>
@@ -86,8 +88,8 @@ export interface OfferingOption {
             <polyline points="22 4 12 14.01 9 11.01"></polyline>
           </svg>
           <div class="alert-content">
-            <strong>Changes saved successfully!</strong>
-            <span>Your updated profile details are now live on the VAMO platform.</span>
+            <strong>{{ 'PORTAL.PROFILE.SAVE_SUCCESS_TITLE' | translate }}</strong>
+            <span>{{ 'PORTAL.PROFILE.SAVE_SUCCESS_MSG' | translate }}</span>
           </div>
         </div>
 
@@ -98,11 +100,11 @@ export interface OfferingOption {
             <line x1="12" y1="16" x2="12.01" y2="16"></line>
           </svg>
           <div class="alert-content">
-            <strong>Failed to save changes</strong>
+            <strong>{{ 'PORTAL.PROFILE.SAVE_ERROR_TITLE' | translate }}</strong>
             <span>{{ saveError() }}</span>
           </div>
           <button type="button" class="btn btn-secondary btn-sm" (click)="saveProfile()">
-            Try Again
+            {{ 'PORTAL.ERRORS.TRY_AGAIN' | translate }}
           </button>
         </div>
 
@@ -114,17 +116,17 @@ export interface OfferingOption {
             <section class="card form-section" id="section-identity">
               <div class="card-header">
                 <div>
-                  <h2 class="card-title">Business Identity</h2>
-                  <p class="card-desc">Basic information identifying your establishment on VAMO.</p>
+                  <h2 class="card-title">{{ 'PORTAL.PROFILE.SECTION_IDENTITY_TITLE' | translate }}</h2>
+                  <p class="card-desc">{{ 'PORTAL.PROFILE.SECTION_IDENTITY_DESC' | translate }}</p>
                 </div>
-                <span class="section-tag">Required</span>
+                <span class="section-tag">{{ 'PORTAL.PROFILE.REQUIRED_TAG' | translate }}</span>
               </div>
 
               <div class="form-grid">
                 <!-- Business Name -->
                 <div class="form-group span-2">
                   <label class="form-label" for="field-name">
-                    Business Name <span class="required-star">*</span>
+                    {{ 'PORTAL.PROFILE.NAME_LABEL' | translate }} <span class="required-star">*</span>
                   </label>
                   <input
                     id="field-name"
@@ -133,41 +135,40 @@ export interface OfferingOption {
                     [class.is-invalid]="touched.name && !form().name.trim()"
                     [(ngModel)]="form().name"
                     (blur)="touched.name = true; markDirty()"
-                    placeholder="e.g. Punta Cana Surf Club"
+                    [placeholder]="'PORTAL.PROFILE.NAME_PLACEHOLDER' | translate"
                   />
                   <p *ngIf="touched.name && !form().name.trim()" class="form-error">
-                    Business name is required.
+                    {{ 'PORTAL.PROFILE.NAME_REQUIRED' | translate }}
                   </p>
                 </div>
 
-                <!-- Business Type -->
+                <!-- Business Type (Non-editable after onboarding) -->
                 <div class="form-group span-2">
                   <label class="form-label" for="field-type">
-                    Business Category <span class="required-star">*</span>
+                    {{ 'PORTAL.PROFILE.CATEGORY_LABEL' | translate }}
                   </label>
                   <select
                     id="field-type"
                     class="form-control"
-                    [class.is-invalid]="touched.businessType && !form().business_type"
-                    [(ngModel)]="form().business_type"
-                    (change)="touched.businessType = true; markDirty()"
+                    [ngModel]="form().business_type"
+                    disabled
                   >
-                    <option value="" disabled>Select a business category</option>
+                    <option value="" disabled>{{ 'PORTAL.PROFILE.CATEGORY_SELECT_PLACEHOLDER' | translate }}</option>
                     <option *ngFor="let bt of businessTypes" [value]="bt.value">
                       {{ bt.label }}
                     </option>
                   </select>
-                  <p *ngIf="touched.businessType && !form().business_type" class="form-error">
-                    Please select a category for your business.
+                  <p class="form-hint">
+                    {{ 'PORTAL.PROFILE.CATEGORY_LOCKED_HINT' | translate }}
                   </p>
                 </div>
 
                 <!-- Category Offerings (Conditional) -->
                 <div *ngIf="currentOfferingChoices.length > 0" class="form-group span-2">
                   <label class="form-label">
-                    Category Offerings & Features
+                    {{ 'PORTAL.PROFILE.OFFERINGS_LABEL' | translate }}
                   </label>
-                  <p class="form-hint">Select the specific amenities and experiences you offer.</p>
+                  <p class="form-hint">{{ 'PORTAL.PROFILE.OFFERINGS_HINT' | translate }}</p>
                   <div class="chips-container">
                     <button
                       *ngFor="let choice of currentOfferingChoices"
@@ -185,7 +186,7 @@ export interface OfferingOption {
                 <!-- Description -->
                 <div class="form-group span-2">
                   <label class="form-label" for="field-desc">
-                    About / Description <span class="required-star">*</span>
+                    {{ 'PORTAL.PROFILE.DESC_LABEL' | translate }} <span class="required-star">*</span>
                   </label>
                   <textarea
                     id="field-desc"
@@ -194,13 +195,13 @@ export interface OfferingOption {
                     [(ngModel)]="form().description"
                     (blur)="touched.description = true; markDirty()"
                     rows="4"
-                    placeholder="Describe your business, vibe, signature dishes or activities, history, and what makes your experience special…"
+                    [placeholder]="'PORTAL.PROFILE.DESC_PLACEHOLDER' | translate"
                   ></textarea>
                   <div class="desc-footer">
                     <p *ngIf="touched.description && !form().description.trim()" class="form-error">
-                      A business description is required for public listings.
+                      {{ 'PORTAL.PROFILE.DESC_REQUIRED' | translate }}
                     </p>
-                    <span class="char-count">{{ form().description.length || 0 }} characters</span>
+                    <span class="char-count">{{ form().description.length || 0 }} {{ 'PORTAL.PROFILE.CHARACTERS' | translate }}</span>
                   </div>
                 </div>
               </div>
@@ -210,8 +211,8 @@ export interface OfferingOption {
             <section class="card form-section" id="section-media">
               <div class="card-header">
                 <div>
-                  <h2 class="card-title">Branding & Gallery</h2>
-                  <p class="card-desc">Visual assets that represent your brand in search and listings.</p>
+                  <h2 class="card-title">{{ 'PORTAL.PROFILE.SECTION_BRANDING_TITLE' | translate }}</h2>
+                  <p class="card-desc">{{ 'PORTAL.PROFILE.SECTION_BRANDING_DESC' | translate }}</p>
                 </div>
               </div>
 
@@ -221,7 +222,7 @@ export interface OfferingOption {
                   <img
                     *ngIf="logoPreviewUrl(); else logoPlaceholder"
                     [src]="logoPreviewUrl()"
-                    alt="Business Logo"
+                    [alt]="'PORTAL.PROFILE.LOGO_ALT' | translate"
                     class="logo-preview-img"
                   />
                   <ng-template #logoPlaceholder>
@@ -232,14 +233,14 @@ export interface OfferingOption {
                 </div>
 
                 <div class="logo-info">
-                  <h3 class="logo-title">Brand Logo</h3>
+                  <h3 class="logo-title">{{ 'PORTAL.PROFILE.LOGO_TITLE' | translate }}</h3>
                   <p class="logo-desc">
-                    Square PNG, JPG, or SVG recommended. Will appear on search cards and navigation headers.
+                    {{ 'PORTAL.PROFILE.LOGO_DESC' | translate }}
                   </p>
                   <div class="logo-actions">
                     <label class="btn btn-secondary btn-sm cursor-pointer">
                       <span *ngIf="uploadingLogo()" class="spinner spinner-primary"></span>
-                      <span>{{ uploadingLogo() ? 'Uploading…' : (form().logo ? 'Replace Logo' : 'Upload Logo') }}</span>
+                      <span>{{ uploadingLogo() ? ('PORTAL.PROFILE.UPLOADING' | translate) : (form().logo ? ('PORTAL.PROFILE.REPLACE_LOGO' | translate) : ('PORTAL.PROFILE.UPLOAD_LOGO' | translate)) }}</span>
                       <input
                         type="file"
                         hidden
@@ -255,7 +256,7 @@ export interface OfferingOption {
                       (click)="removeLogo()"
                       [disabled]="uploadingLogo()"
                     >
-                      Remove
+                      {{ 'PORTAL.PROFILE.REMOVE' | translate }}
                     </button>
                   </div>
                 </div>
@@ -265,12 +266,12 @@ export interface OfferingOption {
               <div class="gallery-wrapper">
                 <div class="gallery-header">
                   <div>
-                    <h3 class="gallery-title">Photos & Gallery</h3>
-                    <p class="gallery-desc">Showcase your ambiance, products, team, and experience.</p>
+                    <h3 class="gallery-title">{{ 'PORTAL.PROFILE.GALLERY_TITLE' | translate }}</h3>
+                    <p class="gallery-desc">{{ 'PORTAL.PROFILE.GALLERY_DESC' | translate }}</p>
                   </div>
                   <label class="btn btn-outline btn-sm cursor-pointer">
                     <span *ngIf="uploadingGallery()" class="spinner spinner-primary"></span>
-                    <span>{{ uploadingGallery() ? 'Uploading…' : '+ Add Photos' }}</span>
+                    <span>{{ uploadingGallery() ? ('PORTAL.PROFILE.UPLOADING' | translate) : ('PORTAL.PROFILE.ADD_PHOTOS' | translate) }}</span>
                     <input
                       type="file"
                       hidden
@@ -289,15 +290,15 @@ export interface OfferingOption {
                   >
                     <img
                       [src]="getGalleryImageUrl(img)"
-                      alt="Gallery photo"
+                      [alt]="'PORTAL.PROFILE.GALLERY_PHOTO_ALT' | translate"
                       class="gallery-img"
                     />
                     <button
                       type="button"
                       class="gallery-delete-btn"
                       (click)="removeGalleryImage(img, i)"
-                      aria-label="Delete image"
-                      title="Delete image"
+                      [attr.aria-label]="'PORTAL.PROFILE.DELETE_IMAGE_ARIA' | translate"
+                      [attr.title]="'PORTAL.PROFILE.DELETE_IMAGE_ARIA' | translate"
                     >
                       ✕
                     </button>
@@ -317,7 +318,7 @@ export interface OfferingOption {
                       <line x1="12" y1="5" x2="12" y2="19"></line>
                       <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
-                    <span>Upload Photo</span>
+                    <span>{{ 'PORTAL.PROFILE.UPLOAD_PHOTO' | translate }}</span>
                   </label>
                 </div>
               </div>
@@ -327,17 +328,17 @@ export interface OfferingOption {
             <section class="card form-section" id="section-location">
               <div class="card-header">
                 <div>
-                  <h2 class="card-title">Location & Geographic Info</h2>
-                  <p class="card-desc">Help locals and tourists navigate to your venue across the Dominican Republic.</p>
+                  <h2 class="card-title">{{ 'PORTAL.PROFILE.SECTION_LOCATION_TITLE' | translate }}</h2>
+                  <p class="card-desc">{{ 'PORTAL.PROFILE.SECTION_LOCATION_DESC' | translate }}</p>
                 </div>
-                <span class="section-tag">Required</span>
+                <span class="section-tag">{{ 'PORTAL.PROFILE.REQUIRED_TAG' | translate }}</span>
               </div>
 
               <div class="form-grid">
                 <!-- Address -->
                 <div class="form-group span-2">
                   <label class="form-label" for="field-address">
-                    Physical Street Address <span class="required-star">*</span>
+                    {{ 'PORTAL.PROFILE.ADDRESS_LABEL' | translate }} <span class="required-star">*</span>
                   </label>
                   <input
                     id="field-address"
@@ -346,17 +347,17 @@ export interface OfferingOption {
                     [class.is-invalid]="touched.address && !form().address.trim()"
                     [(ngModel)]="form().address"
                     (blur)="touched.address = true; markDirty()"
-                    placeholder="e.g. Calle 27 de Febrero #14, Plaza Comercial"
+                    [placeholder]="'PORTAL.PROFILE.ADDRESS_PLACEHOLDER' | translate"
                   />
                   <p *ngIf="touched.address && !form().address.trim()" class="form-error">
-                    Street address is required.
+                    {{ 'PORTAL.PROFILE.ADDRESS_REQUIRED' | translate }}
                   </p>
                 </div>
 
                 <!-- City / Area -->
                 <div class="form-group">
                   <label class="form-label" for="field-city">
-                    City / Destination Hub
+                    {{ 'PORTAL.PROFILE.CITY_LABEL' | translate }}
                   </label>
                   <input
                     id="field-city"
@@ -364,7 +365,7 @@ export interface OfferingOption {
                     class="form-control"
                     [(ngModel)]="form().city"
                     (input)="markDirty()"
-                    placeholder="e.g. Las Terrenas"
+                    [placeholder]="'PORTAL.PROFILE.CITY_PLACEHOLDER' | translate"
                     list="city-suggestions"
                   />
                   <datalist id="city-suggestions">
@@ -387,7 +388,7 @@ export interface OfferingOption {
 
                 <!-- Quick Destination Chips -->
                 <div class="form-group">
-                  <label class="form-label">Popular Hubs</label>
+                  <label class="form-label">{{ 'PORTAL.PROFILE.POPULAR_HUBS' | translate }}</label>
                   <div class="quick-city-chips">
                     <button
                       *ngFor="let c of ['Las Terrenas', 'Cabarete', 'Punta Cana', 'Samaná', 'Santo Domingo']"
@@ -405,7 +406,7 @@ export interface OfferingOption {
                 <div class="form-group span-2">
                   <div class="coords-header">
                     <label class="form-label">
-                      Map Coordinates (Latitude & Longitude)
+                      {{ 'PORTAL.PROFILE.COORDS_LABEL' | translate }}
                     </label>
                     <button
                       type="button"
@@ -416,44 +417,44 @@ export interface OfferingOption {
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
                       </svg>
-                      <span>{{ detectingLocation() ? 'Detecting…' : 'Use Current Device Location' }}</span>
+                      <span>{{ detectingLocation() ? ('PORTAL.PROFILE.DETECTING' | translate) : ('PORTAL.PROFILE.USE_DEVICE_LOCATION' | translate) }}</span>
                     </button>
                   </div>
 
                   <div class="coords-grid">
                     <div>
-                      <span class="coord-label">Latitude</span>
+                      <span class="coord-label">{{ 'PORTAL.PROFILE.LATITUDE' | translate }}</span>
                       <input
                         type="number"
                         step="0.000001"
                         class="form-control"
                         [ngModel]="lat()"
                         (ngModelChange)="onLatChange($event)"
-                        placeholder="e.g. 19.3175"
+                        [placeholder]="'PORTAL.PROFILE.LAT_PLACEHOLDER' | translate"
                       />
                     </div>
                     <div>
-                      <span class="coord-label">Longitude</span>
+                      <span class="coord-label">{{ 'PORTAL.PROFILE.LONGITUDE' | translate }}</span>
                       <input
                         type="number"
                         step="0.000001"
                         class="form-control"
                         [ngModel]="lng()"
                         (ngModelChange)="onLngChange($event)"
-                        placeholder="e.g. -69.5422"
+                        [placeholder]="'PORTAL.PROFILE.LNG_PLACEHOLDER' | translate"
                       />
                     </div>
                   </div>
 
                   <div *ngIf="lat() && lng()" class="coords-preview">
-                    <span>📍 Coordinates pinned: {{ lat() | number:'1.4-4' }}, {{ lng() | number:'1.4-4' }}</span>
+                    <span>📍 {{ 'PORTAL.PROFILE.COORDS_PINNED' | translate:{ lat: (lat() | number:'1.4-4'), lng: (lng() | number:'1.4-4') } }}</span>
                     <a
                       [href]="'https://www.google.com/maps?q=' + lat() + ',' + lng()"
                       target="_blank"
                       rel="noopener noreferrer"
                       class="coords-link"
                     >
-                      Preview on Google Maps ↗
+                      {{ 'PORTAL.PROFILE.PREVIEW_MAPS' | translate }}
                     </a>
                   </div>
                 </div>
@@ -464,15 +465,15 @@ export interface OfferingOption {
             <section class="card form-section" id="section-contact">
               <div class="card-header">
                 <div>
-                  <h2 class="card-title">Contact & Communication</h2>
-                  <p class="card-desc">Direct communication channels for customer inquiries, bookings, and reservations.</p>
+                  <h2 class="card-title">{{ 'PORTAL.PROFILE.SECTION_CONTACT_TITLE' | translate }}</h2>
+                  <p class="card-desc">{{ 'PORTAL.PROFILE.SECTION_CONTACT_DESC' | translate }}</p>
                 </div>
               </div>
 
               <div class="form-grid">
                 <!-- Phone -->
                 <div class="form-group">
-                  <label class="form-label" for="field-phone">Phone Number</label>
+                  <label class="form-label" for="field-phone">{{ 'PORTAL.PROFILE.PHONE_LABEL' | translate }}</label>
                   <input
                     id="field-phone"
                     type="tel"
@@ -480,18 +481,18 @@ export interface OfferingOption {
                     [class.is-invalid]="touched.phone && !isPhoneValid(form().phone)"
                     [(ngModel)]="form().phone"
                     (blur)="touched.phone = true; markDirty()"
-                    placeholder="+1 (809) 555-0123"
+                    [placeholder]="'PORTAL.PROFILE.PHONE_PLACEHOLDER' | translate"
                   />
                   <p *ngIf="touched.phone && !isPhoneValid(form().phone)" class="form-error">
-                    Please enter a valid phone number.
+                    {{ 'PORTAL.PROFILE.PHONE_INVALID' | translate }}
                   </p>
                 </div>
 
                 <!-- WhatsApp -->
                 <div class="form-group">
                   <label class="form-label" for="field-wa">
-                    <span>WhatsApp Number</span>
-                    <span class="wa-badge">Customer Preferred</span>
+                    <span>{{ 'PORTAL.PROFILE.WHATSAPP_LABEL' | translate }}</span>
+                    <span class="wa-badge">{{ 'PORTAL.PROFILE.WHATSAPP_BADGE' | translate }}</span>
                   </label>
                   <input
                     id="field-wa"
@@ -500,11 +501,11 @@ export interface OfferingOption {
                     [class.is-invalid]="touched.waNumber && !isPhoneValid(form().wa_number)"
                     [(ngModel)]="form().wa_number"
                     (blur)="touched.waNumber = true; markDirty()"
-                    placeholder="+1 (809) 555-0123"
+                    [placeholder]="'PORTAL.PROFILE.WHATSAPP_PLACEHOLDER' | translate"
                   />
                   <div class="wa-footer">
                     <p *ngIf="touched.waNumber && !isPhoneValid(form().wa_number)" class="form-error">
-                      Please enter a valid WhatsApp number.
+                      {{ 'PORTAL.PROFILE.WHATSAPP_INVALID' | translate }}
                     </p>
                     <a
                       *ngIf="form().wa_number && isPhoneValid(form().wa_number)"
@@ -513,14 +514,14 @@ export interface OfferingOption {
                       rel="noopener noreferrer"
                       class="wa-test-link"
                     >
-                      Test wa.me chat ↗
+                      {{ 'PORTAL.PROFILE.WHATSAPP_TEST' | translate }}
                     </a>
                   </div>
                 </div>
 
                 <!-- Email -->
                 <div class="form-group">
-                  <label class="form-label" for="field-email">Public Email</label>
+                  <label class="form-label" for="field-email">{{ 'PORTAL.PROFILE.EMAIL_LABEL' | translate }}</label>
                   <input
                     id="field-email"
                     type="email"
@@ -528,10 +529,10 @@ export interface OfferingOption {
                     [class.is-invalid]="touched.email && !isEmailValid(form().email)"
                     [(ngModel)]="form().email"
                     (blur)="touched.email = true; markDirty()"
-                    placeholder="contact@yourbusiness.com"
+                    [placeholder]="'PORTAL.PROFILE.EMAIL_PLACEHOLDER' | translate"
                   />
                   <p *ngIf="touched.email && !isEmailValid(form().email)" class="form-error">
-                    Please enter a valid email address.
+                    {{ 'PORTAL.PROFILE.EMAIL_INVALID' | translate }}
                   </p>
                 </div>
               </div>
@@ -541,48 +542,48 @@ export interface OfferingOption {
             <section class="card form-section" id="section-social">
               <div class="card-header">
                 <div>
-                  <h2 class="card-title">Social Discovery</h2>
-                  <p class="card-desc">Connect your existing social media channels to increase trust and followers.</p>
+                  <h2 class="card-title">{{ 'PORTAL.PROFILE.SECTION_SOCIAL_TITLE' | translate }}</h2>
+                  <p class="card-desc">{{ 'PORTAL.PROFILE.SECTION_SOCIAL_DESC' | translate }}</p>
                 </div>
               </div>
 
               <div class="form-grid">
                 <!-- Instagram -->
                 <div class="form-group">
-                  <label class="form-label" for="field-ig">Instagram Handle or Link</label>
+                  <label class="form-label" for="field-ig">{{ 'PORTAL.PROFILE.INSTAGRAM_LABEL' | translate }}</label>
                   <input
                     id="field-ig"
                     type="text"
                     class="form-control"
                     [(ngModel)]="form().instagram"
                     (blur)="markDirty()"
-                    placeholder="e.g. @yourbusiness or instagram.com/…"
+                    [placeholder]="'PORTAL.PROFILE.INSTAGRAM_PLACEHOLDER' | translate"
                   />
                 </div>
 
                 <!-- Facebook -->
                 <div class="form-group">
-                  <label class="form-label" for="field-fb">Facebook Page</label>
+                  <label class="form-label" for="field-fb">{{ 'PORTAL.PROFILE.FACEBOOK_LABEL' | translate }}</label>
                   <input
                     id="field-fb"
                     type="text"
                     class="form-control"
                     [(ngModel)]="form().facebook"
                     (blur)="markDirty()"
-                    placeholder="e.g. facebook.com/yourbusiness"
+                    [placeholder]="'PORTAL.PROFILE.FACEBOOK_PLACEHOLDER' | translate"
                   />
                 </div>
 
                 <!-- Google Business Profile -->
                 <div class="form-group span-2">
-                  <label class="form-label" for="field-google">Google Business / Maps Link</label>
+                  <label class="form-label" for="field-google">{{ 'PORTAL.PROFILE.GOOGLE_LABEL' | translate }}</label>
                   <input
                     id="field-google"
                     type="url"
                     class="form-control"
                     [(ngModel)]="form().google_business_link"
                     (blur)="markDirty()"
-                    placeholder="https://maps.google.com/?cid=…"
+                    [placeholder]="'PORTAL.PROFILE.GOOGLE_PLACEHOLDER' | translate"
                   />
                 </div>
               </div>
@@ -592,15 +593,15 @@ export interface OfferingOption {
             <section class="card form-section" id="section-hours">
               <div class="card-header">
                 <div>
-                  <h2 class="card-title">Operating & Business Hours</h2>
-                  <p class="card-desc">Define your weekly schedule so customers know when you are open for business.</p>
+                  <h2 class="card-title">{{ 'PORTAL.PROFILE.SECTION_HOURS_TITLE' | translate }}</h2>
+                  <p class="card-desc">{{ 'PORTAL.PROFILE.SECTION_HOURS_DESC' | translate }}</p>
                 </div>
                 <div class="hours-quick-actions">
                   <button type="button" class="btn btn-ghost btn-sm" (click)="setWeekdaysStandard()">
-                    Set Mon-Fri 9-18h
+                    {{ 'PORTAL.PROFILE.HOURS_SET_STANDARD' | translate }}
                   </button>
                   <button type="button" class="btn btn-ghost btn-sm" (click)="copyMondayToAll()">
-                    Apply Mon to All
+                    {{ 'PORTAL.PROFILE.HOURS_COPY_MON' | translate }}
                   </button>
                 </div>
               </div>
@@ -620,13 +621,13 @@ export interface OfferingOption {
                         (change)="toggleDayOpen(i, $event)"
                       />
                       <span class="toggle-slider"></span>
-                      <span class="toggle-status-text">{{ hour.closed ? 'Closed' : 'Open' }}</span>
+                      <span class="toggle-status-text">{{ hour.closed ? ('PORTAL.PROFILE.HOURS_CLOSED' | translate) : ('PORTAL.PROFILE.HOURS_OPEN' | translate) }}</span>
                     </label>
                   </div>
 
                   <div *ngIf="!hour.closed" class="hour-times-col">
                     <div class="time-block">
-                      <span class="time-label">Opens</span>
+                      <span class="time-label">{{ 'PORTAL.PROFILE.HOURS_OPENS' | translate }}</span>
                       <input
                         type="time"
                         class="form-control time-input"
@@ -636,7 +637,7 @@ export interface OfferingOption {
                     </div>
                     <span class="time-sep">—</span>
                     <div class="time-block">
-                      <span class="time-label">Closes</span>
+                      <span class="time-label">{{ 'PORTAL.PROFILE.HOURS_CLOSES' | translate }}</span>
                       <input
                         type="time"
                         class="form-control time-input"
@@ -648,7 +649,7 @@ export interface OfferingOption {
                     <!-- Optional Midday Break -->
                     <div class="time-break-group">
                       <div class="time-block">
-                        <span class="time-label">Break from (opt)</span>
+                        <span class="time-label">{{ 'PORTAL.PROFILE.HOURS_BREAK_FROM' | translate }}</span>
                         <input
                           type="time"
                           class="form-control time-input"
@@ -656,9 +657,9 @@ export interface OfferingOption {
                           (change)="markDirty()"
                         />
                       </div>
-                      <span class="time-sep">to</span>
+                      <span class="time-sep">{{ 'PORTAL.PROFILE.HOURS_TO' | translate }}</span>
                       <div class="time-block">
-                        <span class="time-label">Break to (opt)</span>
+                        <span class="time-label">{{ 'PORTAL.PROFILE.HOURS_BREAK_TO' | translate }}</span>
                         <input
                           type="time"
                           class="form-control time-input"
@@ -670,7 +671,7 @@ export interface OfferingOption {
                   </div>
 
                   <div *ngIf="hour.closed" class="hour-closed-note">
-                    Closed all day
+                    {{ 'PORTAL.PROFILE.HOURS_CLOSED_ALL_DAY' | translate }}
                   </div>
                 </div>
               </div>
@@ -682,7 +683,7 @@ export interface OfferingOption {
             <!-- Profile Completeness Card -->
             <div class="card completeness-card">
               <div class="completeness-header">
-                <h3 class="completeness-title">Profile Completeness</h3>
+                <h3 class="completeness-title">{{ 'PORTAL.PROFILE.COMPLETENESS_TITLE' | translate }}</h3>
                 <span class="completeness-score">{{ completeness() }}%</span>
               </div>
 
@@ -694,11 +695,11 @@ export interface OfferingOption {
               </div>
 
               <p class="completeness-hint">
-                {{ completeness() === 100 ? 'Awesome! Your profile is 100% complete.' : 'Complete profiles receive significantly more views and customer inquiries on VAMO.' }}
+                {{ completeness() === 100 ? ('PORTAL.PROFILE.COMPLETENESS_HINT_100' | translate) : ('PORTAL.PROFILE.COMPLETENESS_HINT_INCOMPLETE' | translate) }}
               </p>
 
               <div *ngIf="missingItems().length > 0" class="missing-checklist">
-                <span class="checklist-heading">Suggested improvements:</span>
+                <span class="checklist-heading">{{ 'PORTAL.PROFILE.IMPROVEMENTS_HEADING' | translate }}</span>
                 <ul>
                   <li *ngFor="let item of missingItems()">
                     <span class="bullet">+</span>
@@ -710,8 +711,8 @@ export interface OfferingOption {
 
             <!-- Mobile App Listing Card Preview -->
             <div class="card preview-card">
-              <h3 class="preview-card-title">VAMO App Preview</h3>
-              <p class="preview-card-desc">How your business appears to travelers and locals.</p>
+              <h3 class="preview-card-title">{{ 'PORTAL.PROFILE.PREVIEW_TITLE' | translate }}</h3>
+              <p class="preview-card-desc">{{ 'PORTAL.PROFILE.PREVIEW_DESC' | translate }}</p>
 
               <div class="preview-app-mockup">
                 <!-- Cover / Hero Thumbnail -->
@@ -719,12 +720,12 @@ export interface OfferingOption {
                   <img
                     *ngIf="galleryItems().length > 0; else noGalleryMock"
                     [src]="getGalleryImageUrl(galleryItems()[0])"
-                    alt="Cover"
+                    [alt]="'PORTAL.PROFILE.PREVIEW_COVER_ALT' | translate"
                     class="mockup-hero-img"
                   />
                   <ng-template #noGalleryMock>
                     <div class="mockup-hero-empty">
-                      <span>VAMO Dominican Republic</span>
+                      <span>{{ 'PORTAL.PROFILE.PREVIEW_APP_SUBTITLE' | translate }}</span>
                     </div>
                   </ng-template>
 
@@ -733,7 +734,7 @@ export interface OfferingOption {
                     <img
                       *ngIf="logoPreviewUrl(); else noLogoMock"
                       [src]="logoPreviewUrl()"
-                      alt="Logo"
+                      [alt]="'PORTAL.PROFILE.PREVIEW_LOGO_ALT' | translate"
                       class="mockup-logo-img"
                     />
                     <ng-template #noLogoMock>
@@ -750,20 +751,20 @@ export interface OfferingOption {
                     <span class="badge badge-brand">
                       {{ getBusinessTypeLabel(form().business_type) }}
                     </span>
-                    <span class="mockup-city">{{ form().city || 'Dominican Republic' }}</span>
+                    <span class="mockup-city">{{ form().city || ('PORTAL.PROFILE.PREVIEW_DEFAULT_CITY' | translate) }}</span>
                   </div>
 
-                  <h4 class="mockup-name">{{ form().name || 'Your Business Name' }}</h4>
+                  <h4 class="mockup-name">{{ form().name || ('PORTAL.PROFILE.PREVIEW_DEFAULT_NAME' | translate) }}</h4>
                   <p class="mockup-desc">
-                    {{ form().description || 'Your description will highlight what makes your venue distinct…' }}
+                    {{ form().description || ('PORTAL.PROFILE.PREVIEW_DEFAULT_DESC' | translate) }}
                   </p>
 
                   <div class="mockup-footer-actions">
                     <span class="mockup-btn mockup-btn-wa">
-                      WhatsApp
+                      {{ 'PORTAL.PROFILE.PREVIEW_ACTION_WA' | translate }}
                     </span>
                     <span class="mockup-btn mockup-btn-call">
-                      Call
+                      {{ 'PORTAL.PROFILE.PREVIEW_ACTION_CALL' | translate }}
                     </span>
                   </div>
                 </div>
@@ -772,17 +773,17 @@ export interface OfferingOption {
 
             <!-- Account Status Card -->
             <div class="card meta-card">
-              <h3 class="meta-title">Account Status</h3>
+              <h3 class="meta-title">{{ 'PORTAL.PROFILE.ACCOUNT_STATUS_TITLE' | translate }}</h3>
               <div class="meta-list">
                 <div class="meta-item">
-                  <span class="meta-label">Subscription Tier</span>
+                  <span class="meta-label">{{ 'PORTAL.PROFILE.SUBSCRIPTION_TIER_LABEL' | translate }}</span>
                   <span class="meta-value tier-badge">
-                    {{ form().subscription_tier ? (form().subscription_tier | uppercase) : 'ACTIVE' }}
+                    {{ form().subscription_tier ? (form().subscription_tier | uppercase) : ('PORTAL.PROFILE.TIER_ACTIVE' | translate) }}
                   </span>
                 </div>
                 <div class="meta-item">
-                  <span class="meta-label">Platform Status</span>
-                  <span class="meta-value">Connected</span>
+                  <span class="meta-label">{{ 'PORTAL.PROFILE.PLATFORM_STATUS_LABEL' | translate }}</span>
+                  <span class="meta-value">{{ 'PORTAL.PROFILE.STATUS_CONNECTED' | translate }}</span>
                 </div>
               </div>
             </div>
@@ -794,7 +795,7 @@ export interface OfferingOption {
           <div class="sticky-save-inner">
             <div class="sticky-save-info">
               <span class="status-dot"></span>
-              <span>You have unsaved changes</span>
+              <span>{{ 'PORTAL.PROFILE.MOBILE_UNSAVED' | translate }}</span>
             </div>
             <div class="sticky-save-actions">
               <button
@@ -803,7 +804,7 @@ export interface OfferingOption {
                 (click)="resetForm()"
                 [disabled]="saving()"
               >
-                Discard
+                {{ 'PORTAL.PROFILE.DISCARD' | translate }}
               </button>
               <button
                 type="button"
@@ -812,7 +813,7 @@ export interface OfferingOption {
                 [disabled]="saving() || !isFormValid()"
               >
                 <span *ngIf="saving()" class="spinner"></span>
-                <span>{{ saving() ? 'Saving…' : 'Save Changes' }}</span>
+                <span>{{ saving() ? ('PORTAL.PROFILE.MOBILE_SAVING' | translate) : ('PORTAL.PROFILE.SAVE_CHANGES' | translate) }}</span>
               </button>
             </div>
           </div>
@@ -1856,6 +1857,7 @@ export class BusinessProfileComponent implements OnInit {
   authService = inject(AuthService);
   businessService = inject(BusinessService);
   customerErrorService = inject(CustomerErrorService);
+  i18n = inject(I18nService);
 
   loading = signal(true);
   saving = signal(false);
@@ -1922,24 +1924,7 @@ export class BusinessProfileComponent implements OnInit {
     email: false,
   };
 
-  readonly businessTypes: BusinessTypeOption[] = [
-    { value: 'restaurant_and_bar', label: 'Restaurant & Bar' },
-    { value: 'restaurant', label: 'Restaurant' },
-    { value: 'bar', label: 'Bar' },
-    { value: 'disco_club', label: 'Disco / Club' },
-    { value: 'bakery', label: 'Bakery' },
-    { value: 'wellness', label: 'Wellness' },
-    { value: 'car_rental', label: 'Car Rental' },
-    { value: 'pharmacy', label: 'Pharmacy' },
-    { value: 'taxi', label: 'Taxi' },
-    { value: 'excursions', label: 'Excursions' },
-    { value: 'sports', label: 'Sports' },
-    { value: 'supermarkets', label: 'Supermarket' },
-    { value: 'shopping', label: 'Shopping' },
-    { value: 'hair-dresser', label: 'Hair Salon' },
-    { value: 'services', label: 'Services' },
-    { value: 'other', label: 'Other' },
-  ];
+  readonly businessTypes: BusinessTypeOption[] = BUSINESS_TYPES;
 
   private readonly offeringMap: Record<string, OfferingOption[]> = {
     restaurant_and_bar: [
@@ -1999,7 +1984,11 @@ export class BusinessProfileComponent implements OnInit {
 
   get currentOfferingChoices(): OfferingOption[] {
     const type = this.form().business_type;
-    return type ? this.offeringMap[type] || [] : [];
+    const choices = type ? this.offeringMap[type] || [] : [];
+    return choices.map((c) => ({
+      value: c.value,
+      label: this.i18n.t(`PORTAL.PROFILE.OFFERINGS.${c.value.toUpperCase()}`),
+    }));
   }
 
   galleryItems = computed(() => this.form().images || []);
@@ -2033,13 +2022,15 @@ export class BusinessProfileComponent implements OnInit {
 
   missingItems = computed(() => {
     const f = this.form();
+    // Read lang signal to guarantee reactivity on language switch
+    this.i18n.lang();
     const missing: string[] = [];
-    if (!f.logo) missing.push('Upload a brand logo');
-    if (!f.images?.length) missing.push('Add at least one photo to gallery');
-    if (!f.wa_number?.trim()) missing.push('Add WhatsApp number for inquiries');
-    if (!f.city?.trim()) missing.push('Specify city or hub');
-    if (!f.location?.coordinates) missing.push('Set map coordinates');
-    if (!f.instagram?.trim() && !f.google_business_link?.trim()) missing.push('Add Instagram or Google Business link');
+    if (!f.logo) missing.push(this.i18n.t('PORTAL.PROFILE.MISSING_LOGO'));
+    if (!f.images?.length) missing.push(this.i18n.t('PORTAL.PROFILE.MISSING_GALLERY'));
+    if (!f.wa_number?.trim()) missing.push(this.i18n.t('PORTAL.PROFILE.MISSING_WHATSAPP'));
+    if (!f.city?.trim()) missing.push(this.i18n.t('PORTAL.PROFILE.MISSING_CITY'));
+    if (!f.location?.coordinates) missing.push(this.i18n.t('PORTAL.PROFILE.MISSING_COORDS'));
+    if (!f.instagram?.trim() && !f.google_business_link?.trim()) missing.push(this.i18n.t('PORTAL.PROFILE.MISSING_SOCIAL'));
     return missing;
   });
 
@@ -2163,7 +2154,7 @@ export class BusinessProfileComponent implements OnInit {
 
   detectLocation(): void {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      alert('Geolocation is not supported by your browser.');
+      alert(this.i18n.t('PORTAL.PROFILE.GEO_NOT_SUPPORTED'));
       return;
     }
 
@@ -2181,7 +2172,7 @@ export class BusinessProfileComponent implements OnInit {
       (err) => {
         this.detectingLocation.set(false);
         console.warn('[BusinessProfile] Geolocation error:', err);
-        alert('Could not retrieve device location: ' + err.message);
+        alert(this.i18n.t('PORTAL.PROFILE.GEO_FAILED'));
       },
       { timeout: 10000, enableHighAccuracy: true }
     );
@@ -2266,16 +2257,9 @@ export class BusinessProfileComponent implements OnInit {
 
   // ── Operating Hours Handlers ────────────────────────────────────────
   getDayLabel(day: string): string {
-    const labels: Record<string, string> = {
-      monday: 'Monday',
-      tuesday: 'Tuesday',
-      wednesday: 'Wednesday',
-      thursday: 'Thursday',
-      friday: 'Friday',
-      saturday: 'Saturday',
-      sunday: 'Sunday',
-    };
-    return labels[day] || day;
+    const key = `DAYS.${day.toLowerCase()}`;
+    const translated = this.i18n.t(key);
+    return translated !== key ? translated : day;
   }
 
   toggleDayOpen(index: number, event: Event): void {
@@ -2354,7 +2338,7 @@ export class BusinessProfileComponent implements OnInit {
     this.touched.waNumber = true;
 
     if (!this.isFormValid()) {
-      this.saveError.set('Please correct the highlighted fields before saving.');
+      this.saveError.set(this.i18n.t('PORTAL.PROFILE.VALIDATION_BANNER'));
       return;
     }
 
@@ -2368,7 +2352,6 @@ export class BusinessProfileComponent implements OnInit {
         f.id,
         {
           name: f.name,
-          business_type: f.business_type,
           description: f.description,
           address: f.address,
           city: f.city,

@@ -128,7 +128,7 @@ export class ShellComponent implements OnInit {
   private cdr = inject(ChangeDetectorRef);
 
   mobileNavOpen = false;
-  pageTitle = 'Overview';
+  pageTitle = 'PORTAL.SHELL.NAV_OVERVIEW';
 
   ngOnInit(): void {
     this.updatePageTitle(this.router.url);
@@ -161,16 +161,16 @@ export class ShellComponent implements OnInit {
 
   private updatePageTitle(url: string): void {
     const cleanUrl = url.split('?')[0];
-    if (cleanUrl.includes('/app/overview')) this.pageTitle = 'Overview';
-    else if (cleanUrl.includes('/app/business')) this.pageTitle = 'Business Profile';
-    else if (cleanUrl.includes('/app/listings/create') || cleanUrl.includes('/app/create')) this.pageTitle = 'Create Listing';
-    else if (cleanUrl.includes('/app/listings/edit')) this.pageTitle = 'Edit Listing';
-    else if (cleanUrl.includes('/app/listings') || cleanUrl.includes('/app/posts')) this.pageTitle = 'Listings';
-    else if (cleanUrl.includes('/app/promotions')) this.pageTitle = 'Promotions';
-    else if (cleanUrl.includes('/app/insights')) this.pageTitle = 'Insights';
-    else if (cleanUrl.includes('/app/billing')) this.pageTitle = 'Billing';
-    else if (cleanUrl.includes('/app/settings')) this.pageTitle = 'Settings';
-    else this.pageTitle = 'VAMO Business';
+    if (cleanUrl.includes('/app/overview')) this.pageTitle = 'PORTAL.SHELL.NAV_OVERVIEW';
+    else if (cleanUrl.includes('/app/business')) this.pageTitle = 'PORTAL.SHELL.NAV_PROFILE';
+    else if (cleanUrl.includes('/app/listings/create') || cleanUrl.includes('/app/create')) this.pageTitle = 'PORTAL.SHELL.NAV_CREATE_LISTING';
+    else if (cleanUrl.includes('/app/listings/edit')) this.pageTitle = 'PORTAL.SHELL.TITLE_EDIT_LISTING';
+    else if (cleanUrl.includes('/app/listings') || cleanUrl.includes('/app/posts')) this.pageTitle = 'PORTAL.SHELL.NAV_LISTINGS';
+    else if (cleanUrl.includes('/app/promotions')) this.pageTitle = 'PORTAL.SHELL.NAV_PROMOTIONS';
+    else if (cleanUrl.includes('/app/insights')) this.pageTitle = 'PORTAL.SHELL.NAV_INSIGHTS';
+    else if (cleanUrl.includes('/app/billing')) this.pageTitle = 'PORTAL.SHELL.NAV_BILLING';
+    else if (cleanUrl.includes('/app/settings')) this.pageTitle = 'PORTAL.SHELL.NAV_SETTINGS';
+    else this.pageTitle = 'PORTAL.SHELL.TITLE_DEFAULT';
     this.cdr.markForCheck();
   }
 }

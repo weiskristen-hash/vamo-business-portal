@@ -154,9 +154,10 @@ describe('BusinessService', () => {
       expect(fields.includes('images.directus_files_id.id')).toBe(true);
     });
 
-    it('should include images in editableProviderFields allowlist for gallery management', () => {
+    it('should omit images and business_type from editableProviderFields allowlist matching canonical metadata update', () => {
       const editable = service.editableProviderFields as readonly string[];
-      expect(editable.includes('images')).toBe(true);
+      expect(editable.includes('images')).toBe(false);
+      expect(editable.includes('business_type')).toBe(false);
       expect(editable.includes('name')).toBe(true);
       expect(editable.includes('logo')).toBe(true);
     });
@@ -165,6 +166,7 @@ describe('BusinessService', () => {
       const protectedFields = service.protectedProviderFields as readonly string[];
       expect(protectedFields.includes('id')).toBe(true);
       expect(protectedFields.includes('status')).toBe(true);
+      expect(protectedFields.includes('business_type')).toBe(true);
       expect(protectedFields.includes('subscription_tier')).toBe(true);
       expect(protectedFields.includes('bookmarkCount')).toBe(true);
       expect(protectedFields.includes('translations')).toBe(true);
@@ -184,6 +186,7 @@ describe('BusinessService', () => {
         user_created: 'admin-user',
         name: '  Safe Beach Bar  ',
         business_type: 'bar',
+        images: [{ id: 'img-1' }],
         description: 'Great place',
         address: 'Calle Principal 12',
         city: 'Las Terrenas',
@@ -196,52 +199,61 @@ describe('BusinessService', () => {
 
       const safePayload = service.buildSafeProviderPayload(maliciousOrBroadData);
 
-      // Verify protected and non-schema fields were stripped
+      // Verify protected and immutable fields were stripped
       expect(safePayload['id']).toBeUndefined();
       expect(safePayload['status']).toBeUndefined();
+      expect(safePayload['business_type']).toBeUndefined();
+      expect(safePayload['images']).toBeUndefined();
       expect(safePayload['subscription_tier']).toBeUndefined();
       expect(safePayload['user_created']).toBeUndefined();
-      expect(safePayload['website']).toBeUndefined();
+      expect(safePayload['translations']).toBeUndefined();
+      expect(safePayload['translation_status']).toBeUndefined();
 
-      // Verify editable fields were preserved and sanitized
-      expect(safePayload['name']).toBe('Safe Beach Bar');
-      expect(safePayload['business_type']).toBe('bar');
+      // Verify editable fields were preserved according to canonical semantics
+      expect(safePayload['name']).toBe('  Safe Beach Bar  ');
+      expect(safePayload['website']).toBeUndefined();
       expect(safePayload['city']).toBe('Las Terrenas');
       expect(safePayload['facebook']).toBe('https://facebook.com/bar');
     });
 
-    it('should diff payload against original to send only changed fields', () => {
+    it('should preserve full canonical payload without diff-stripping unchanged fields', () => {
       const original: any = {
         name: 'Current Bar Name',
-        business_type: 'bar',
         city: 'Las Terrenas',
+        description: 'Original Description',
       };
 
       const updatedData: any = {
         name: 'New Bar Name',
-        business_type: 'bar', // unchanged
         city: 'Las Terrenas', // unchanged
+        description: 'Original Description', // unchanged
       };
 
-      const diffedPayload = service.buildSafeProviderPayload(updatedData, original);
+      const payload = service.buildSafeProviderPayload(updatedData, original);
 
-      expect(diffedPayload['name']).toBe('New Bar Name');
-      expect(diffedPayload['business_type']).toBeUndefined();
-      expect(diffedPayload['city']).toBeUndefined();
+      expect(payload['name']).toBe('New Bar Name');
+      expect(payload['city']).toBe('Las Terrenas');
+      expect(payload['description']).toBe('Original Description');
+      expect(payload['business_type']).toBeUndefined();
+      expect(payload['images']).toBeUndefined();
     });
 
-    it('should preserve intentional field clearing in payload', () => {
+    it('should preserve intentional field clearing and canonical null semantics', () => {
       const dataWithClearing: any = {
-        instagram: '   ',
+        instagram: '',
         facebook: '',
-        city: '   ',
+        city: '',
+        email: '   ',
+        wa_number: '   ',
       };
 
       const payload = service.buildSafeProviderPayload(dataWithClearing);
 
-      expect(payload['instagram']).toBeNull();
-      expect(payload['facebook']).toBeNull();
-      expect(payload['city']).toBeNull();
+      expect(payload['instagram']).toBe('');
+      expect(payload['facebook']).toBe('');
+      expect(payload['city']).toBe('');
+      expect(payload['email']).toBeNull();
+      expect(payload['wa_number']).toBeNull();
       expect(payload['website']).toBeUndefined();
     });
   });

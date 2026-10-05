@@ -1,12 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { CustomerErrorService, VAMO_SUPPORT_EMAIL } from './customer-error.service';
+import { I18nService } from '../i18n/i18n.service';
 
 describe('CustomerErrorService', () => {
   let service: CustomerErrorService;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      providers: [CustomerErrorService],
+      providers: [CustomerErrorService, I18nService],
     });
     service = TestBed.inject(CustomerErrorService);
   });
@@ -128,13 +129,36 @@ describe('CustomerErrorService', () => {
       expect(msg).toBe("We couldn't load your business profile. Please refresh the page.");
     });
 
-    it('should sanitize technical leaks in custom validation messages', () => {
+    it('should handle validation category with default message when no customValidationMessage is provided', () => {
+      const detail = service.toCustomerError(null, 'validation');
+
+      expect(detail.headline).toBe('Please check your information');
+      expect(detail.message).toBe('Please fix the validation errors before saving.');
+      expect(detail.actionText).toBe('Try Again');
+      expect(detail.headline).not.toBe('Save failed');
+      expect(detail.message).not.toBe("We couldn't save your changes. Please try again.");
+    });
+
+    it('should return localized validation message in Spanish when UI language is es', () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+
+      const detail = service.toCustomerError(null, 'validation');
+      expect(detail.headline).toBe('Por favor revisa tu información');
+      expect(detail.message).toBe('Por favor corrige los errores antes de guardar.');
+      expect(detail.actionText).toBe('Intentar de nuevo');
+
+      i18n.setLang('en');
+    });
+
+    it('should sanitize technical leaks in custom validation messages and fallback to validation error message', () => {
       const leakyValidation = "Validation failed: collection 'providers' has invalid schema";
       const detail = service.toCustomerError(null, 'validation', leakyValidation);
 
       expect(detail.message).not.toContain('collection');
       expect(detail.message).not.toContain('schema');
-      expect(detail.message).toBe("We couldn't save your changes. Please try again.");
+      expect(detail.headline).toBe('Please check your information');
+      expect(detail.message).toBe('Please fix the validation errors before saving.');
     });
 
     it('should allow legitimate user-facing validation messages', () => {
@@ -149,6 +173,55 @@ describe('CustomerErrorService', () => {
 
       expect(detail.secondaryMessage).toContain(VAMO_SUPPORT_EMAIL);
       expect(detail.actionText).toBe('Try Again');
+    });
+
+    it('should sanitize Stripe internals such as client_secret, payment_intent, and setup_intent', () => {
+      const stripeLeak = new Error('Stripe error on client_secret seti_12345_secret_abcde with setup_intent failed');
+      const detail = service.toCustomerError(stripeLeak, 'save');
+
+      expect(detail.message).not.toContain('client_secret');
+      expect(detail.message).not.toContain('setup_intent');
+      expect(detail.message).not.toContain('seti_12345');
+      expect(detail.message).toBe("We couldn't save your changes. Please try again.");
+    });
+  });
+
+  describe('Localized Customer Error Messages', () => {
+    it('returns Spanish customer-safe messages when UI language is es', () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+      const err = new Error('Directus Network Error');
+      const msg = service.toCustomerMessage(err, 'save');
+
+      expect(msg).toBe('Tenemos problemas para conectar. Revisa tu conexión e intenta de nuevo.');
+      expect(msg).not.toContain('Directus');
+      expect(msg).not.toContain('Network');
+      i18n.setLang('en');
+    });
+
+    it('returns Spanish load error message when UI language is es', () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+      const err = new Error('SQL query failure');
+      const msg = service.toCustomerMessage(err, 'load');
+
+      expect(msg).toBe('No pudimos cargar esta información. Por favor actualiza la página.');
+      expect(msg).not.toContain('SQL');
+      i18n.setLang('en');
+    });
+
+    it('changes error messages dynamically when switching between languages', () => {
+      const i18n = TestBed.inject(I18nService);
+      const err = new Error('Save failure');
+
+      i18n.setLang('en');
+      expect(service.toCustomerMessage(err, 'save')).toBe("We couldn't save your changes. Please try again.");
+
+      i18n.setLang('es');
+      expect(service.toCustomerMessage(err, 'save')).toBe('No pudimos guardar tus cambios. Por favor intenta de nuevo.');
+
+      i18n.setLang('en');
+      expect(service.toCustomerMessage(err, 'save')).toBe("We couldn't save your changes. Please try again.");
     });
   });
 });

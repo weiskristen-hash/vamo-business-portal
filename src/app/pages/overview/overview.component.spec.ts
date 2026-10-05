@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { OverviewComponent } from './overview.component';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
+import { I18nService } from '../../core/i18n/i18n.service';
 import { provideRouter } from '@angular/router';
 
 describe('OverviewComponent', () => {
@@ -64,6 +65,7 @@ describe('OverviewComponent', () => {
       imports: [OverviewComponent],
       providers: [
         provideRouter([]),
+        I18nService,
         { provide: AuthService, useValue: authServiceSpy },
         { provide: BusinessService, useValue: businessServiceSpy },
       ],
@@ -152,5 +154,142 @@ describe('OverviewComponent', () => {
     expect(errorState).toBeTruthy();
     expect(errorState.textContent).toContain('Unable to load dashboard');
     expect(errorState.textContent).not.toContain('Directus');
+  });
+
+  describe('Overview Localization & Parity', () => {
+    it('should translate headings, greeting, cards, and quick actions into Spanish', async () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+
+      fixture = TestBed.createComponent(OverviewComponent);
+      component = fixture.componentInstance;
+      await component.loadData();
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+
+      // Card metric labels in Spanish
+      expect(compiled.textContent).toContain('Publicaciones activas');
+      expect(compiled.textContent).toContain('Borradores');
+      expect(compiled.textContent).toContain('Total de publicaciones');
+      expect(compiled.textContent).toContain('Nivel de negocio');
+
+      // Quick Actions heading in Spanish
+      expect(compiled.textContent).toContain('Acciones rápidas');
+      expect(compiled.textContent).toContain('Editar perfil del negocio');
+      expect(compiled.textContent).toContain('Gestionar publicaciones');
+
+      // Recent posts section in Spanish
+      expect(compiled.textContent).toContain('Publicaciones recientes');
+      expect(compiled.textContent).toContain('Crear publicación');
+
+      i18n.setLang('en');
+    });
+
+    it('should translate loading and empty states into Spanish', async () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+
+      businessServiceSpy.getEventsForProvider.mockResolvedValue([]);
+      businessServiceSpy.calculateStats.mockReturnValue({ total: 0, published: 0, draft: 0, archived: 0 });
+      businessServiceSpy.getRecentEvents.mockReturnValue([]);
+
+      fixture = TestBed.createComponent(OverviewComponent);
+      component = fixture.componentInstance;
+
+      // Verify loading state translation before loadData resolves
+      component.loading = true;
+      fixture.detectChanges();
+      const loadingState = fixture.nativeElement.querySelector('.state-loading');
+      expect(loadingState.textContent).toContain('Cargando tu espacio de negocio…');
+
+      // Complete loading and verify empty state in Spanish
+      await component.loadData();
+      fixture.detectChanges();
+      const emptyCard = fixture.nativeElement.querySelector('.empty-posts-card');
+      expect(emptyCard.textContent).toContain('Aún no hay publicaciones');
+      expect(emptyCard.textContent).toContain('✦ Crea tu primera publicación');
+
+      i18n.setLang('en');
+    });
+
+    it('should preserve canonical English business type labels even when UI language is Spanish', async () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+
+      // Provider with canonical business_type 'restaurant_and_bar'
+      component.provider = {
+        ...mockUser.provider_link,
+        business_type: 'restaurant_and_bar',
+      } as any;
+
+      const label = component.getBusinessTypeLabel(component.provider?.business_type);
+      // Canonical VAMO renders type.label directly in English without inventing Spanish translations
+      expect(label).toBe('Restaurant & Bar');
+      expect(label).not.toBe('Restaurante y Bar');
+
+      i18n.setLang('en');
+    });
+
+    it('should protect owner-entered content from translation substitution (Part 10 regression protection)', async () => {
+      const i18n = TestBed.inject(I18nService);
+
+      // Event with owner-entered content and mock Directus server translations JSON
+      const eventWithOwnerContent: any = {
+        id: 'ev-owner',
+        name: 'Owner Original Sunset Cruise',
+        description: 'Original English description entered by the business owner.',
+        promo_text: 'Buy 1 get 1 free rum punch',
+        status: 'published',
+        startDate: '2026-11-01',
+        translations: [
+          {
+            language_code: 'es',
+            name: 'Crucero al atardecer traducido',
+            description: 'Descripción en español traducida por backend',
+            promo_text: 'Compre 1 y obtenga 1 gratis',
+          },
+        ],
+      };
+
+      businessServiceSpy.getEventsForProvider.mockResolvedValue([eventWithOwnerContent]);
+      businessServiceSpy.getRecentEvents.mockReturnValue([eventWithOwnerContent]);
+
+      // When language is Spanish, owner portal MUST continue showing original content
+      i18n.setLang('es');
+      fixture = TestBed.createComponent(OverviewComponent);
+      component = fixture.componentInstance;
+      await component.loadData();
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+
+      // Event title must display original owner text, NEVER the backend translations JSON
+      expect(compiled.querySelector('.post-title')?.textContent).toBe('Owner Original Sunset Cruise');
+      expect(compiled.querySelector('.post-title')?.textContent).not.toBe('Crucero al atardecer traducido');
+      expect(eventWithOwnerContent.name).toBe('Owner Original Sunset Cruise');
+      expect(eventWithOwnerContent.description).toBe('Original English description entered by the business owner.');
+      expect(eventWithOwnerContent.promo_text).toBe('Buy 1 get 1 free rum punch');
+
+      i18n.setLang('en');
+    });
+
+    it('should format dates according to active dateLocale', () => {
+      fixture = TestBed.createComponent(OverviewComponent);
+      component = fixture.componentInstance;
+      const i18n = TestBed.inject(I18nService);
+
+      i18n.setLang('en');
+      expect(i18n.dateLocale()).toBe('en-US');
+      const enFormatted = component.formatDate('2026-10-15T14:00:00Z');
+      expect(enFormatted).toContain('Oct');
+
+      i18n.setLang('es');
+      expect(i18n.dateLocale()).toBe('es');
+      const esFormatted = component.formatDate('2026-10-15T14:00:00Z');
+      expect(esFormatted).toContain('oct');
+
+      i18n.setLang('en');
+    });
   });
 });

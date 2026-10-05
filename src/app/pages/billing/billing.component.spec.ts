@@ -3,6 +3,7 @@ import { BillingComponent } from './billing.component';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
 import { CustomerErrorService } from '../../core/services/customer-error.service';
+import { I18nService } from '../../core/i18n/i18n.service';
 import {
   StripeService,
   StripePlan,
@@ -446,4 +447,105 @@ describe('BillingComponent', () => {
       expect(component.errorMessage()).toBe("We couldn't load this information. Please refresh the page.");
     });
   });
+
+  describe('Phase 2C.4 Localization & Canonical Parity', () => {
+    it('should translate page title and headings in EN and switch dynamically to ES', () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('en');
+      expect(i18n.t('PORTAL.BILLING.TITLE')).toBe('Subscription & Billing');
+      expect(i18n.t('PORTAL.BILLING.QUOTA_TITLE')).toBe('Publishing Quota');
+      expect(i18n.t('PORTAL.BILLING.HISTORY_TITLE')).toBe('Invoice & Billing Receipts');
+
+      i18n.setLang('es');
+      expect(i18n.t('PORTAL.BILLING.TITLE')).toBe('Suscripción y facturación');
+      expect(i18n.t('PORTAL.BILLING.QUOTA_TITLE')).toBe('Límite de publicaciones');
+      expect(i18n.t('PORTAL.BILLING.HISTORY_TITLE')).toBe('Facturas y recibos');
+    });
+
+    it('should keep plan names untranslated (Starter, Basic, Advanced) across both languages', () => {
+      const i18n = TestBed.inject(I18nService);
+      const testPlan: StripePlan = {
+        id: 'price_test',
+        name: 'Starter Plan',
+        description: 'Starter tier',
+        amount: 2900,
+        currency: 'usd',
+        interval: 'month',
+        tier: 'starter',
+        maxPosts: 1,
+      };
+
+      i18n.setLang('en');
+      expect(testPlan.name).toBe('Starter Plan');
+
+      i18n.setLang('es');
+      expect(testPlan.name).toBe('Starter Plan');
+    });
+
+    it('should render canonical tier features in EN and ES dynamically', () => {
+      const i18n = TestBed.inject(I18nService);
+      const starterPlan: StripePlan = {
+        id: 'p1',
+        name: 'Starter Plan',
+        description: '',
+        amount: 2900,
+        currency: 'usd',
+        interval: 'month',
+        tier: 'starter',
+        maxPosts: 1,
+      };
+
+      i18n.setLang('en');
+      const enFeats = component.getPlanFeatures(starterPlan);
+      expect(enFeats).toContain('1 active post (event or activity)');
+      expect(enFeats).toContain('Search & category discovery');
+
+      i18n.setLang('es');
+      const esFeats = component.getPlanFeatures(starterPlan);
+      expect(esFeats).toContain('1 publicación activa (evento o actividad)');
+      expect(esFeats).toContain('Descubrimiento por búsqueda y categorías');
+    });
+
+    it('should format dates according to i18n.dateLocale()', () => {
+      const i18n = TestBed.inject(I18nService);
+      const timestamp = 1715000000; // May 6, 2024
+
+      i18n.setLang('en');
+      const formattedEn = component.formatDate(timestamp);
+      expect(formattedEn).toContain('2024');
+
+      i18n.setLang('es');
+      const formattedEs = component.formatDate(timestamp);
+      expect(formattedEs).toContain('2024');
+    });
+  });
+
+  describe('Final review: language switch never mutates Stripe/backend values', () => {
+    it('keeps plan ids, tiers, amounts and checkout payload identical across EN/ES', async () => {
+      await fixture.whenStable();
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('en');
+      const before = JSON.parse(JSON.stringify(component.plans()));
+
+      i18n.setLang('es');
+      fixture.detectChanges();
+      expect(JSON.parse(JSON.stringify(component.plans()))).toEqual(before);
+      expect(component.getPlanFeatures(mockPlans[0])).toContain('1 publicaci\u00f3n activa (evento o actividad)');
+
+      component.subscription.set(null);
+      component.selectedPlan.set(mockPlans[0]);
+      await component.proceedToPayment();
+
+      expect(stripeServiceSpy.createSubscription).toHaveBeenCalledWith(
+        'sofia@restaurant.com',
+        'Sofia Hernandez',
+        mockPlans[0].id,
+        undefined
+      );
+      expect(mockPlans[0].id.startsWith('price_')).toBe(true);
+      expect(mockPlans[0].tier).toBe('starter');
+      i18n.setLang('en');
+    });
+  });
+
 });

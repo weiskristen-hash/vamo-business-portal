@@ -4,6 +4,8 @@ import { RouterModule } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
 import { CustomerErrorService } from '../../core/services/customer-error.service';
+import { I18nService, BUSINESS_TYPES } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { VamoUser } from '../../core/models/user.model';
 import { Provider } from '../../core/models/provider.model';
 import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
@@ -11,23 +13,23 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
 @Component({
   selector: 'app-overview',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, TranslatePipe],
   template: `
     <div class="overview-page">
       <!-- Loading State -->
       <div *ngIf="loading" class="state-container state-loading" role="status" aria-live="polite">
         <div class="loading-spinner"></div>
-        <h3 class="state-title">Loading your business workspace…</h3>
-        <p class="state-desc">Loading your business workspace…</p>
+        <h3 class="state-title">{{ 'PORTAL.OVERVIEW.LOADING_TITLE' | translate }}</h3>
+        <p class="state-desc">{{ 'PORTAL.OVERVIEW.LOADING_DESC' | translate }}</p>
       </div>
 
       <!-- Error State -->
       <div *ngIf="!loading && error" class="state-container state-error" role="alert">
         <div class="state-icon error-icon">⚠️</div>
-        <h3 class="state-title">Unable to load dashboard</h3>
+        <h3 class="state-title">{{ 'PORTAL.OVERVIEW.ERROR_TITLE' | translate }}</h3>
         <p class="state-desc">{{ error }}</p>
         <button type="button" class="btn btn-secondary retry-btn" (click)="loadData()">
-          ↻ Retry
+          ↻ {{ 'PORTAL.COMMON.RETRY' | translate }}
         </button>
       </div>
 
@@ -37,7 +39,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
         <header class="overview-header card">
           <div class="header-left">
             <div class="business-brand-avatar" *ngIf="businessLogoUrl as logoUrl; else defaultLogo">
-              <img [src]="logoUrl" [alt]="provider?.name || 'Business Logo'" />
+              <img [src]="logoUrl" [alt]="provider?.name || ('PORTAL.SHELL.DEFAULT_BUSINESS_NAME' | translate)" />
             </div>
             <ng-template #defaultLogo>
               <div class="business-brand-avatar avatar-fallback">
@@ -46,11 +48,11 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
             </ng-template>
 
             <div class="greeting-meta">
-              <h1 class="greeting-title">{{ timeGreeting }}, {{ user?.first_name || 'Partner' }}</h1>
+              <h1 class="greeting-title">{{ greetingKey | translate }}, {{ user?.first_name || ('PORTAL.OVERVIEW.PARTNER' | translate) }}</h1>
               <div class="greeting-subtitle">
-                <span class="business-name-badge">{{ provider?.name || 'Your Business' }}</span>
+                <span class="business-name-badge">{{ provider?.name || ('PORTAL.OVERVIEW.YOUR_BUSINESS' | translate) }}</span>
                 <span class="subtext-divider">•</span>
-                <span class="market-tag">{{ provider?.city || 'Dominican Republic' }} on VAMO</span>
+                <span class="market-tag">{{ provider?.city || ('PORTAL.OVERVIEW.DEFAULT_MARKET' | translate) }} {{ 'PORTAL.OVERVIEW.ON_VAMO' | translate }}</span>
               </div>
             </div>
           </div>
@@ -62,71 +64,71 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
                 <line x1="12" y1="8" x2="12" y2="16"></line>
                 <line x1="8" y1="12" x2="16" y2="12"></line>
               </svg>
-              <span>Create Listing</span>
+              <span>{{ 'PORTAL.SHELL.NAV_CREATE_LISTING' | translate }}</span>
             </a>
           </div>
         </header>
 
         <!-- Summary Cards Grid -->
-        <section class="summary-grid" aria-label="Business Performance Summary">
+        <section class="summary-grid" [attr.aria-label]="'PORTAL.OVERVIEW.SUMMARY_ARIA' | translate">
           <!-- Card 1: Live Posts -->
           <div class="summary-card card">
             <div class="summary-header">
-              <span class="summary-label">Live Posts</span>
+              <span class="summary-label">{{ 'PORTAL.OVERVIEW.STAT_LIVE_POSTS' | translate }}</span>
               <span class="summary-icon icon-live">●</span>
             </div>
             <div class="summary-value">{{ stats.published }}</div>
             <div class="summary-footer">
-              <span class="badge badge-published">Active on VAMO app</span>
+              <span class="badge badge-published">{{ 'PORTAL.OVERVIEW.STAT_LIVE_BADGE' | translate }}</span>
             </div>
           </div>
 
           <!-- Card 2: Drafts -->
           <div class="summary-card card">
             <div class="summary-header">
-              <span class="summary-label">Drafts</span>
+              <span class="summary-label">{{ 'PORTAL.OVERVIEW.STAT_DRAFTS' | translate }}</span>
               <span class="summary-icon icon-draft">✎</span>
             </div>
             <div class="summary-value">{{ stats.draft }}</div>
             <div class="summary-footer">
-              <span class="badge badge-draft">Waiting to publish</span>
+              <span class="badge badge-draft">{{ 'PORTAL.OVERVIEW.STAT_DRAFTS_BADGE' | translate }}</span>
             </div>
           </div>
 
           <!-- Card 3: Total Posts -->
           <div class="summary-card card">
             <div class="summary-header">
-              <span class="summary-label">Total Posts</span>
+              <span class="summary-label">{{ 'PORTAL.OVERVIEW.STAT_TOTAL_POSTS' | translate }}</span>
               <span class="summary-icon icon-total">▦</span>
             </div>
             <div class="summary-value">{{ stats.total }}</div>
             <div class="summary-footer">
-              <span class="summary-subtext">{{ stats.archived }} archived</span>
+              <span class="summary-subtext">{{ 'PORTAL.OVERVIEW.STAT_ARCHIVED' | translate: { count: stats.archived } }}</span>
             </div>
           </div>
 
           <!-- Card 4: Business Profile & Plan -->
           <div class="summary-card card">
             <div class="summary-header">
-              <span class="summary-label">Business Tier</span>
+              <span class="summary-label">{{ 'PORTAL.OVERVIEW.STAT_TIER' | translate }}</span>
               <span class="summary-icon icon-tier">✦</span>
             </div>
             <div class="summary-value tier-value">
-              {{ provider?.subscription_tier ? (provider?.subscription_tier | uppercase) : 'VERIFIED' }}
+              {{ provider?.subscription_tier ? (provider?.subscription_tier | uppercase) : ('PORTAL.OVERVIEW.TIER_VERIFIED' | translate) }}
             </div>
             <div class="summary-footer">
               <span class="badge badge-published">
-                {{ provider?.business_type || 'Verified Business' }}
+                {{ getBusinessTypeLabel(provider?.business_type) }}
               </span>
             </div>
           </div>
         </section>
 
         <!-- Quick Actions Row -->
-        <section class="quick-actions-section" aria-label="Quick Actions">
+        <section class="quick-actions-section" [attr.aria-label]="'PORTAL.OVERVIEW.QUICK_ACTIONS_ARIA' | translate">
           <div class="section-heading">
-            <h2 class="section-title">Quick Actions</h2>
-            <span class="section-subtitle">Common management tasks</span>
+            <h2 class="section-title">{{ 'PORTAL.OVERVIEW.QUICK_ACTIONS_TITLE' | translate }}</h2>
+            <span class="section-subtitle">{{ 'PORTAL.OVERVIEW.QUICK_ACTIONS_SUBTITLE' | translate }}</span>
           </div>
 
           <div class="actions-grid">
@@ -138,8 +140,8 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
                 </svg>
               </div>
               <div class="action-meta">
-                <strong class="action-title">Edit Business Profile</strong>
-                <span class="action-desc">Update address, hours, photos and contact links</span>
+                <strong class="action-title">{{ 'PORTAL.OVERVIEW.ACTION_EDIT_PROFILE_TITLE' | translate }}</strong>
+                <span class="action-desc">{{ 'PORTAL.OVERVIEW.ACTION_EDIT_PROFILE_DESC' | translate }}</span>
               </div>
             </a>
 
@@ -153,8 +155,8 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
                 </svg>
               </div>
               <div class="action-meta">
-                <strong class="action-title">Manage Listings</strong>
-                <span class="action-desc">Manage existing event listings and schedules</span>
+                <strong class="action-title">{{ 'PORTAL.OVERVIEW.ACTION_MANAGE_LISTINGS_TITLE' | translate }}</strong>
+                <span class="action-desc">{{ 'PORTAL.OVERVIEW.ACTION_MANAGE_LISTINGS_DESC' | translate }}</span>
               </div>
             </a>
 
@@ -167,8 +169,8 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
                 </svg>
               </div>
               <div class="action-meta">
-                <strong class="action-title">Create Listing</strong>
-                <span class="action-desc">Broadcast a new event to travelers and locals</span>
+                <strong class="action-title">{{ 'PORTAL.OVERVIEW.ACTION_CREATE_LISTING_TITLE' | translate }}</strong>
+                <span class="action-desc">{{ 'PORTAL.OVERVIEW.ACTION_CREATE_LISTING_DESC' | translate }}</span>
               </div>
             </a>
 
@@ -181,34 +183,34 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
                 </svg>
               </div>
               <div class="action-meta">
-                <strong class="action-title">View Insights</strong>
-                <span class="action-desc">Explore audience impressions and engagement</span>
+                <strong class="action-title">{{ 'PORTAL.OVERVIEW.ACTION_INSIGHTS_TITLE' | translate }}</strong>
+                <span class="action-desc">{{ 'PORTAL.OVERVIEW.ACTION_INSIGHTS_DESC' | translate }}</span>
               </div>
             </a>
           </div>
         </section>
 
         <!-- Recent Posts Section -->
-        <section class="recent-posts-section" aria-label="Recent Posts">
+        <section class="recent-posts-section" [attr.aria-label]="'PORTAL.OVERVIEW.RECENT_POSTS_ARIA' | translate">
           <div class="section-heading-row">
             <div>
-              <h2 class="section-title">Recent Posts</h2>
-              <span class="section-subtitle">Latest listings for {{ provider?.name }}</span>
+              <h2 class="section-title">{{ 'PORTAL.OVERVIEW.RECENT_POSTS_TITLE' | translate }}</h2>
+              <span class="section-subtitle">{{ 'PORTAL.OVERVIEW.RECENT_POSTS_SUBTITLE' | translate: { name: provider?.name || ('PORTAL.OVERVIEW.YOUR_BUSINESS' | translate) } }}</span>
             </div>
             <a routerLink="/app/listings" class="btn btn-ghost btn-sm" *ngIf="recentEvents.length > 0">
-              View all listings →
+              {{ 'PORTAL.OVERVIEW.VIEW_ALL_LISTINGS' | translate }}
             </a>
           </div>
 
           <!-- Empty State -->
           <div *ngIf="recentEvents.length === 0" class="empty-posts-card card">
             <div class="empty-icon">📅</div>
-            <h3 class="empty-title">No posts published yet</h3>
+            <h3 class="empty-title">{{ 'PORTAL.OVERVIEW.EMPTY_POSTS_TITLE' | translate }}</h3>
             <p class="empty-desc">
-              Your business does not have any active posts or events on VAMO yet. Create your first post to reach customers in your area.
+              {{ 'PORTAL.OVERVIEW.EMPTY_POSTS_DESC' | translate }}
             </p>
             <a routerLink="/app/listings/create" class="btn btn-primary">
-              ✦ Create Your First Listing
+              {{ 'PORTAL.OVERVIEW.EMPTY_POSTS_CTA' | translate }}
             </a>
           </div>
 
@@ -241,19 +243,19 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
                       </svg>
                       {{ formatDate(ev.startDate) }}
                     </span>
-                    <span *ngIf="ev.from" class="post-time">at {{ ev.from }}</span>
-                    <span *ngIf="ev.mode === 'recurring'" class="recurring-pill">Recurring</span>
+                    <span *ngIf="ev.from" class="post-time">{{ 'PORTAL.OVERVIEW.AT_TIME' | translate: { time: ev.from } }}</span>
+                    <span *ngIf="ev.mode === 'recurring'" class="recurring-pill">{{ 'PORTAL.OVERVIEW.RECURRING_PILL' | translate }}</span>
                   </div>
                 </div>
 
                 <div class="post-status">
                   <span class="badge" [ngClass]="'badge-' + ev.status">
-                    {{ ev.status }}
+                    {{ getStatusLabel(ev.status) }}
                   </span>
                 </div>
 
                 <div class="post-action">
-                  <span class="post-action-hint">Phase 1B Read-only</span>
+                  <span class="post-action-hint">{{ 'PORTAL.OVERVIEW.READ_ONLY_HINT' | translate }}</span>
                 </div>
               </div>
             </div>
@@ -759,6 +761,7 @@ export class OverviewComponent implements OnInit {
   authService = inject(AuthService);
   businessService = inject(BusinessService);
   customerErrorService = inject(CustomerErrorService);
+  i18n = inject(I18nService);
   cdr = inject(ChangeDetectorRef);
 
   user: VamoUser | null = null;
@@ -777,17 +780,32 @@ export class OverviewComponent implements OnInit {
 
   recentEvents: VamoEvent[] = [];
 
-  get timeGreeting(): string {
+  get greetingKey(): string {
     const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 18) return 'Good afternoon';
-    return 'Good evening';
+    if (hour < 12) return 'PORTAL.OVERVIEW.GREETING_MORNING';
+    if (hour < 18) return 'PORTAL.OVERVIEW.GREETING_AFTERNOON';
+    return 'PORTAL.OVERVIEW.GREETING_EVENING';
   }
 
   get businessLogoUrl(): string | null {
     const logo = this.provider?.logo;
     if (!logo) return null;
     return this.businessService.getAssetUrl(logo, 'width=120&height=120&fit=cover');
+  }
+
+  getBusinessTypeLabel(type?: string | null): string {
+    if (!type) return this.i18n.t('PORTAL.OVERVIEW.VERIFIED_BUSINESS');
+    const match = BUSINESS_TYPES.find((bt) => bt.value === type);
+    return match ? match.label : type;
+  }
+
+  getStatusLabel(status?: string): string {
+    if (!status) return '';
+    const s = status.toLowerCase();
+    if (s === 'published') return this.i18n.t('PORTAL.STATUS.PUBLISHED');
+    if (s === 'draft') return this.i18n.t('PORTAL.STATUS.DRAFT');
+    if (s === 'archived') return this.i18n.t('PORTAL.STATUS.ARCHIVED');
+    return status;
   }
 
   ngOnInit(): void {
@@ -811,7 +829,7 @@ export class OverviewComponent implements OnInit {
       const providerId = this.provider?.id;
 
       if (!providerId) {
-        this.error = 'No business profile is associated with your account.';
+        this.error = this.i18n.t('PORTAL.ERRORS.NO_BUSINESS');
         return;
       }
 
@@ -840,10 +858,10 @@ export class OverviewComponent implements OnInit {
   }
 
   formatDate(dateStr?: string | null): string {
-    if (!dateStr) return 'No date set';
+    if (!dateStr) return this.i18n.t('PORTAL.OVERVIEW.NO_DATE_SET');
     try {
       const d = new Date(dateStr);
-      return d.toLocaleDateString(undefined, {
+      return d.toLocaleDateString(this.i18n.dateLocale(), {
         month: 'short',
         day: 'numeric',
         year: 'numeric',

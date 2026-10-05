@@ -6,6 +6,8 @@ import { AuthService } from '../../../core/services/auth.service';
 import { BusinessService } from '../../../core/services/business.service';
 import { CustomerErrorService } from '../../../core/services/customer-error.service';
 import { VamoEvent, Area, EVENT_CATEGORIES, EventCategory } from '../../../core/models/event.model';
+import { I18nService } from '../../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../../core/i18n/translate.pipe';
 
 export interface ExistingImage {
   junctionId: number | string;
@@ -15,38 +17,38 @@ export interface ExistingImage {
 @Component({
   selector: 'app-listing-editor',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule],
+  imports: [CommonModule, RouterModule, FormsModule, TranslatePipe],
   template: `
     <div class="editor-page">
       <!-- Top Navigation & Action Header -->
       <header class="editor-header">
         <div class="header-left">
-          <button type="button" class="btn btn-ghost back-btn" (click)="onCancel()" aria-label="Back to listings">
+          <button type="button" class="btn btn-ghost back-btn" (click)="onCancel()" [attr.aria-label]="'PORTAL.EVENT_EDITOR.BACK_TO_LISTINGS' | translate">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="19" y1="12" x2="5" y2="12"></line>
               <polyline points="12 19 5 12 12 5"></polyline>
             </svg>
-            <span>Back to Listings</span>
+            <span>{{ 'PORTAL.EVENT_EDITOR.BACK_TO_LISTINGS' | translate }}</span>
           </button>
           <div class="title-meta">
-            <h1 class="page-title">{{ isEditMode ? 'Edit Listing' : 'Create New Listing' }}</h1>
+            <h1 class="page-title">{{ (isEditMode ? 'PORTAL.EVENT_EDITOR.TITLE_EDIT' : 'PORTAL.EVENT_EDITOR.TITLE_CREATE') | translate }}</h1>
             <span class="status-indicator-badge" [ngClass]="isEditMode ? 'badge-primary' : 'badge-neutral'">
-              {{ isEditMode ? (isDraft ? 'Editing Draft' : 'Editing Published Post') : 'New Listing' }}
+              {{ (isEditMode ? (isDraft ? 'PORTAL.EVENT_EDITOR.STATUS_EDITING_DRAFT' : 'PORTAL.EVENT_EDITOR.STATUS_EDITING_PUBLISHED') : 'PORTAL.EVENT_EDITOR.STATUS_NEW') | translate }}
             </span>
           </div>
         </div>
 
         <div class="header-actions">
           <button type="button" class="btn btn-secondary" (click)="onCancel()" [disabled]="submitting">
-            Cancel
+            {{ 'PORTAL.COMMON.CANCEL' | translate }}
           </button>
           <button type="button" class="btn btn-secondary" (click)="saveDraft()" [disabled]="submitting">
             <span *ngIf="submitting && saveTargetStatus === 'draft'" class="spinner-inline"></span>
-            <span>Save as Draft</span>
+            <span>{{ 'PORTAL.EVENT_EDITOR.SAVE_DRAFT_BTN' | translate }}</span>
           </button>
           <button type="button" class="btn btn-primary" (click)="publishListing()" [disabled]="submitting">
             <span *ngIf="submitting && saveTargetStatus === 'published'" class="spinner-inline"></span>
-            <span>{{ isEditMode && !isDraft ? 'Save & Update' : 'Publish Listing' }}</span>
+            <span>{{ (isEditMode && !isDraft ? 'PORTAL.EVENT_EDITOR.SAVE_UPDATE_BTN' : 'PORTAL.EVENT_EDITOR.PUBLISH_BTN') | translate }}</span>
           </button>
         </div>
       </header>
@@ -55,14 +57,14 @@ export interface ExistingImage {
       <div *ngIf="errorMessage" class="alert alert-danger" role="alert">
         <div class="alert-icon">⚠️</div>
         <div class="alert-message">{{ errorMessage }}</div>
-        <button type="button" class="alert-close" (click)="errorMessage = null" aria-label="Dismiss">✕</button>
+        <button type="button" class="alert-close" (click)="errorMessage = null" [attr.aria-label]="'PORTAL.LISTINGS.DISMISS_ALERT' | translate">✕</button>
       </div>
 
       <!-- Date-Lock Warning for published events starting in <24 hours -->
       <div *ngIf="datesLocked" class="alert alert-warning" role="alert">
         <div class="alert-icon">🔒</div>
         <div class="alert-message">
-          <strong>Schedule Locked:</strong> This event starts in less than 24 hours. To prevent attendee confusion, dates and times can no longer be edited.
+          <strong>{{ 'PORTAL.EVENT_EDITOR.SCHEDULE_LOCKED_TITLE' | translate }}</strong> {{ 'PORTAL.EVENT_EDITOR.SCHEDULE_LOCKED_MSG' | translate }}
         </div>
       </div>
 
@@ -75,35 +77,35 @@ export interface ExistingImage {
             <div class="section-header">
               <span class="section-step-num">1</span>
               <div>
-                <h2 class="section-title">Basics</h2>
-                <p class="section-desc">Define the title, category, and a compelling description for your listing.</p>
+                <h2 class="section-title">{{ 'PORTAL.EVENT_EDITOR.STEP_1_TITLE' | translate }}</h2>
+                <p class="section-desc">{{ 'PORTAL.EVENT_EDITOR.STEP_1_DESC' | translate }}</p>
               </div>
             </div>
 
             <div class="form-body">
               <!-- Title -->
               <div class="form-group">
-                <label for="event-name" class="form-label required">Listing Title</label>
+                <label for="event-name" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.NAME_LABEL' | translate }}</label>
                 <input
                   id="event-name"
                   type="text"
                   class="form-control"
-                  placeholder="e.g. Sunset Salsa Night, Samaná Whale Watching Expedition"
+                  [placeholder]="'PORTAL.EVENT_EDITOR.NAME_PLACEHOLDER' | translate"
                   [(ngModel)]="draft.name"
                   (ngModelChange)="markDirty()"
                   maxlength="100"
                   required
                 />
                 <div class="field-footer">
-                  <span class="form-hint">Make it clear, catchy, and descriptive.</span>
+                  <span class="form-hint">{{ 'PORTAL.EVENT_EDITOR.NAME_HINT' | translate }}</span>
                   <span class="char-count">{{ (draft.name || '').length }}/100</span>
                 </div>
               </div>
 
               <!-- Category -->
               <div class="form-group">
-                <label class="form-label required">Category</label>
-                <p class="form-hint">Select the category that best matches your event or activity:</p>
+                <label class="form-label required">{{ 'PORTAL.EVENT_EDITOR.CATEGORY_LABEL' | translate }}</label>
+                <p class="form-hint">{{ 'PORTAL.EVENT_EDITOR.CATEGORY_HINT' | translate }}</p>
                 <div class="category-grid">
                   <button
                     type="button"
@@ -113,25 +115,25 @@ export interface ExistingImage {
                     (click)="setCategory(cat.value)"
                   >
                     <span class="cat-emoji">{{ cat.emoji }}</span>
-                    <span class="cat-label">{{ cat.label }}</span>
+                    <span class="cat-label">{{ 'CATEGORIES.' + cat.value.toUpperCase() | translate }}</span>
                   </button>
                 </div>
               </div>
 
               <!-- Description -->
               <div class="form-group">
-                <label for="event-desc" class="form-label required">Description</label>
+                <label for="event-desc" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.DESC_LABEL' | translate }}</label>
                 <textarea
                   id="event-desc"
                   rows="4"
                   class="form-control form-textarea"
-                  placeholder="Describe what guests can expect, highlights, dress code, or requirements (minimum 10 characters)…"
+                  [placeholder]="'PORTAL.EVENT_EDITOR.DESC_PLACEHOLDER' | translate"
                   [(ngModel)]="draft.description"
                   (ngModelChange)="markDirty()"
                 ></textarea>
                 <div class="field-footer">
-                  <span class="form-hint">Minimum 10 characters. Formatted across English and Spanish in the VAMO app.</span>
-                  <span class="char-count">{{ (draft.description || '').length }} chars</span>
+                  <span class="form-hint">{{ 'PORTAL.EVENT_EDITOR.DESC_HINT' | translate }}</span>
+                  <span class="char-count">{{ (draft.description || '').length }} {{ 'PORTAL.EVENT_EDITOR.CHARS' | translate }}</span>
                 </div>
               </div>
             </div>
@@ -142,8 +144,8 @@ export interface ExistingImage {
             <div class="section-header">
               <span class="section-step-num">2</span>
               <div>
-                <h2 class="section-title">Media & Photos</h2>
-                <p class="section-desc">Add photos for your listing. The first photo will be used as the primary cover card.</p>
+                <h2 class="section-title">{{ 'PORTAL.EVENT_EDITOR.STEP_2_TITLE' | translate }}</h2>
+                <p class="section-desc">{{ 'PORTAL.EVENT_EDITOR.STEP_2_DESC' | translate }}</p>
               </div>
             </div>
 
@@ -152,16 +154,16 @@ export interface ExistingImage {
               <div class="gallery-preview-grid">
                 <!-- Existing Images -->
                 <div *ngFor="let img of existingImages; let idx = index" class="photo-preview-card">
-                  <img [src]="img.url" alt="Existing photo" class="preview-img" />
-                  <span *ngIf="idx === 0 && selectedNewFiles.length === 0" class="cover-badge">Cover Photo</span>
-                  <button type="button" class="remove-photo-btn" (click)="removeExistingImage(img)" title="Remove photo">✕</button>
+                  <img [src]="img.url" [alt]="'PORTAL.EVENT_EDITOR.ALT_EXISTING' | translate" class="preview-img" />
+                  <span *ngIf="idx === 0 && selectedNewFiles.length === 0" class="cover-badge">{{ 'PORTAL.EVENT_EDITOR.COVER_BADGE' | translate }}</span>
+                  <button type="button" class="remove-photo-btn" (click)="removeExistingImage(img)" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
                 </div>
 
                 <!-- Newly Selected Local Files -->
                 <div *ngFor="let preview of newFilePreviews; let idx = index" class="photo-preview-card">
-                  <img [src]="preview" alt="New upload" class="preview-img" />
-                  <span *ngIf="existingImages.length === 0 && idx === 0" class="cover-badge">Cover Photo</span>
-                  <button type="button" class="remove-photo-btn" (click)="removeNewFile(idx)" title="Remove photo">✕</button>
+                  <img [src]="preview" [alt]="'PORTAL.EVENT_EDITOR.ALT_NEW' | translate" class="preview-img" />
+                  <span *ngIf="existingImages.length === 0 && idx === 0" class="cover-badge">{{ 'PORTAL.EVENT_EDITOR.COVER_BADGE' | translate }}</span>
+                  <button type="button" class="remove-photo-btn" (click)="removeNewFile(idx)" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
                 </div>
 
                 <!-- Upload Dropzone Button -->
@@ -179,13 +181,13 @@ export interface ExistingImage {
                       <circle cx="8.5" cy="8.5" r="1.5"></circle>
                       <polyline points="21 15 16 10 5 21"></polyline>
                     </svg>
-                    <span class="dropzone-label">+ Add Photos</span>
-                    <span class="dropzone-hint">JPEG, PNG, WebP</span>
+                    <span class="dropzone-label">{{ 'PORTAL.EVENT_EDITOR.ADD_PHOTOS' | translate }}</span>
+                    <span class="dropzone-hint">{{ 'PORTAL.EVENT_EDITOR.PHOTO_FORMATS' | translate }}</span>
                   </div>
                 </label>
               </div>
               <p class="form-hint mt-2">
-                Images are automatically compressed and optimized on upload for crisp mobile viewing.
+                {{ 'PORTAL.EVENT_EDITOR.MEDIA_HINT' | translate }}
               </p>
             </div>
           </section>
@@ -195,15 +197,15 @@ export interface ExistingImage {
             <div class="section-header">
               <span class="section-step-num">3</span>
               <div>
-                <h2 class="section-title">Schedule & Timing</h2>
-                <p class="section-desc">Configure whether this listing takes place on a specific date or repeats weekly.</p>
+                <h2 class="section-title">{{ 'PORTAL.EVENT_EDITOR.STEP_3_TITLE' | translate }}</h2>
+                <p class="section-desc">{{ 'PORTAL.EVENT_EDITOR.STEP_3_DESC' | translate }}</p>
               </div>
             </div>
 
             <div class="form-body">
               <!-- Mode Selector -->
               <div class="form-group">
-                <label class="form-label required">Schedule Type</label>
+                <label class="form-label required">{{ 'PORTAL.EVENT_EDITOR.SCHEDULE_TYPE_LABEL' | translate }}</label>
                 <div class="schedule-type-toggle">
                   <button
                     type="button"
@@ -212,7 +214,7 @@ export interface ExistingImage {
                     [disabled]="datesLocked"
                     (click)="setMode('single')"
                   >
-                    📅 Specific Date / Multi-day
+                    {{ 'PORTAL.EVENT_EDITOR.MODE_SINGLE_TAB' | translate }}
                   </button>
                   <button
                     type="button"
@@ -221,7 +223,7 @@ export interface ExistingImage {
                     [disabled]="datesLocked"
                     (click)="setMode('recurring')"
                   >
-                    🔁 Weekly Recurring
+                    {{ 'PORTAL.EVENT_EDITOR.MODE_RECURRING_TAB' | translate }}
                   </button>
                 </div>
               </div>
@@ -230,7 +232,7 @@ export interface ExistingImage {
               <div *ngIf="draft.mode === 'single'" class="single-mode-fields">
                 <div class="form-row">
                   <div class="form-group flex-1">
-                    <label for="start-date" class="form-label required">Start Date</label>
+                    <label for="start-date" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.START_DATE_LABEL' | translate }}</label>
                     <input
                       id="start-date"
                       type="date"
@@ -243,7 +245,7 @@ export interface ExistingImage {
                   </div>
 
                   <div class="form-group flex-1" *ngIf="multiDay">
-                    <label for="end-date" class="form-label required">End Date</label>
+                    <label for="end-date" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.END_DATE_LABEL' | translate }}</label>
                     <input
                       id="end-date"
                       type="date"
@@ -267,15 +269,15 @@ export interface ExistingImage {
                       (change)="toggleMultiDay()"
                     />
                     <span class="toggle-switch"></span>
-                    <span class="toggle-text">Multi-day event (e.g. weekend festival, 3-day retreat)</span>
+                    <span class="toggle-text">{{ 'PORTAL.EVENT_EDITOR.MULTI_DAY_LABEL' | translate }}</span>
                   </label>
                 </div>
               </div>
 
               <!-- RECURRING MODE: Weekdays Picker -->
               <div *ngIf="draft.mode === 'recurring'" class="recurring-mode-fields">
-                <label class="form-label required">Repeating Days of the Week</label>
-                <p class="form-hint">Select the days this activity or special repeats each week:</p>
+                <label class="form-label required">{{ 'PORTAL.EVENT_EDITOR.WEEKDAYS_LABEL' | translate }}</label>
+                <p class="form-hint">{{ 'PORTAL.EVENT_EDITOR.WEEKDAYS_HINT' | translate }}</p>
                 <div class="weekday-pill-grid">
                   <button
                     type="button"
@@ -285,7 +287,7 @@ export interface ExistingImage {
                     [disabled]="datesLocked"
                     (click)="toggleDay(day.key)"
                   >
-                    {{ day.label }}
+                    {{ 'EVENTS.RECURRING.DAYS.' + day.key | translate }}
                   </button>
                 </div>
               </div>
@@ -301,13 +303,13 @@ export interface ExistingImage {
                       (change)="toggleAllDay()"
                     />
                     <span class="toggle-switch"></span>
-                    <span class="toggle-text">All Day event (no specific start/end hour)</span>
+                    <span class="toggle-text">{{ 'PORTAL.EVENT_EDITOR.ALL_DAY_LABEL' | translate }}</span>
                   </label>
                 </div>
 
                 <div *ngIf="!draft.allDay" class="time-inputs-row">
                   <div class="form-group flex-1">
-                    <label for="time-from" class="form-label required">Start Time</label>
+                    <label for="time-from" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.START_TIME_LABEL' | translate }}</label>
                     <input
                       id="time-from"
                       type="time"
@@ -320,7 +322,7 @@ export interface ExistingImage {
                   </div>
 
                   <div class="form-group flex-1" *ngIf="!draft.openEnd">
-                    <label for="time-to" class="form-label required">End Time</label>
+                    <label for="time-to" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.END_TIME_LABEL' | translate }}</label>
                     <input
                       id="time-to"
                       type="time"
@@ -342,7 +344,7 @@ export interface ExistingImage {
                       (change)="toggleOpenEnd()"
                     />
                     <span class="toggle-switch"></span>
-                    <span class="toggle-text">Open End (event has no fixed finish time)</span>
+                    <span class="toggle-text">{{ 'PORTAL.EVENT_EDITOR.OPEN_END_LABEL' | translate }}</span>
                   </label>
                 </div>
               </div>
@@ -354,15 +356,15 @@ export interface ExistingImage {
             <div class="section-header">
               <span class="section-step-num">4</span>
               <div>
-                <h2 class="section-title">Location & Area</h2>
-                <p class="section-desc">Specify where this event takes place and choose the VAMO destination area.</p>
+                <h2 class="section-title">{{ 'PORTAL.EVENT_EDITOR.STEP_4_TITLE' | translate }}</h2>
+                <p class="section-desc">{{ 'PORTAL.EVENT_EDITOR.STEP_4_DESC' | translate }}</p>
               </div>
             </div>
 
             <div class="form-body">
               <!-- Area Selector -->
               <div class="form-group">
-                <label for="area-select" class="form-label required">Destination Area</label>
+                <label for="area-select" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.AREA_LABEL' | translate }}</label>
                 <select
                   id="area-select"
                   class="form-select"
@@ -370,22 +372,22 @@ export interface ExistingImage {
                   (ngModelChange)="markDirty()"
                   required
                 >
-                  <option value="" disabled>Select an Area…</option>
+                  <option value="" disabled>{{ 'PORTAL.EVENT_EDITOR.AREA_PLACEHOLDER' | translate }}</option>
                   <option *ngFor="let area of availableAreas" [value]="area.id">
                     {{ area.emoji }} {{ area.name }}
                   </option>
                 </select>
-                <span class="form-hint">Used for area filtering in the VAMO discovery feed.</span>
+                <span class="form-hint">{{ 'PORTAL.EVENT_EDITOR.AREA_HINT' | translate }}</span>
               </div>
 
               <!-- Address Field -->
               <div class="form-group">
-                <label for="event-address" class="form-label required">Street / Venue Address</label>
+                <label for="event-address" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.ADDRESS_LABEL' | translate }}</label>
                 <input
                   id="event-address"
                   type="text"
                   class="form-control"
-                  placeholder="e.g. Calle Principal 14, Playa Bonita, Las Terrenas"
+                  [placeholder]="'PORTAL.EVENT_EDITOR.ADDRESS_PLACEHOLDER' | translate"
                   [(ngModel)]="draft.address"
                   (ngModelChange)="markDirty()"
                   required
@@ -396,8 +398,8 @@ export interface ExistingImage {
               <div class="location-picker-box">
                 <div class="lp-header-row">
                   <div>
-                    <label class="form-label mb-1">Event Location Pin</label>
-                    <p class="lp-subhint">Click anywhere on the map or drag the purple pin to set the exact venue location.</p>
+                    <label class="form-label mb-1">{{ 'PORTAL.EVENT_EDITOR.PIN_LABEL' | translate }}</label>
+                    <p class="lp-subhint">{{ 'PORTAL.EVENT_EDITOR.PIN_HINT' | translate }}</p>
                   </div>
                   <div class="lp-quick-actions">
                     <button
@@ -405,28 +407,28 @@ export interface ExistingImage {
                       class="btn btn-sm btn-secondary"
                       *ngIf="providerLat !== null && providerLng !== null"
                       (click)="useBusinessLocation()"
-                      title="Use business profile address and coordinates"
+                      [title]="'PORTAL.EVENT_EDITOR.USE_BUSINESS_LOC_TITLE' | translate"
                     >
-                      🏢 Use Business Location
+                      {{ 'PORTAL.EVENT_EDITOR.USE_BUSINESS_LOC' | translate }}
                     </button>
                     <button
                       type="button"
                       class="btn btn-sm btn-secondary"
                       (click)="detectCurrentLocation()"
                       [disabled]="detectingLocation"
-                      title="Use device GPS location"
+                      [title]="'PORTAL.EVENT_EDITOR.USE_MY_LOC_TITLE' | translate"
                     >
                       <span *ngIf="detectingLocation" class="spinner-inline mr-1"></span>
-                      <span>📍 Use My Location</span>
+                      <span>{{ 'PORTAL.EVENT_EDITOR.USE_MY_LOC' | translate }}</span>
                     </button>
                     <button
                       type="button"
                       class="btn btn-sm btn-ghost"
                       *ngIf="lat !== null && lng !== null"
                       (click)="clearLocation()"
-                      title="Clear pinned coordinates"
+                      [title]="'PORTAL.EVENT_EDITOR.CLEAR_PIN_TITLE' | translate"
                     >
-                      ✕ Clear Pin
+                      {{ 'PORTAL.EVENT_EDITOR.CLEAR_PIN' | translate }}
                     </button>
                   </div>
                 </div>
@@ -446,8 +448,8 @@ export interface ExistingImage {
                     <div class="lp-overlay-content">
                       <span class="lp-overlay-icon">📍</span>
                       <div>
-                        <strong>No pin placed yet</strong>
-                        <p>Click on the map to drop the event pin, or use your business location preset.</p>
+                        <strong>{{ 'PORTAL.EVENT_EDITOR.NO_PIN_TITLE' | translate }}</strong>
+                        <p>{{ 'PORTAL.EVENT_EDITOR.NO_PIN_DESC' | translate }}</p>
                       </div>
                     </div>
                   </div>
@@ -458,11 +460,11 @@ export interface ExistingImage {
                   <div class="lp-status-left">
                     <span class="status-indicator-dot" [class.active]="lat !== null && lng !== null"></span>
                     <span *ngIf="lat !== null && lng !== null" class="lp-coords-summary">
-                      <strong>Pinned:</strong> {{ lat | number:'1.4-4' }}, {{ lng | number:'1.4-4' }}
+                      <strong>{{ 'PORTAL.EVENT_EDITOR.PINNED_PREFIX' | translate }}</strong> {{ lat | number:'1.4-4' }}, {{ lng | number:'1.4-4' }}
                       <span *ngIf="draft.address" class="lp-address-preview">({{ draft.address }})</span>
                     </span>
                     <span *ngIf="lat === null || lng === null" class="lp-coords-empty">
-                      No coordinates pinned. Event will default to provider or area location.
+                      {{ 'PORTAL.EVENT_EDITOR.NO_COORDS_PINNED' | translate }}
                     </span>
                   </div>
 
@@ -474,14 +476,14 @@ export interface ExistingImage {
                       rel="noopener noreferrer"
                       class="btn btn-sm btn-ghost map-preview-link"
                     >
-                      Google Maps ↗
+                      {{ 'PORTAL.EVENT_EDITOR.GOOGLE_MAPS_LINK' | translate }}
                     </a>
                     <button
                       type="button"
                       class="btn btn-sm btn-ghost coords-toggle-btn"
                       (click)="showManualCoords = !showManualCoords"
                     >
-                      {{ showManualCoords ? 'Hide Lat/Lng' : 'Manual Coordinates' }}
+                      {{ (showManualCoords ? 'PORTAL.EVENT_EDITOR.HIDE_COORDS_BTN' : 'PORTAL.EVENT_EDITOR.MANUAL_COORDS_BTN') | translate }}
                     </button>
                   </div>
                 </div>
@@ -490,7 +492,7 @@ export interface ExistingImage {
                 <div *ngIf="showManualCoords" class="manual-coords-panel mt-3">
                   <div class="form-row">
                     <div class="form-group flex-1">
-                      <label for="coord-lat" class="form-label">Latitude</label>
+                      <label for="coord-lat" class="form-label">{{ 'PORTAL.EVENT_EDITOR.LAT_LABEL' | translate }}</label>
                       <input
                         id="coord-lat"
                         type="number"
@@ -502,7 +504,7 @@ export interface ExistingImage {
                       />
                     </div>
                     <div class="form-group flex-1">
-                      <label for="coord-lng" class="form-label">Longitude</label>
+                      <label for="coord-lng" class="form-label">{{ 'PORTAL.EVENT_EDITOR.LNG_LABEL' | translate }}</label>
                       <input
                         id="coord-lng"
                         type="number"
@@ -514,7 +516,7 @@ export interface ExistingImage {
                       />
                     </div>
                   </div>
-                  <span class="form-hint">Latitude and Longitude in decimal degrees (WGS84). Synchronized with the map pin above.</span>
+                  <span class="form-hint">{{ 'PORTAL.EVENT_EDITOR.COORDS_HINT' | translate }}</span>
                 </div>
               </div>
             </div>
@@ -525,8 +527,8 @@ export interface ExistingImage {
             <div class="section-header">
               <span class="section-step-num">5</span>
               <div>
-                <h2 class="section-title">Pricing & Promotion</h2>
-                <p class="section-desc">State whether admission is free or ticketed, and configure promotional offers.</p>
+                <h2 class="section-title">{{ 'PORTAL.EVENT_EDITOR.STEP_5_TITLE' | translate }}</h2>
+                <p class="section-desc">{{ 'PORTAL.EVENT_EDITOR.STEP_5_DESC' | translate }}</p>
               </div>
             </div>
 
@@ -539,7 +541,7 @@ export interface ExistingImage {
                   [class.active]="draft.isFree"
                   (click)="setPricingModel('free')"
                 >
-                  🎉 Free Admission
+                  {{ 'PORTAL.EVENT_EDITOR.FREE_TAB' | translate }}
                 </button>
                 <button
                   type="button"
@@ -547,7 +549,7 @@ export interface ExistingImage {
                   [class.active]="!draft.isFree && !draft.contactForPrice"
                   (click)="setPricingModel('paid')"
                 >
-                  💵 Fixed Price / Tickets
+                  {{ 'PORTAL.EVENT_EDITOR.PAID_TAB' | translate }}
                 </button>
                 <button
                   type="button"
@@ -555,14 +557,14 @@ export interface ExistingImage {
                   [class.active]="draft.contactForPrice"
                   (click)="setPricingModel('contact')"
                 >
-                  📞 Contact for Price
+                  {{ 'PORTAL.EVENT_EDITOR.CONTACT_TAB' | translate }}
                 </button>
               </div>
 
               <!-- Price & Currency Inputs when Paid -->
               <div *ngIf="!draft.isFree && !draft.contactForPrice" class="form-row mt-3">
                 <div class="form-group flex-1">
-                  <label for="price-input" class="form-label required">Price Amount</label>
+                  <label for="price-input" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.PRICE_LABEL' | translate }}</label>
                   <input
                     id="price-input"
                     type="number"
@@ -576,7 +578,7 @@ export interface ExistingImage {
                   />
                 </div>
                 <div class="form-group" style="width: 130px;">
-                  <label for="currency-select" class="form-label required">Currency</label>
+                  <label for="currency-select" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.CURRENCY_LABEL' | translate }}</label>
                   <select
                     id="currency-select"
                     class="form-select"
@@ -599,23 +601,23 @@ export interface ExistingImage {
                       (change)="togglePromotion()"
                     />
                     <span class="toggle-switch"></span>
-                    <span class="toggle-text"><strong>Highlight a Special Promotion or Deal</strong></span>
+                    <span class="toggle-text"><strong>{{ 'PORTAL.EVENT_EDITOR.PROMOTION_TOGGLE' | translate }}</strong></span>
                   </label>
                 </div>
 
                 <div *ngIf="draft.hasPromotion" class="form-group mt-3">
-                  <label for="promo-text" class="form-label required">Promotional Callout Text</label>
+                  <label for="promo-text" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.PROMO_TEXT_LABEL' | translate }}</label>
                   <input
                     id="promo-text"
                     type="text"
                     class="form-control"
-                    placeholder="e.g. Free welcome cocktail with dinner, 20% off for locals"
+                    [placeholder]="'PORTAL.EVENT_EDITOR.PROMO_TEXT_PLACEHOLDER' | translate"
                     [(ngModel)]="draft.promoText"
                     (ngModelChange)="markDirty()"
                     maxlength="80"
                     required
                   />
-                  <span class="form-hint">Displayed with a gift tag badge in the app listing.</span>
+                  <span class="form-hint">{{ 'PORTAL.EVENT_EDITOR.PROMO_TEXT_HINT' | translate }}</span>
                 </div>
               </div>
             </div>
@@ -625,7 +627,7 @@ export interface ExistingImage {
           <div *ngIf="errorMessage" class="alert alert-danger mt-3" role="alert">
             <div class="alert-icon">⚠️</div>
             <div class="alert-message">{{ errorMessage }}</div>
-            <button type="button" class="alert-close" (click)="errorMessage = null" aria-label="Dismiss">✕</button>
+            <button type="button" class="alert-close" (click)="errorMessage = null" [attr.aria-label]="'PORTAL.LISTINGS.DISMISS_ALERT' | translate">✕</button>
           </div>
 
           <!-- Synchronized Bottom Action Buttons (Visible across all viewports) -->
@@ -633,24 +635,24 @@ export interface ExistingImage {
             <div class="bottom-actions-status">
               <span *ngIf="isDirty" class="unsaved-indicator">
                 <span class="unsaved-dot"></span>
-                <span>Unsaved changes</span>
+                <span>{{ 'PORTAL.EVENT_EDITOR.UNSAVED_CHANGES' | translate }}</span>
               </span>
               <span *ngIf="!isDirty && isEditMode" class="saved-indicator">
-                <span>✓ All changes saved</span>
+                <span>{{ 'PORTAL.EVENT_EDITOR.ALL_CHANGES_SAVED' | translate }}</span>
               </span>
             </div>
 
             <div class="bottom-actions-buttons">
               <button type="button" class="btn btn-secondary" (click)="onCancel()" [disabled]="submitting">
-                Cancel
+                {{ 'PORTAL.COMMON.CANCEL' | translate }}
               </button>
               <button type="button" class="btn btn-secondary" (click)="saveDraft()" [disabled]="submitting">
                 <span *ngIf="submitting && saveTargetStatus === 'draft'" class="spinner-inline"></span>
-                <span>Save as Draft</span>
+                <span>{{ 'PORTAL.EVENT_EDITOR.SAVE_DRAFT_BTN' | translate }}</span>
               </button>
               <button type="button" class="btn btn-primary" (click)="publishListing()" [disabled]="submitting">
                 <span *ngIf="submitting && saveTargetStatus === 'published'" class="spinner-inline"></span>
-                <span>{{ isEditMode && !isDraft ? 'Save & Update' : 'Publish Listing' }}</span>
+                <span>{{ (isEditMode && !isDraft ? 'PORTAL.EVENT_EDITOR.SAVE_UPDATE_BTN' : 'PORTAL.EVENT_EDITOR.PUBLISH_BTN') | translate }}</span>
               </button>
             </div>
           </div>
@@ -660,8 +662,8 @@ export interface ExistingImage {
         <aside class="editor-preview-col">
           <div class="preview-card-sticky">
             <div class="preview-header-bar">
-              <span class="preview-title">VAMO App Preview</span>
-              <span class="live-pill">Live Sync</span>
+              <span class="preview-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.TITLE' | translate }}</span>
+              <span class="live-pill">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.LIVE_SYNC' | translate }}</span>
             </div>
 
             <div class="phone-frame">
@@ -678,7 +680,7 @@ export interface ExistingImage {
                   <div class="phone-card-image-wrap">
                     <img
                       [src]="getPreviewImageUrl()"
-                      alt="Preview"
+                      [alt]="'PORTAL.EVENT_EDITOR.PREVIEW.COVER_ALT' | translate"
                       class="phone-cover-img"
                     />
                     <div class="phone-overlay-badges">
@@ -698,7 +700,7 @@ export interface ExistingImage {
                   <div class="phone-card-body">
                     <div class="phone-mode-row">
                       <span class="phone-mode-tag">
-                        {{ draft.mode === 'recurring' ? '🔁 Recurring' : '📅 Event' }}
+                        {{ draft.mode === 'recurring' ? ('PORTAL.EVENT_EDITOR.PREVIEW.RECURRING_TAG' | translate) : ('PORTAL.EVENT_EDITOR.PREVIEW.EVENT_TAG' | translate) }}
                       </span>
                       <span class="phone-provider-name">
                         {{ providerName }}
@@ -706,7 +708,7 @@ export interface ExistingImage {
                     </div>
 
                     <h4 class="phone-title">
-                      {{ draft.name || 'Untitled Listing' }}
+                      {{ draft.name || ('PORTAL.EVENT_EDITOR.PREVIEW.UNTITLED' | translate) }}
                     </h4>
 
                     <div class="phone-meta-row">
@@ -743,7 +745,7 @@ export interface ExistingImage {
             </div>
 
             <p class="preview-footnote">
-              This is how your post appears to users exploring content in Dominican Republic on the VAMO mobile app.
+              {{ 'PORTAL.EVENT_EDITOR.PREVIEW.FOOTNOTE' | translate }}
             </p>
           </div>
         </aside>
@@ -752,7 +754,7 @@ export interface ExistingImage {
       <!-- Loading State for Initial Load -->
       <div *ngIf="loadingInitial" class="state-loading-card card">
         <div class="loading-spinner"></div>
-        <p>Loading listing details…</p>
+        <p>{{ 'PORTAL.EVENT_EDITOR.LOADING_DETAILS' | translate }}</p>
       </div>
 
       <!-- Discard Changes Modal Dialog -->
@@ -761,19 +763,19 @@ export interface ExistingImage {
           <div class="modal-content card">
             <div class="modal-header">
               <div class="warning-icon-bubble">⚠️</div>
-              <h2 class="modal-title">Discard Unsaved Changes?</h2>
+              <h2 class="modal-title">{{ 'PORTAL.EVENT_EDITOR.DISCARD_DIALOG_TITLE' | translate }}</h2>
             </div>
             <div class="modal-body">
               <p class="modal-desc">
-                You have unsaved changes in this listing editor. If you leave now, your changes will be discarded.
+                {{ 'PORTAL.EVENT_EDITOR.DISCARD_DIALOG_DESC' | translate }}
               </p>
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-secondary" (click)="showCancelConfirmModal = false">
-                Keep Editing
+                {{ 'PORTAL.EVENT_EDITOR.KEEP_EDITING_BTN' | translate }}
               </button>
               <button type="button" class="btn btn-danger" (click)="confirmDiscardAndExit()">
-                Discard Changes
+                {{ 'PORTAL.EVENT_EDITOR.DISCARD_BTN' | translate }}
               </button>
             </div>
           </div>
@@ -1780,6 +1782,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   private businessService = inject(BusinessService);
   private customerErrorService = inject(CustomerErrorService);
   private cdr = inject(ChangeDetectorRef);
+  private i18n = inject(I18nService);
 
   categories: EventCategory[] = EVENT_CATEGORIES;
   allWeekdays = [
@@ -1990,7 +1993,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
     } catch (err: any) {
       console.error('[ListingEditor] load error:', err);
-      this.errorMessage = 'Could not load existing listing. Starting fresh.';
+      this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.LOAD_FAILED');
       this.initNewDraft();
     } finally {
       this.loadingInitial = false;
@@ -2205,7 +2208,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
   detectCurrentLocation(): void {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      this.locationError = 'Geolocation is not supported by your browser.';
+      this.locationError = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.GEO_NOT_SUPPORTED');
       return;
     }
 
@@ -2222,7 +2225,8 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       },
       (err) => {
         this.detectingLocation = false;
-        this.locationError = 'Could not detect device location: ' + err.message;
+        console.warn('[ListingEditor] Geolocation error code:', err?.code);
+        this.locationError = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.GEO_FAILED');
         this.cdr.markForCheck();
       },
       { timeout: 10000, enableHighAccuracy: true }
@@ -2315,72 +2319,72 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     this.errorMessage = null;
 
     if (!this.draft.name?.trim()) {
-      this.errorMessage = 'Please provide a listing title.';
+      this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.NAME_REQUIRED');
       return false;
     }
 
     if (!this.draft.category) {
-      this.errorMessage = 'Please choose a category.';
+      this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.CATEGORY_REQUIRED');
       return false;
     }
 
     if (!this.draft.description?.trim() || this.draft.description.trim().length < 10) {
-      this.errorMessage = 'Description must be at least 10 characters.';
+      this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.DESC_MIN');
       return false;
     }
 
     if (forPublish) {
       const hasImages = this.existingImages.length > 0 || this.selectedNewFiles.length > 0;
       if (!hasImages) {
-        this.errorMessage = 'Please add at least one photo before publishing.';
+        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.PHOTO_REQUIRED');
         return false;
       }
 
       if (!this.draft.address?.trim()) {
-        this.errorMessage = 'Please provide a location address.';
+        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.ADDRESS_REQUIRED');
         return false;
       }
 
       if (!this.selectedAreaId) {
-        this.errorMessage = 'Please select a destination area.';
+        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.AREA_REQUIRED');
         return false;
       }
 
       if (this.draft.mode === 'single') {
         if (!this.draft.startDate) {
-          this.errorMessage = 'Please select a start date.';
+          this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.START_DATE_REQUIRED');
           return false;
         }
         if (this.multiDay && !this.draft.endDate) {
-          this.errorMessage = 'Please select an end date for multi-day events.';
+          this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.END_DATE_REQUIRED');
           return false;
         }
       } else {
         const days = (this.draft.recurring as any)?.days;
         if (!Array.isArray(days) || days.length === 0) {
-          this.errorMessage = 'Please choose at least one repeating day of the week.';
+          this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.WEEKDAYS_REQUIRED');
           return false;
         }
       }
 
       if (!this.draft.allDay) {
         if (!this.draft.from) {
-          this.errorMessage = 'Please specify a start time.';
+          this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.START_TIME_REQUIRED');
           return false;
         }
         if (!this.draft.openEnd && !this.draft.to) {
-          this.errorMessage = 'Please specify an end time.';
+          this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.END_TIME_REQUIRED');
           return false;
         }
       }
 
       if (!this.draft.isFree && !this.draft.contactForPrice && (!this.draft.price || Number(this.draft.price) <= 0)) {
-        this.errorMessage = 'Please enter a valid price amount.';
+        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.PRICE_INVALID');
         return false;
       }
 
       if (this.draft.hasPromotion && !this.draft.promoText?.trim()) {
-        this.errorMessage = 'Please specify your promotional callout text.';
+        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.PROMO_TEXT_REQUIRED');
         return false;
       }
     }
@@ -2402,7 +2406,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     const user = this.authService.currentUser;
     const providerId = user?.provider_link?.id;
     if (!providerId) {
-      this.errorMessage = 'No business profile linked to your user.';
+      this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.NO_PROVIDER');
       return;
     }
 
@@ -2483,6 +2487,12 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
   // Preview formatting helpers
   getCategoryLabel(categoryKey?: string): string {
+    if (!categoryKey) return this.i18n.t('CATEGORIES.OTHER');
+    const key = 'CATEGORIES.' + categoryKey.toUpperCase();
+    const translated = this.i18n.t(key);
+    if (translated && !translated.startsWith('CATEGORIES.')) {
+      return translated;
+    }
     const found = this.categories.find((c) => c.value === categoryKey);
     return found ? found.label : (categoryKey || 'General');
   }
@@ -2503,30 +2513,57 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   formatPreviewPrice(): string {
-    if (this.draft.isFree) return 'Free';
-    if (this.draft.contactForPrice) return 'Contact for price';
+    if (this.draft.isFree) return this.i18n.t('PORTAL.LISTINGS.FREE');
+    if (this.draft.contactForPrice) return this.i18n.t('PORTAL.LISTINGS.CONTACT_FOR_PRICE');
     if (this.draft.price) {
       return `${this.draft.currency || 'USD'} $${Number(this.draft.price).toFixed(2)}`;
     }
-    return 'Free';
+    return this.i18n.t('PORTAL.LISTINGS.FREE');
   }
 
   formatPreviewSchedule(): string {
     if (this.draft.mode === 'recurring') {
       const days = (this.draft.recurring as any)?.days;
       if (Array.isArray(days) && days.length > 0) {
-        return `Every ${days.map((d: string) => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')}`;
+        const localizedDays = days.map((d: string) => {
+          const shortKey = 'EVENTS.RECURRING.DAYS.' + d.toLowerCase();
+          const translatedShort = this.i18n.t(shortKey);
+          if (translatedShort && !translatedShort.startsWith('EVENTS.')) {
+            return translatedShort;
+          }
+          return d.charAt(0).toUpperCase() + d.slice(1);
+        }).join(', ');
+        const everyPrefix = this.i18n.t('EVENTS.RECURRING.EVERY');
+        return `${everyPrefix || 'Every'} ${localizedDays}`;
       }
-      return 'Every Week';
+      return this.i18n.t('PORTAL.LISTINGS.MODE_RECURRING');
     }
-    if (!this.draft.startDate) return 'Select Date';
-    return this.draft.startDate;
+    if (!this.draft.startDate) return this.i18n.t('PORTAL.LISTINGS.DATE_TBA');
+    const locale = this.i18n.dateLocale();
+    try {
+      const start = new Date(this.draft.startDate).toLocaleDateString(locale, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+      if (this.multiDay && this.draft.endDate) {
+        const end = new Date(this.draft.endDate).toLocaleDateString(locale, {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+        return `${start} – ${end}`;
+      }
+      return start;
+    } catch {
+      return this.draft.startDate;
+    }
   }
 
   formatPreviewTime(): string {
-    if (this.draft.allDay) return 'All Day';
+    if (this.draft.allDay) return this.i18n.t('PORTAL.LISTINGS.ALL_DAY');
     if (!this.draft.from) return '';
-    if (this.draft.openEnd) return `${this.draft.from} · Open End`;
+    if (this.draft.openEnd) return `${this.draft.from} · ${this.i18n.t('PORTAL.LISTINGS.OPEN_END')}`;
     return `${this.draft.from} – ${this.draft.to || ''}`;
   }
 }

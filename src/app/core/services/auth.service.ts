@@ -247,10 +247,14 @@ export class AuthService {
   }
 
   async createProviderAndLink(data: Record<string, any>): Promise<VamoUser> {
+    const payload = { ...data };
+    delete payload['translations'];
+    delete payload['translation_status'];
+
     // Creating the provider triggers the "Provider → Link to Creator" Directus Flow,
     // which automatically sets provider_link on the current user server-side.
     const createdProvider = await this.safeRequest(() =>
-      directusClient.request(createItem('providers', data as any))
+      directusClient.request(createItem('providers', payload as any))
     );
     let user = await this.loadCurrentUser();
     if (!user?.provider_link?.id && (createdProvider as any)?.id) {
