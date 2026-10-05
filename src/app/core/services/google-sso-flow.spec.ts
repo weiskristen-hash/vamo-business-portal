@@ -490,5 +490,41 @@ describe('Google SSO Flow — Phase 3B Parity Specifications', () => {
     expect(comp.loading).toBe(false);
     expect(comp.errorMessage).toMatch(/unavailable|no está disponible/);
   });
+
+  // 26. Repeated calls to renderGoogleButton() do not leave duplicate rendered button contents
+  it('26. Repeated calls to renderGoogleButton() clear container and prevent duplicate button elements', () => {
+    const fixture = TestBed.createComponent(LoginComponent);
+    const comp = fixture.componentInstance;
+
+    (window as any).google = {
+      accounts: {
+        id: {
+          initialize: vi.fn(),
+          renderButton: vi.fn((el: HTMLElement) => {
+            const iframe = document.createElement('iframe');
+            iframe.className = 'google-signin-iframe';
+            el.appendChild(iframe);
+          }),
+        },
+      },
+    };
+
+    comp.isGoogleLoaded = true;
+    const container = document.createElement('div');
+    comp.googleBtnContainer = { nativeElement: container } as any;
+
+    // First render call (e.g. from async SDK load)
+    comp.renderGoogleButton('en');
+    expect(container.querySelectorAll('.google-signin-iframe').length).toBe(1);
+
+    // Second render call (e.g. from ngAfterViewInit)
+    comp.renderGoogleButton('en');
+    expect(container.querySelectorAll('.google-signin-iframe').length).toBe(1);
+
+    // Third render call (e.g. from reactive language switch to 'es')
+    comp.renderGoogleButton('es');
+    expect(container.querySelectorAll('.google-signin-iframe').length).toBe(1);
+    expect(container.children.length).toBe(1);
+  });
 });
 

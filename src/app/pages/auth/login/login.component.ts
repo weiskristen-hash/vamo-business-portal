@@ -1070,6 +1070,12 @@ export class LoginComponent implements OnInit, AfterViewInit {
     const containerWidth = container.offsetWidth || 388;
     const width = Math.min(400, Math.max(200, containerWidth));
 
+    if (typeof container.replaceChildren === 'function') {
+      container.replaceChildren();
+    } else {
+      container.innerHTML = '';
+    }
+
     this.googleAuthService.renderButton(
       container,
       (credential: string) => this.onGoogleCredentialSuccess(credential),

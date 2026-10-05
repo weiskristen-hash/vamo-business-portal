@@ -180,6 +180,12 @@ export class GoogleAuthService {
         itp_support: true,
       });
 
+      if (typeof element.replaceChildren === 'function') {
+        element.replaceChildren();
+      } else {
+        element.innerHTML = '';
+      }
+
       google.accounts.id.renderButton(element, {
         type: 'standard',
         shape: options?.shape || 'rectangular',
