@@ -2154,7 +2154,7 @@ export class BusinessProfileComponent implements OnInit {
 
   detectLocation(): void {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      alert('Geolocation is not supported by your browser.');
+      alert(this.i18n.t('PORTAL.PROFILE.GEO_NOT_SUPPORTED'));
       return;
     }
 
@@ -2172,7 +2172,7 @@ export class BusinessProfileComponent implements OnInit {
       (err) => {
         this.detectingLocation.set(false);
         console.warn('[BusinessProfile] Geolocation error:', err);
-        alert('Could not retrieve device location: ' + err.message);
+        alert(this.i18n.t('PORTAL.PROFILE.GEO_FAILED'));
       },
       { timeout: 10000, enableHighAccuracy: true }
     );

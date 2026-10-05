@@ -815,4 +815,35 @@ describe('ListingEditorComponent', () => {
       expect(component.draft.promoText).toBe('Free Sangria with every 2 tapas');
     });
   });
+
+  describe('Final review: localized geolocation feedback', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    });
+
+    it('shows localized EN/ES geolocation failure without raw browser error text', () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.stubGlobal('navigator', {
+        geolocation: {
+          getCurrentPosition: (_ok: any, fail: any) => fail({ code: 1, message: 'User denied Geolocation' }),
+        },
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      i18nService.setLang('en');
+      component.detectCurrentLocation();
+      expect(component.locationError).toBe(
+        'Could not detect your device location. Please check location permissions and try again.'
+      );
+
+      i18nService.setLang('es');
+      component.detectCurrentLocation();
+      expect(component.locationError).toBe(i18nService.t('PORTAL.EVENT_EDITOR.VALIDATION.GEO_FAILED'));
+      expect(component.locationError).not.toContain('User denied');
+      expect(component.locationError).not.toMatch(/:\s*$/);
+    });
+  });
+
 });

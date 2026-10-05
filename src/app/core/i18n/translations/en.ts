@@ -918,6 +918,8 @@ export const enTranslations: Record<string, any> = {
       "COORDS_LABEL": "Map Coordinates (Latitude & Longitude)",
       "USE_DEVICE_LOCATION": "Use Current Device Location",
       "DETECTING": "Detecting…",
+      "GEO_NOT_SUPPORTED": "Geolocation is not supported by your browser.",
+      "GEO_FAILED": "Could not detect your device location. Please check location permissions and try again.",
       "LATITUDE": "Latitude",
       "LAT_PLACEHOLDER": "e.g. 19.3175",
       "LONGITUDE": "Longitude",
@@ -1162,6 +1164,7 @@ export const enTranslations: Record<string, any> = {
         "RECURRING_TAG": "🔁 Recurring",
         "EVENT_TAG": "📅 Event",
         "UNTITLED": "Untitled Listing",
+        "COVER_ALT": "Listing cover preview",
         "FOOTNOTE": "This is how your post appears to users exploring content in Dominican Republic on the VAMO mobile app."
       },
       "LOADING_DETAILS": "Loading listing details…",
@@ -1185,7 +1188,7 @@ export const enTranslations: Record<string, any> = {
         "PROMO_TEXT_REQUIRED": "Please specify your promotional callout text.",
         "NO_PROVIDER": "No business profile linked to your user.",
         "GEO_NOT_SUPPORTED": "Geolocation is not supported by your browser.",
-        "GEO_FAILED": "Could not detect device location: ",
+        "GEO_FAILED": "Could not detect your device location. Please check location permissions and try again.",
         "LOAD_FAILED": "Could not load existing listing. Starting fresh."
       }
     },

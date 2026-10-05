@@ -918,6 +918,8 @@ export const esTranslations: Record<string, any> = {
       "COORDS_LABEL": "Coordenadas en el mapa (Latitud y Longitud)",
       "USE_DEVICE_LOCATION": "Usar ubicación actual del dispositivo",
       "DETECTING": "Detectando…",
+      "GEO_NOT_SUPPORTED": "La geolocalización no es compatible con tu navegador.",
+      "GEO_FAILED": "No se pudo detectar la ubicación de tu dispositivo. Revisa los permisos de ubicación e inténtalo de nuevo.",
       "LATITUDE": "Latitud",
       "LAT_PLACEHOLDER": "ej. 19.3175",
       "LONGITUDE": "Longitud",
@@ -1162,6 +1164,7 @@ export const esTranslations: Record<string, any> = {
         "RECURRING_TAG": "🔁 Recurrente",
         "EVENT_TAG": "📅 Evento",
         "UNTITLED": "Publicación sin título",
+        "COVER_ALT": "Vista previa de la portada",
         "FOOTNOTE": "Así es como aparece tu publicación a los usuarios que exploran en la app móvil de VAMO."
       },
       "LOADING_DETAILS": "Cargando detalles de la publicación…",
@@ -1185,7 +1188,7 @@ export const esTranslations: Record<string, any> = {
         "PROMO_TEXT_REQUIRED": "Por favor especifica el texto de tu promoción.",
         "NO_PROVIDER": "No hay ningún perfil comercial vinculado a tu usuario.",
         "GEO_NOT_SUPPORTED": "La geolocalización no es compatible con tu navegador.",
-        "GEO_FAILED": "No se pudo detectar la ubicación del dispositivo: ",
+        "GEO_FAILED": "No se pudo detectar la ubicación de tu dispositivo. Revisa los permisos de ubicación e inténtalo de nuevo.",
         "LOAD_FAILED": "No se pudo cargar la publicación existente. Iniciando una nueva."
       }
     },

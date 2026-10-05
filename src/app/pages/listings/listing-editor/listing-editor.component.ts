@@ -680,7 +680,7 @@ export interface ExistingImage {
                   <div class="phone-card-image-wrap">
                     <img
                       [src]="getPreviewImageUrl()"
-                      alt="Preview"
+                      [alt]="'PORTAL.EVENT_EDITOR.PREVIEW.COVER_ALT' | translate"
                       class="phone-cover-img"
                     />
                     <div class="phone-overlay-badges">
@@ -2225,7 +2225,8 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       },
       (err) => {
         this.detectingLocation = false;
-        this.locationError = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.GEO_FAILED') + err.message;
+        console.warn('[ListingEditor] Geolocation error code:', err?.code);
+        this.locationError = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.GEO_FAILED');
         this.cdr.markForCheck();
       },
       { timeout: 10000, enableHighAccuracy: true }

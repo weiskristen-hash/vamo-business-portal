@@ -412,4 +412,42 @@ describe('BusinessProfileComponent', () => {
       );
     });
   });
+
+  describe('Final review: localized geolocation feedback', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    });
+
+    it('shows localized EN/ES geolocation-unsupported alert', () => {
+      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+      vi.stubGlobal('navigator', {});
+
+      i18nService.setLang('en');
+      component.detectLocation();
+      expect(alertSpy).toHaveBeenLastCalledWith('Geolocation is not supported by your browser.');
+
+      i18nService.setLang('es');
+      component.detectLocation();
+      expect(alertSpy).toHaveBeenLastCalledWith('La geolocalizaci\u00f3n no es compatible con tu navegador.');
+    });
+
+    it('shows localized geolocation failure without exposing raw browser error text', () => {
+      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.stubGlobal('navigator', {
+        geolocation: {
+          getCurrentPosition: (_ok: any, fail: any) => fail({ code: 1, message: 'User denied Geolocation' }),
+        },
+      });
+
+      i18nService.setLang('es');
+      component.detectLocation();
+      const msg = alertSpy.mock.calls.at(-1)?.[0] as string;
+      expect(msg).toBe(i18nService.t('PORTAL.PROFILE.GEO_FAILED'));
+      expect(msg).not.toContain('User denied');
+      expect(component.detectingLocation()).toBe(false);
+    });
+  });
+
 });

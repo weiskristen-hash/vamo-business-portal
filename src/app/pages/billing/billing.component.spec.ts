@@ -519,4 +519,33 @@ describe('BillingComponent', () => {
       expect(formattedEs).toContain('2024');
     });
   });
+
+  describe('Final review: language switch never mutates Stripe/backend values', () => {
+    it('keeps plan ids, tiers, amounts and checkout payload identical across EN/ES', async () => {
+      await fixture.whenStable();
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('en');
+      const before = JSON.parse(JSON.stringify(component.plans()));
+
+      i18n.setLang('es');
+      fixture.detectChanges();
+      expect(JSON.parse(JSON.stringify(component.plans()))).toEqual(before);
+      expect(component.getPlanFeatures(mockPlans[0])).toContain('1 publicaci\u00f3n activa (evento o actividad)');
+
+      component.subscription.set(null);
+      component.selectedPlan.set(mockPlans[0]);
+      await component.proceedToPayment();
+
+      expect(stripeServiceSpy.createSubscription).toHaveBeenCalledWith(
+        'sofia@restaurant.com',
+        'Sofia Hernandez',
+        mockPlans[0].id,
+        undefined
+      );
+      expect(mockPlans[0].id.startsWith('price_')).toBe(true);
+      expect(mockPlans[0].tier).toBe('starter');
+      i18n.setLang('en');
+    });
+  });
+
 });
