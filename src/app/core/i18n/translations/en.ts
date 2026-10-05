@@ -157,7 +157,10 @@ export const enTranslations: Record<string, any> = {
     "OR_CONTINUE_WITH": "or continue with",
     "LOGIN_GOOGLE": "Continue with Google",
     "LOGIN_FACEBOOK": "Continue with Facebook",
-    "LOGIN_APPLE": "Continue with Apple"
+    "LOGIN_APPLE": "Continue with Apple",
+    "GOOGLE_LOGIN_ERROR": "Google Sign-In failed. Please try again.",
+    "GOOGLE_UNAVAILABLE": "Google Sign-In is currently unavailable. Please try again or use email and password.",
+    "GOOGLE_CANCELLED": "Google Sign-In was cancelled."
   },
   "HOME": {
     "WHATS_HOT": "🔥 What's Hot",

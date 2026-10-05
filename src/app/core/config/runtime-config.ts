@@ -2,6 +2,8 @@ import { environment } from '../../../environments/environment';
 
 export interface RuntimeConfig {
   directusUrl: string;
+  googleClientId: string;
+  googleSignInFlow: string;
   stripePublishableKey: string;
   stripeGetPricesFlow: string;
   stripeGetSubscriptionFlow: string;
@@ -36,6 +38,8 @@ const windowConfig = (typeof window !== 'undefined' ? (window as any).__VAMO_CON
 
 let currentConfig: RuntimeConfig = {
   directusUrl: stripTrailingSlash(windowConfig.directusUrl || environment.directusUrl),
+  googleClientId: windowConfig.googleClientId || (environment as any).googleClientId || '654016609429-5995je1smpgrlov4uv92pn637a7dlp0t.apps.googleusercontent.com',
+  googleSignInFlow: windowConfig.googleSignInFlow || (environment as any).googleSignInFlow || 'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',
   stripePublishableKey: windowConfig.stripePublishableKey || environment.STRIPE_PUBLISHABLE_KEY || '',
   stripeGetPricesFlow: windowConfig.stripeGetPricesFlow || environment.STRIPE_GET_PRICES_FLOW || '',
   stripeGetSubscriptionFlow: windowConfig.stripeGetSubscriptionFlow || environment.STRIPE_GET_SUBSCRIPTION_FLOW || '',
@@ -54,6 +58,12 @@ let currentConfig: RuntimeConfig = {
 export const runtimeConfig = {
   get directusUrl(): string {
     return currentConfig.directusUrl;
+  },
+  get googleClientId(): string {
+    return currentConfig.googleClientId;
+  },
+  get googleSignInFlow(): string {
+    return currentConfig.googleSignInFlow;
   },
   setDirectusUrl(url: string): void {
     if (isAllowedApiUrl(url)) {
@@ -105,6 +115,8 @@ export const runtimeConfig = {
   reset(): void {
     currentConfig = {
       directusUrl: stripTrailingSlash(environment.directusUrl),
+      googleClientId: (environment as any).googleClientId || '654016609429-5995je1smpgrlov4uv92pn637a7dlp0t.apps.googleusercontent.com',
+      googleSignInFlow: (environment as any).googleSignInFlow || 'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',
       stripePublishableKey: environment.STRIPE_PUBLISHABLE_KEY || '',
       stripeGetPricesFlow: environment.STRIPE_GET_PRICES_FLOW || '',
       stripeGetSubscriptionFlow: environment.STRIPE_GET_SUBSCRIPTION_FLOW || '',

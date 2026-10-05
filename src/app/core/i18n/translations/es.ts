@@ -157,7 +157,10 @@ export const esTranslations: Record<string, any> = {
     "OR_CONTINUE_WITH": "o continuar con",
     "LOGIN_GOOGLE": "Continuar con Google",
     "LOGIN_FACEBOOK": "Continuar con Facebook",
-    "LOGIN_APPLE": "Continuar con Apple"
+    "LOGIN_APPLE": "Continuar con Apple",
+    "GOOGLE_LOGIN_ERROR": "Error al iniciar sesión con Google. Por favor, inténtalo de nuevo.",
+    "GOOGLE_UNAVAILABLE": "El inicio de sesión con Google no está disponible actualmente. Inténtalo de nuevo o usa correo y contraseña.",
+    "GOOGLE_CANCELLED": "Se canceló el inicio de sesión con Google."
   },
   "HOME": {
     "WHATS_HOT": "🔥 Lo más caliente",
