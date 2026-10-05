@@ -51,7 +51,19 @@ export class GoogleAuthService {
   }
 
   /**
+   * Checks whether the Google Identity Services SDK is loaded in the window.
+   */
+  isLoaded(): boolean {
+    if (typeof window === 'undefined') return false;
+    const g = (window as any).google;
+    return !!(g?.accounts?.id?.initialize && g?.accounts?.id?.renderButton);
+  }
+
+  /**
    * Triggers the Google One Tap / credential prompt and returns the Google ID token.
+   * Note: As per Google Identity Services documentation, google.accounts.id.prompt()
+   * is subject to exponential cooldowns and browser privacy/One Tap suppression.
+   * For explicit user button clicks, use renderButton() instead.
    */
   async promptForIdToken(): Promise<string> {
     await this.loadGoogleScript();
@@ -95,6 +107,7 @@ export class GoogleAuthService {
           },
           auto_select: false,
           cancel_on_tap_outside: true,
+          itp_support: true,
         });
 
         google.accounts.id.prompt((notification: any) => {
@@ -120,27 +133,43 @@ export class GoogleAuthService {
   }
 
   /**
-   * Optionally renders the Google-provided Sign-In button into a host element.
+   * Renders the official Google-provided Sign-In button into a host element.
+   * Google Identity Services button flow opens an OAuth popup window upon user click,
+   * bypassing One Tap cooldowns, user dismissal suppression, and third-party cookie restrictions.
    */
   renderButton(
     element: HTMLElement,
     onCredential: (credential: string) => void,
     onError?: (err: Error) => void,
-    options?: Record<string, any>
+    options?: {
+      locale?: string;
+      width?: number;
+      theme?: 'outline' | 'filled_blue' | 'filled_black';
+      text?: 'continue_with' | 'signin_with' | 'signup_with';
+      shape?: 'rectangular' | 'pill' | 'circle' | 'square';
+      logo_alignment?: 'left' | 'center';
+      click_listener?: () => void;
+    }
   ): void {
     if (typeof window === 'undefined') return;
 
     const google = (window as any).google;
-    if (!google?.accounts?.id) return;
+    if (!google?.accounts?.id) {
+      onError?.(new Error('GOOGLE_SDK_UNAVAILABLE'));
+      return;
+    }
 
     const clientId = runtimeConfig.googleClientId;
-    if (!clientId) return;
+    if (!clientId) {
+      onError?.(new Error('GOOGLE_CLIENT_ID_NOT_CONFIGURED'));
+      return;
+    }
 
     try {
       google.accounts.id.initialize({
         client_id: clientId,
         callback: (response: { credential?: string }) => {
-          if (response?.credential) {
+          if (response?.credential && typeof response.credential === 'string') {
             onCredential(response.credential);
           } else {
             onError?.(new Error('GOOGLE_TOKEN_MISSING'));
@@ -148,19 +177,21 @@ export class GoogleAuthService {
         },
         auto_select: false,
         cancel_on_tap_outside: true,
+        itp_support: true,
       });
 
       google.accounts.id.renderButton(element, {
         type: 'standard',
-        shape: 'rectangular',
-        theme: 'outline',
-        text: 'continue_with',
+        shape: options?.shape || 'rectangular',
+        theme: options?.theme || 'outline',
+        text: options?.text || 'continue_with',
         size: 'large',
-        logo_alignment: 'left',
-        width: 380,
-        ...options,
+        logo_alignment: options?.logo_alignment || 'center',
+        width: options?.width || 380,
+        locale: options?.locale,
+        click_listener: options?.click_listener,
       });
-    } catch (e: any) {
+    } catch {
       onError?.(new Error('GOOGLE_SDK_ERROR'));
     }
   }

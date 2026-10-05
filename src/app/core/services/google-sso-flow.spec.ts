@@ -26,6 +26,7 @@ describe('Google SSO Flow — Phase 3B Parity Specifications', () => {
       navigate: vi.fn().mockResolvedValue(true),
       navigateByUrl: vi.fn().mockResolvedValue(true),
       createUrlTree: vi.fn((commands: any[]) => ({ toString: () => commands.join('/') })),
+      serializeUrl: vi.fn((tree: any) => (tree?.toString ? tree.toString() : String(tree))),
     };
 
     TestBed.configureTestingModule({
@@ -46,6 +47,8 @@ describe('Google SSO Flow — Phase 3B Parity Specifications', () => {
     googleAuthService = TestBed.inject(GoogleAuthService);
 
     runtimeConfig.reset();
+    const i18n = TestBed.inject(I18nService);
+    i18n.setLang('en');
   });
 
   afterEach(() => {
@@ -377,4 +380,115 @@ describe('Google SSO Flow — Phase 3B Parity Specifications', () => {
     expect(ssoProviderSpy).toHaveBeenCalledWith('apple', '/app/overview');
     expect(comp.loading).toBe(true);
   });
+
+  // 21. googleAuthService.renderButton initializes GIS and configures official button
+  it('21. googleAuthService.renderButton initializes GIS and configures official button with required styling', () => {
+    const mockInit = vi.fn();
+    const mockRender = vi.fn();
+    (window as any).google = {
+      accounts: {
+        id: {
+          initialize: mockInit,
+          renderButton: mockRender,
+        },
+      },
+    };
+
+    const container = document.createElement('div');
+    const onCred = vi.fn();
+    const onErr = vi.fn();
+
+    googleAuthService.renderButton(container, onCred, onErr, {
+      locale: 'es',
+      width: 350,
+      theme: 'outline',
+      text: 'continue_with',
+      logo_alignment: 'center',
+    });
+
+    expect(mockInit).toHaveBeenCalledWith(expect.objectContaining({
+      client_id: runtimeConfig.googleClientId,
+      auto_select: false,
+      itp_support: true,
+    }));
+
+    expect(mockRender).toHaveBeenCalledWith(container, expect.objectContaining({
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      text: 'continue_with',
+      shape: 'rectangular',
+      logo_alignment: 'center',
+      width: 350,
+      locale: 'es',
+    }));
+  });
+
+  // 22. onGoogleCredentialSuccess processes credential JWT via loginWithGoogleCredential and routes
+  it('22. onGoogleCredentialSuccess exchanges credential and routes linked business user', async () => {
+    const fixture = TestBed.createComponent(LoginComponent);
+    const comp = fixture.componentInstance;
+
+    const credSpy = vi.spyOn(authService, 'loginWithGoogleCredential').mockResolvedValue({
+      id: 'usr-google',
+      provider_link: { id: 'prov-abc', name: 'Dominican Dive' },
+    } as any);
+
+    await comp.onGoogleCredentialSuccess('valid_jwt_id_token');
+
+    expect(credSpy).toHaveBeenCalledWith('valid_jwt_id_token');
+    expect(comp.loading).toBe(false);
+    expect(routerSpy.navigateByUrl).toHaveBeenCalledWith('/app/overview');
+  });
+
+  // 23. Language switching re-renders the Google button with matching locale
+  it('23. Language switching re-renders the Google button with matching locale', async () => {
+    const fixture = TestBed.createComponent(LoginComponent);
+    const comp = fixture.componentInstance;
+    comp.isGoogleLoaded = true;
+    const renderSpy = vi.spyOn(comp, 'renderGoogleButton');
+
+    const i18n = TestBed.inject(I18nService);
+    i18n.setLang('es');
+    TestBed.flushEffects();
+
+    expect(renderSpy).toHaveBeenCalledWith('es');
+  });
+
+  // 24. Rendered button opens OAuth popup and is immune to One Tap suppression
+  it('24. Rendered button provides explicit button flow without calling prompt()', () => {
+    const mockInit = vi.fn();
+    const mockRender = vi.fn();
+    const mockPrompt = vi.fn();
+    (window as any).google = {
+      accounts: {
+        id: {
+          initialize: mockInit,
+          renderButton: mockRender,
+          prompt: mockPrompt,
+        },
+      },
+    };
+
+    const container = document.createElement('div');
+    googleAuthService.renderButton(container, vi.fn());
+
+    expect(mockRender).toHaveBeenCalled();
+    expect(mockPrompt).not.toHaveBeenCalled();
+  });
+
+  // 25. Fallback button displays customer-safe error when GIS is unavailable
+  it('25. Fallback button triggers customer-safe error when GIS script fails to load', async () => {
+    const fixture = TestBed.createComponent(LoginComponent);
+    const comp = fixture.componentInstance;
+
+    delete (window as any).google;
+    vi.spyOn(authService, 'loginWithGoogle').mockRejectedValue(new Error('GOOGLE_SDK_UNAVAILABLE'));
+
+    await comp.onGoogleLogin();
+
+    expect(comp.loading).toBe(false);
+    expect(comp.errorMessage).toMatch(/unavailable|no está disponible/);
+  });
 });
+

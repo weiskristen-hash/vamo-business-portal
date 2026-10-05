@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, AfterViewInit, ViewChild, ElementRef, inject, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -210,7 +210,22 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
           <div class="sso-section">
             <div class="divider"><span>{{ 'AUTH.OR_CONTINUE_WITH' | translate | uppercase }}</span></div>
             <div class="social-btn-stack">
-              <button type="button" class="btn btn-secondary social-btn google-btn" (click)="onGoogleLogin()" [disabled]="loading">
+              <!-- Official Google Identity Services Rendered Button Container -->
+              <div
+                #googleBtnContainer
+                id="google-btn-container"
+                class="google-btn-container"
+                [class.is-hidden]="!isGoogleLoaded"
+              ></div>
+
+              <!-- Fallback button when GIS is not yet initialized or unavailable -->
+              <button
+                *ngIf="!isGoogleLoaded"
+                type="button"
+                class="btn btn-secondary social-btn google-btn"
+                (click)="onGoogleLogin()"
+                [disabled]="loading"
+              >
                 <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                   <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -784,6 +799,21 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       gap: 10px;
     }
 
+    .google-btn-container {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      min-height: 44px;
+    }
+
+    .google-btn-container.is-hidden {
+      display: none !important;
+    }
+
+    .google-btn-container > div {
+      width: 100% !important;
+    }
+
     .social-btn {
       width: 100%;
       height: 44px;
@@ -976,13 +1006,15 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
     }
   `],
 })
-export class LoginComponent implements OnInit {
+export class LoginComponent implements OnInit, AfterViewInit {
   private authService = inject(AuthService);
   private googleAuthService = inject(GoogleAuthService);
   private customerErrorService = inject(CustomerErrorService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private i18n = inject(I18nService);
+
+  @ViewChild('googleBtnContainer') googleBtnContainer?: ElementRef<HTMLDivElement>;
 
   email = '';
   password = '';
@@ -992,6 +1024,7 @@ export class LoginComponent implements OnInit {
   currentYear = new Date().getFullYear();
 
   googleLoginEnabled = environment.googleLoginEnabled;
+  isGoogleLoaded = false;
 
   showForgotModal = false;
   forgotEmail = '';
@@ -1000,10 +1033,86 @@ export class LoginComponent implements OnInit {
 
   private returnUrl = '/app/overview';
 
+  constructor() {
+    effect(() => {
+      const currentLang = this.i18n.lang();
+      if (this.isGoogleLoaded && this.googleBtnContainer?.nativeElement) {
+        this.renderGoogleButton(currentLang);
+      }
+    });
+  }
+
   ngOnInit(): void {
     this.returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/app/overview';
-    if (typeof window !== 'undefined') {
-      this.googleAuthService.loadGoogleScript().catch(() => {});
+    if (typeof window !== 'undefined' && this.googleLoginEnabled) {
+      this.googleAuthService.loadGoogleScript()
+        .then(() => {
+          this.isGoogleLoaded = true;
+          // Defer rendering to ensure container is attached to DOM
+          setTimeout(() => this.renderGoogleButton(this.i18n.lang()), 0);
+        })
+        .catch(() => {
+          this.isGoogleLoaded = false;
+        });
+    }
+  }
+
+  ngAfterViewInit(): void {
+    if (typeof window !== 'undefined' && this.googleAuthService.isLoaded()) {
+      this.isGoogleLoaded = true;
+      this.renderGoogleButton(this.i18n.lang());
+    }
+  }
+
+  renderGoogleButton(lang: string): void {
+    if (!this.googleBtnContainer?.nativeElement) return;
+    const container = this.googleBtnContainer.nativeElement;
+    const containerWidth = container.offsetWidth || 388;
+    const width = Math.min(400, Math.max(200, containerWidth));
+
+    this.googleAuthService.renderButton(
+      container,
+      (credential: string) => this.onGoogleCredentialSuccess(credential),
+      (err: Error) => this.handleGoogleError(err),
+      {
+        locale: lang,
+        width,
+        theme: 'outline',
+        text: 'continue_with',
+        logo_alignment: 'center',
+        click_listener: () => {
+          this.errorMessage = '';
+        },
+      }
+    );
+    this.isGoogleLoaded = true;
+  }
+
+  async onGoogleCredentialSuccess(credential: string): Promise<void> {
+    this.loading = true;
+    this.errorMessage = '';
+
+    try {
+      const user = await this.authService.loginWithGoogleCredential(credential);
+      await this.navigateAfterSocialLogin(user);
+    } catch (err: any) {
+      this.handleGoogleError(err);
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  async onGoogleLogin(): Promise<void> {
+    this.loading = true;
+    this.errorMessage = '';
+
+    try {
+      const user = await this.authService.loginWithGoogle();
+      await this.navigateAfterSocialLogin(user);
+    } catch (err: any) {
+      this.handleGoogleError(err);
+    } finally {
+      this.loading = false;
     }
   }
 
@@ -1072,19 +1181,6 @@ export class LoginComponent implements OnInit {
     this.showPassword = !this.showPassword;
   }
 
-  async onGoogleLogin(): Promise<void> {
-    this.loading = true;
-    this.errorMessage = '';
-
-    try {
-      const user = await this.authService.loginWithGoogle();
-      await this.navigateAfterSocialLogin(user);
-    } catch (err: any) {
-      this.handleGoogleError(err);
-    } finally {
-      this.loading = false;
-    }
-  }
 
   private handleGoogleError(err: any): void {
     const msg = err?.message || '';
