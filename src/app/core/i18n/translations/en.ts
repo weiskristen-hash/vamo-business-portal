@@ -1458,6 +1458,7 @@ export const enTranslations: Record<string, any> = {
       "IMAGE_ALT": "Image for {{name}}",
       "EMPTY_TITLE": "No activity yet",
       "EMPTY_DESC": "When people view, share, or save your business and listings in the VAMO app, the numbers will appear here.",
+      "ERROR_LOAD": "We couldn't load your Insights right now. Please try again.",
       "RETRY": "Try again"
     },
     "ERRORS": {
