@@ -24,6 +24,11 @@ interface MessageDescriptor {
   raw?: string;
 }
 
+interface PartialSuccessState {
+  completedTypes: AddonType[];
+  failedTypes: AddonType[];
+}
+
 @Component({
   selector: 'app-promotions',
   standalone: true,
@@ -51,7 +56,7 @@ interface MessageDescriptor {
       <strong>{{ 'PORTAL.PROMOTIONS.PARTIAL_SUCCESS_TITLE' | translate }}</strong>
       <p>{{ partialSuccessMessage() }}</p>
     </div>
-    <button type="button" class="alert-close" (click)="partialSuccessDescriptor.set(null)" [attr.aria-label]="'PORTAL.PROMOTIONS.DISMISS' | translate">✕</button>
+    <button type="button" class="alert-close" (click)="partialSuccessState.set(null)" [attr.aria-label]="'PORTAL.PROMOTIONS.DISMISS' | translate">✕</button>
   </div>
 
   <div *ngIf="successMessage()" class="alert alert-success" role="alert">
@@ -158,7 +163,7 @@ interface MessageDescriptor {
             <span class="alert-icon">⚠️</span>
             <div class="alert-content">
               <p>{{ 'PORTAL.PROMOTIONS.ERROR_NO_AREA' | translate }}</p>
-              <a [routerLink]="['/app/listings', selectedEventId()]" class="btn btn-secondary btn-sm edit-listing-btn">
+              <a [routerLink]="['/app/listings/edit', selectedEventId()]" class="btn btn-secondary btn-sm edit-listing-btn">
                 {{ 'PORTAL.PROMOTIONS.EDIT_LISTING_BTN' | translate }}
               </a>
             </div>
@@ -368,12 +373,12 @@ interface MessageDescriptor {
                   type="button"
                   class="btn btn-primary"
                   *ngIf="!paymentActive()"
-                  [disabled]="isProcessingPayment() || !hasSelection() || hasNoAreaError()"
+                  [disabled]="isProcessingPayment() || !hasSelection() || hasNoAreaError() || availabilityLoading() || !boostAvailability()"
                   (click)="proceedToPayment()"
                 >
                   <span *ngIf="isProcessingPayment()">{{ 'PORTAL.PROMOTIONS.PROCESSING' | translate }}</span>
                   <span *ngIf="!isProcessingPayment()">
-                    {{ getPayButtonLabel() }} <span *ngIf="hasSameCurrency()">({{ formattedTotal() }})</span>
+                    {{ getPayButtonLabel() }} <span *ngIf="hasSameCurrency() && !isRetrying()">({{ formattedTotal() }})</span>
                   </span>
                 </button>
 
@@ -386,7 +391,7 @@ interface MessageDescriptor {
                 >
                   <span *ngIf="isProcessingPayment()">{{ 'PORTAL.PROMOTIONS.PROCESSING' | translate }}</span>
                   <span *ngIf="!isProcessingPayment()">
-                    {{ getPayButtonLabel() }} <span *ngIf="hasSameCurrency()">({{ formattedTotal() }})</span>
+                    {{ getConfirmButtonLabel() }}
                   </span>
                 </button>
 
@@ -1085,21 +1090,24 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   isLoading = signal<boolean>(true);
   availabilityLoading = signal<boolean>(false);
   hasNoAreaError = signal<boolean>(false);
+  hasAvailabilityError = signal<boolean>(false);
   isProcessingPayment = signal<boolean>(false);
 
-  // Reactive message descriptors
+  // Reactive message descriptors & states
   errorDescriptor = signal<MessageDescriptor | null>(null);
   successDescriptor = signal<MessageDescriptor | null>(null);
-  partialSuccessDescriptor = signal<MessageDescriptor | null>(null);
+  partialSuccessState = signal<PartialSuccessState | null>(null);
 
   paymentActive = signal<boolean>(false);
   stripeReady = signal<boolean>(false);
+  currentMountedType = signal<AddonType | null>(null);
 
   private stripeInstance: Stripe | null = null;
   private stripeElements: StripeElements | null = null;
   private pendingQueue: AddonType[] = [];
   completedAddons = signal<AddonType[]>([]);
   private routeSub: Subscription | null = null;
+  private availabilitySeq = 0;
 
   // Computed Values
   publishedEvents = computed(() =>
@@ -1161,11 +1169,21 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   );
 
   isMainBannerDisabled = computed(() =>
-    this.selectedEventHasMainBanner() || this.mainBannerFull() || this.hasNoAreaError()
+    this.selectedEventHasMainBanner() ||
+    this.mainBannerFull() ||
+    this.hasNoAreaError() ||
+    this.availabilityLoading() ||
+    !this.boostAvailability() ||
+    this.hasAvailabilityError()
   );
 
   isWhatsHotDisabled = computed(() =>
-    this.selectedEventHasWhatsHot() || this.whatsHotFull() || this.hasNoAreaError()
+    this.selectedEventHasWhatsHot() ||
+    this.whatsHotFull() ||
+    this.hasNoAreaError() ||
+    this.availabilityLoading() ||
+    !this.boostAvailability() ||
+    this.hasAvailabilityError()
   );
 
   totalAmount = computed(() => {
@@ -1206,6 +1224,16 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     return this.formatPrice(this.totalAmount(), this.primaryCurrency());
   });
 
+  isRetrying = computed(() =>
+    this.completedAddons().length > 0 && this.selectedPlacements().size > 0
+  );
+
+  currentPlacementPrice = computed(() => {
+    const type = this.currentMountedType();
+    if (!type) return null;
+    return type === 'main_banner' ? this.mainBannerPrice() : this.whatsHotPrice();
+  });
+
   // Reactive message strings
   errorMessage = computed(() => {
     const d = this.errorDescriptor();
@@ -1228,13 +1256,34 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   });
 
   partialSuccessMessage = computed(() => {
-    const d = this.partialSuccessDescriptor();
-    if (!d) return null;
-    this.i18n.lang();
-    if (d.key) {
-      return this.i18n.t(d.key, d.params);
-    }
-    return d.raw ?? null;
+    const state = this.partialSuccessState();
+    if (!state) return null;
+    this.i18n.lang(); // reactive dependency on current active language
+
+    const completedNames = state.completedTypes
+      .map((t) =>
+        this.i18n.t(
+          t === 'main_banner'
+            ? 'PORTAL.PROMOTIONS.MAIN_BANNER_TITLE'
+            : 'PORTAL.PROMOTIONS.WHATS_HOT_TITLE'
+        )
+      )
+      .join(', ');
+
+    const failedNames = state.failedTypes
+      .map((t) =>
+        this.i18n.t(
+          t === 'main_banner'
+            ? 'PORTAL.PROMOTIONS.MAIN_BANNER_TITLE'
+            : 'PORTAL.PROMOTIONS.WHATS_HOT_TITLE'
+        )
+      )
+      .join(', ');
+
+    return this.i18n.t('PORTAL.PROMOTIONS.PARTIAL_SUCCESS_DESC', {
+      completed: completedNames,
+      failed: failedNames,
+    });
   });
 
   ngOnInit(): void {
@@ -1314,20 +1363,25 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   }
 
   async onEventSelected(eventId: string | null): Promise<void> {
+    this.availabilitySeq++;
+    const currentSeq = this.availabilitySeq;
+
     this.selectedEventId.set(eventId);
     this.errorDescriptor.set(null);
+    this.hasAvailabilityError.set(false);
+    this.boostAvailability.set(null);
     this.cancelPayment();
 
     if (!eventId) {
       this.hasNoAreaError.set(false);
-      this.boostAvailability.set(null);
+      this.availabilityLoading.set(false);
       return;
     }
 
     const ev = this.events().find((e) => e.id === eventId);
     if (!ev) {
       this.hasNoAreaError.set(false);
-      this.boostAvailability.set(null);
+      this.availabilityLoading.set(false);
       return;
     }
 
@@ -1341,7 +1395,7 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     const areaId = this.getEventAreaId(ev);
     if (!areaId) {
       this.hasNoAreaError.set(true);
-      this.boostAvailability.set(null);
+      this.availabilityLoading.set(false);
       return;
     }
 
@@ -1349,11 +1403,22 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     this.availabilityLoading.set(true);
     try {
       const avail = await this.stripeService.getBoostAvailability(areaId);
+      if (currentSeq !== this.availabilitySeq || this.selectedEventId() !== eventId) {
+        return; // Discard stale async response
+      }
       this.boostAvailability.set(avail);
+      this.hasAvailabilityError.set(false);
     } catch {
+      if (currentSeq !== this.availabilitySeq || this.selectedEventId() !== eventId) {
+        return; // Discard stale error
+      }
       this.boostAvailability.set(null);
+      this.hasAvailabilityError.set(true);
+      this.errorDescriptor.set({ key: 'PORTAL.PROMOTIONS.ERROR_AVAILABILITY' });
     } finally {
-      this.availabilityLoading.set(false);
+      if (currentSeq === this.availabilitySeq) {
+        this.availabilityLoading.set(false);
+      }
     }
   }
 
@@ -1401,6 +1466,24 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     return this.i18n.t('PORTAL.PROMOTIONS.PAY_BTN');
   }
 
+  getConfirmButtonLabel(): string {
+    const type = this.currentMountedType();
+    const price = this.currentPlacementPrice();
+    if (type && price) {
+      const formattedPrice = this.formatPrice(price.amount, price.currency);
+      const placementName = this.i18n.t(
+        type === 'main_banner'
+          ? 'PORTAL.PROMOTIONS.MAIN_BANNER_TITLE'
+          : 'PORTAL.PROMOTIONS.WHATS_HOT_TITLE'
+      );
+      return this.i18n.t('PORTAL.PROMOTIONS.PAY_CURRENT_BTN', {
+        price: formattedPrice,
+        placement: placementName,
+      });
+    }
+    return this.i18n.t('PORTAL.PROMOTIONS.PAY_BTN');
+  }
+
   async proceedToPayment(): Promise<void> {
     const event = this.selectedEvent();
     if (!event) {
@@ -1408,6 +1491,10 @@ export class PromotionsComponent implements OnInit, OnDestroy {
       return;
     }
     if (this.hasNoAreaError()) {
+      return;
+    }
+    if (this.availabilityLoading() || !this.boostAvailability() || this.hasAvailabilityError()) {
+      this.errorDescriptor.set({ key: 'PORTAL.PROMOTIONS.ERROR_AVAILABILITY' });
       return;
     }
     if (!this.hasSelection()) {
@@ -1434,7 +1521,7 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     if (this.pendingQueue.length === 0) {
       // All selected placements completed successfully
       this.successDescriptor.set({ key: 'PORTAL.PROMOTIONS.SUCCESS_DESC' });
-      this.partialSuccessDescriptor.set(null);
+      this.partialSuccessState.set(null);
       this.selectedPlacements.set(new Set());
       this.completedAddons.set([]);
       this.cleanupStripe();
@@ -1487,6 +1574,7 @@ export class PromotionsComponent implements OnInit, OnDestroy {
         await this.processQueue(providerId, eventId);
       } else {
         // Mount PaymentElement for new card
+        this.currentMountedType.set(type);
         this.paymentActive.set(true);
         setTimeout(() => this.mountPayment(paidResult.clientSecret), 150);
       }
@@ -1567,23 +1655,9 @@ export class PromotionsComponent implements OnInit, OnDestroy {
 
   private handlePaymentFailure(err: any): void {
     if (this.completedAddons().length > 0) {
-      const completedNames = this.completedAddons()
-        .map((t) =>
-          t === 'main_banner'
-            ? this.i18n.t('PORTAL.PROMOTIONS.MAIN_BANNER_TITLE')
-            : this.i18n.t('PORTAL.PROMOTIONS.WHATS_HOT_TITLE')
-        )
-        .join(', ');
-      const failedNames = this.pendingQueue
-        .map((t) =>
-          t === 'main_banner'
-            ? this.i18n.t('PORTAL.PROMOTIONS.MAIN_BANNER_TITLE')
-            : this.i18n.t('PORTAL.PROMOTIONS.WHATS_HOT_TITLE')
-        )
-        .join(', ');
-      this.partialSuccessDescriptor.set({
-        key: 'PORTAL.PROMOTIONS.PARTIAL_SUCCESS_DESC',
-        params: { completed: completedNames, failed: failedNames },
+      this.partialSuccessState.set({
+        completedTypes: [...this.completedAddons()],
+        failedTypes: [...this.pendingQueue],
       });
     }
 
@@ -1602,6 +1676,7 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     this.stripeReady.set(false);
     this.stripeInstance = null;
     this.stripeElements = null;
+    this.currentMountedType.set(null);
     this.stripeService.cleanup();
   }
 

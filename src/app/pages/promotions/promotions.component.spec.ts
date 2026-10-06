@@ -11,7 +11,8 @@ import {
 import { CustomerErrorService } from '../../core/services/customer-error.service';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { VamoEvent } from '../../core/models/event.model';
-import { ActivatedRoute, provideRouter } from '@angular/router';
+import { ActivatedRoute, RouterLink, provideRouter } from '@angular/router';
+import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
 
 describe('PromotionsComponent', () => {
@@ -134,7 +135,7 @@ describe('PromotionsComponent', () => {
 
     stripeServiceSpy = {
       getAddonPrices: vi.fn().mockResolvedValue([...mockAddonPrices]),
-      getBoostAvailability: vi.fn().mockResolvedValue(mockAvailability),
+      getBoostAvailability: vi.fn().mockResolvedValue({ ...mockAvailability }),
       getSavedPaymentMethods: vi.fn().mockResolvedValue([...mockSavedCards]),
       createAddonPayment: vi.fn().mockResolvedValue({
         clientSecret: 'pi_test_secret_123',
@@ -266,7 +267,7 @@ describe('PromotionsComponent', () => {
       expect(component.hasNoAreaError()).toBe(false);
     });
 
-    it('should block checkout, show error, and NOT call getBoostAvailability when event has no area', async () => {
+    it('should block checkout, show error, NOT call getBoostAvailability, and render correct edit route /app/listings/edit/:id when event has no area', async () => {
       await component.onEventSelected('ev-no-area');
       fixture.detectChanges();
 
@@ -278,15 +279,113 @@ describe('PromotionsComponent', () => {
       expect(component.isMainBannerDisabled()).toBe(true);
       expect(component.isWhatsHotDisabled()).toBe(true);
 
-      // Warning alert with edit listing link
+      // Warning alert with edit listing link targeting /app/listings/edit/ev-no-area
       const compiled = fixture.nativeElement as HTMLElement;
       expect(compiled.textContent).toContain('This listing needs a destination before it can be promoted.');
-      expect(compiled.querySelector('.edit-listing-btn')).toBeTruthy();
+
+      const editLinkDe = fixture.debugElement.query(By.css('.edit-listing-btn'));
+      expect(editLinkDe).toBeTruthy();
+      expect(editLinkDe.nativeElement.getAttribute('href')).toBe('/app/listings/edit/ev-no-area');
 
       // Attempting proceedToPayment should be blocked
       component.selectedPlacements.set(new Set(['main_banner']));
       await component.proceedToPayment();
       expect(stripeServiceSpy.createAddonPayment).not.toHaveBeenCalled();
+    });
+
+    it('should clear previous availability immediately, set availabilityLoading, and disable placement selection while loading', async () => {
+      let resolveAvailability!: (val: any) => void;
+      stripeServiceSpy.getBoostAvailability.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveAvailability = resolve;
+        })
+      );
+
+      // Trigger selection
+      const selectPromise = component.onEventSelected('ev-1');
+
+      // Immediately before resolution:
+      expect(component.boostAvailability()).toBeNull();
+      expect(component.availabilityLoading()).toBe(true);
+      expect(component.isMainBannerDisabled()).toBe(true);
+      expect(component.isWhatsHotDisabled()).toBe(true);
+
+      // Resolving request updates availability and completes loading
+      resolveAvailability(mockAvailability);
+      await selectPromise;
+
+      expect(component.availabilityLoading()).toBe(false);
+      expect(component.boostAvailability()).toEqual(mockAvailability);
+      expect(component.isMainBannerDisabled()).toBe(false);
+    });
+
+    it('should handle getBoostAvailability rejection safely, clear availability, show customer-safe error, and block payment', async () => {
+      stripeServiceSpy.getBoostAvailability.mockRejectedValueOnce(
+        new Error('Directus internal 500 network error')
+      );
+
+      await component.onEventSelected('ev-1');
+      fixture.detectChanges();
+
+      expect(component.boostAvailability()).toBeNull();
+      expect(component.hasAvailabilityError()).toBe(true);
+      expect(component.availabilityLoading()).toBe(false);
+      expect(component.errorMessage()).toBe(
+        "We couldn't confirm promotion availability. Please try again."
+      );
+      expect(component.isMainBannerDisabled()).toBe(true);
+      expect(component.isWhatsHotDisabled()).toBe(true);
+
+      // Attempting purchase must be blocked
+      component.selectedPlacements.set(new Set(['main_banner']));
+      await component.proceedToPayment();
+      expect(stripeServiceSpy.createAddonPayment).not.toHaveBeenCalled();
+    });
+
+    it('should prevent late availability response from previous event from overwriting current event availability', async () => {
+      let resolveFirst!: (val: any) => void;
+      let resolveSecond!: (val: any) => void;
+
+      stripeServiceSpy.getBoostAvailability
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          })
+        )
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveSecond = resolve;
+          })
+        );
+
+      // Select Event 1 (area 1)
+      const p1 = component.onEventSelected('ev-1');
+
+      // Quickly select Event 2 (area 2)
+      const p2 = component.onEventSelected('ev-2');
+
+      const availEvent2: BoostAvailability = {
+        mainBanner: { count: 4, limit: 5, nextAvailableDate: null },
+        whatsHot: { count: 9, limit: 10, nextAvailableDate: null },
+      };
+
+      const availEvent1Stale: BoostAvailability = {
+        mainBanner: { count: 0, limit: 5, nextAvailableDate: null },
+        whatsHot: { count: 0, limit: 10, nextAvailableDate: null },
+      };
+
+      // Event 2 finishes first
+      resolveSecond(availEvent2);
+      await p2;
+      expect(component.boostAvailability()).toEqual(availEvent2);
+
+      // Event 1 finishes late
+      resolveFirst(availEvent1Stale);
+      await p1;
+
+      // Stale Event 1 response must NOT overwrite Event 2 availability
+      expect(component.boostAvailability()).toEqual(availEvent2);
+      expect(component.selectedEventId()).toBe('ev-2');
     });
   });
 
@@ -389,21 +488,32 @@ describe('PromotionsComponent', () => {
       );
     });
 
-    it('should mount Stripe PaymentElement when user selects new card option', async () => {
+    it('should mount Stripe PaymentElement and show current placement amount only on confirmation button', async () => {
       vi.useFakeTimers();
       component.togglePlacement('main_banner');
+      component.togglePlacement('whats_hot');
       component.selectUseNewCard();
+
+      // Before payment active: Order summary shows combined total ($45)
+      expect(component.formattedTotal()).toContain('$45');
+      fixture.detectChanges();
 
       const proceedPromise = component.proceedToPayment();
       await proceedPromise;
 
       vi.advanceTimersByTime(200);
+      fixture.detectChanges();
 
       expect(component.paymentActive()).toBe(true);
       expect(stripeServiceSpy.mountPaymentElement).toHaveBeenCalledWith(
         'pi_test_secret_123',
         'boost-payment-element'
       );
+
+      // First PaymentElement confirmation button shows FIRST placement price only ($30 for Main Banner), NOT $45
+      const confirmBtn = fixture.nativeElement.querySelector('.checkout-actions .btn-primary');
+      expect(confirmBtn.textContent.trim()).toBe('Pay $30 for Main Banner');
+
       vi.useRealTimers();
     });
 
@@ -425,7 +535,7 @@ describe('PromotionsComponent', () => {
       await component.onEventSelected('ev-1');
     });
 
-    it('should record completed placement, report partial success on second placement failure, and retry ONLY the failed placement', async () => {
+    it('should record completed placement, report partial success, and on retry ONLY charge the remaining placement', async () => {
       component.togglePlacement('main_banner');
       component.togglePlacement('whats_hot');
       component.selectSavedCard(mockSavedCards[0]);
@@ -452,7 +562,7 @@ describe('PromotionsComponent', () => {
       expect(component.selectedPlacements().has('whats_hot')).toBe(true);
 
       // Partial success warning is displayed
-      expect(component.partialSuccessMessage()).toContain('Main Banner');
+      expect(component.partialSuccessMessage()).toContain('Main Banner was activated successfully');
       expect(component.errorMessage()).toBeTruthy();
 
       // Retry button label is shown
@@ -463,7 +573,7 @@ describe('PromotionsComponent', () => {
       await component.proceedToPayment();
 
       // CRITICAL: createAddonPayment for main_banner must NOT have been called a second time
-      // Total createAddonPayment calls: 1 for main_banner, 2 for whats_hot (initial + retry)
+      // Exactly 1 for main_banner, 2 for whats_hot (initial failure + retry)
       expect(
         stripeServiceSpy.createAddonPayment.mock.calls.filter((c: any) => c[1] === 'main_banner').length
       ).toBe(1);
@@ -471,13 +581,20 @@ describe('PromotionsComponent', () => {
         stripeServiceSpy.createAddonPayment.mock.calls.filter((c: any) => c[1] === 'whats_hot').length
       ).toBe(2);
 
-      // Now whats_hot also succeeds
-      expect(stripeServiceSpy.applyAddon).toHaveBeenCalledTimes(2);
+      // confirmWithSavedMethod and applyAddon called exactly once for main_banner
+      expect(
+        stripeServiceSpy.applyAddon.mock.calls.filter((c: any) => c[0] === 'main_banner').length
+      ).toBe(1);
+      expect(
+        stripeServiceSpy.applyAddon.mock.calls.filter((c: any) => c[0] === 'whats_hot').length
+      ).toBe(1);
+
+      // Both placements now succeeded
       expect(component.successMessage()).toBeTruthy();
     });
   });
 
-  describe('Localization Parity (EN & ES)', () => {
+  describe('Localization Parity & Live Translation Reactivity (EN & ES)', () => {
     beforeEach(async () => {
       await createComponent('ev-1');
     });
@@ -508,16 +625,40 @@ describe('PromotionsComponent', () => {
       expect(component.errorMessage()).toBe('Por favor selecciona una publicación para promocionar.');
     });
 
-    it('should reactively update partial success messages when language changes', () => {
-      component.partialSuccessDescriptor.set({
-        key: 'PORTAL.PROMOTIONS.PARTIAL_SUCCESS_DESC',
-        params: { completed: 'Banner Principal', failed: 'Lo Más Caliente' },
-      });
-      i18nService.setLang('en');
-      expect(component.partialSuccessMessage()).toContain('was activated successfully');
+    it('should reactively re-translate partial success message including placement names when language switches live without repeated action', async () => {
+      component.togglePlacement('main_banner');
+      component.togglePlacement('whats_hot');
+      component.selectSavedCard(mockSavedCards[0]);
 
+      i18nService.setLang('en');
+
+      // Main banner succeeds, whats_hot fails
+      stripeServiceSpy.confirmWithSavedMethod
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({
+          error: { type: 'card_error', message: 'Card declined' },
+        });
+
+      await component.proceedToPayment();
+
+      // 1. Partial success in English contains English placement names
+      expect(component.partialSuccessMessage()).toBe(
+        "Main Banner was activated successfully. What's Hot was not completed. You can retry the remaining placement."
+      );
+
+      // 2. Switch live to Spanish
       i18nService.setLang('es');
-      expect(component.partialSuccessMessage()).toContain('se activó correctamente');
+
+      // 3. Same state reactively displays Spanish sentence AND Spanish placement names
+      expect(component.partialSuccessMessage()).toBe(
+        'Banner Principal se activó correctamente. Lo Más Caliente no se completó. Puedes volver a intentar únicamente el posicionamiento pendiente.'
+      );
+
+      // 4. Switch back to English
+      i18nService.setLang('en');
+      expect(component.partialSuccessMessage()).toBe(
+        "Main Banner was activated successfully. What's Hot was not completed. You can retry the remaining placement."
+      );
     });
   });
 });

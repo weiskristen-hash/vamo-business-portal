@@ -1389,7 +1389,8 @@ export const esTranslations: Record<string, any> = {
       "ERROR_NO_AREA": "Esta publicación necesita un destino antes de poder promocionarse.",
       "ERROR_INVALID_EVENT": "La publicación solicitada no se encontró o no es elegible para promoción.",
       "EDIT_LISTING_BTN": "Editar publicación",
-      "LOADING_AVAILABILITY": "Comprobando disponibilidad…"
+      "LOADING_AVAILABILITY": "Comprobando disponibilidad…",
+      "ERROR_AVAILABILITY": "No pudimos confirmar la disponibilidad de la promoción. Inténtalo de nuevo."
     },
     "PLACEHOLDER": {
       "BADGE_DEVELOPMENT": "En desarrollo activo",

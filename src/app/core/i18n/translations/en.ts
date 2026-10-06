@@ -1389,7 +1389,8 @@ export const enTranslations: Record<string, any> = {
       "ERROR_NO_AREA": "This listing needs a destination before it can be promoted.",
       "ERROR_INVALID_EVENT": "The requested listing could not be found or is not eligible for promotion.",
       "EDIT_LISTING_BTN": "Edit Listing",
-      "LOADING_AVAILABILITY": "Checking availability…"
+      "LOADING_AVAILABILITY": "Checking availability…",
+      "ERROR_AVAILABILITY": "We couldn't confirm promotion availability. Please try again."
     },
     "PLACEHOLDER": {
       "BADGE_DEVELOPMENT": "Under Active Development",
