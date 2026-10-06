@@ -68,6 +68,42 @@ export class CustomerErrorService {
   }
 
   /**
+   * Produces a structured translation key and optional parameters for reactive customer-safe errors.
+   */
+  toCustomerErrorKey(
+    err: unknown,
+    category: ErrorActionCategory = 'save'
+  ): { key: string; params?: Record<string, string | number> } {
+    this.logDiagnostic(err, category);
+    const detectedCategory = this.detectCategory(err) || category;
+
+    switch (detectedCategory) {
+      case 'auth':
+        return { key: 'PORTAL.ERRORS.AUTH_MSG' };
+      case 'network':
+        return { key: 'PORTAL.ERRORS.NETWORK_MSG' };
+      case 'permission':
+        return {
+          key: category === 'load'
+            ? 'PORTAL.ERRORS.PERMISSION_LOAD_MSG'
+            : 'PORTAL.ERRORS.PERMISSION_ACTION_MSG',
+        };
+      case 'upload':
+        return { key: 'PORTAL.ERRORS.UPLOAD_MSG' };
+      case 'delete':
+        return { key: 'PORTAL.ERRORS.DELETE_MSG' };
+      case 'load':
+        return { key: 'PORTAL.ERRORS.LOAD_MSG' };
+      case 'save':
+        return { key: 'PORTAL.ERRORS.SAVE_MSG' };
+      case 'validation':
+        return { key: 'PORTAL.ERRORS.VALIDATION_MSG' };
+      default:
+        return { key: 'PORTAL.ERRORS.SAVE_MSG' };
+    }
+  }
+
+  /**
    * Produces a structured customer error containing headline, message, and optional support action.
    */
   toCustomerError(

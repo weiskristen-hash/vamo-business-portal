@@ -168,4 +168,48 @@ describe('I18n Parity & Language Switching System', () => {
       expect(rawEs).toContain('teléfono');
     });
   });
+
+  describe('Translation Key Structure Parity', () => {
+    function extractLeafKeys(obj: Record<string, any>, prefix = ''): string[] {
+      let keys: string[] = [];
+      for (const k of Object.keys(obj)) {
+        const fullKey = prefix ? `${prefix}.${k}` : k;
+        if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k])) {
+          keys = keys.concat(extractLeafKeys(obj[k], fullKey));
+        } else {
+          keys.push(fullKey);
+        }
+      }
+      return keys;
+    }
+
+    it('en and es dictionaries must have 100% identical recursive key structures', () => {
+      const enKeys = new Set(extractLeafKeys(enTranslations));
+      const esKeys = new Set(extractLeafKeys(esTranslations));
+
+      const missingInEs = [...enKeys].filter((k) => !esKeys.has(k)).sort();
+      const missingInEn = [...esKeys].filter((k) => !enKeys.has(k)).sort();
+
+      expect(missingInEs, `Missing translation keys in ES (${missingInEs.length})`).toEqual([]);
+      expect(missingInEn, `Missing translation keys in EN (${missingInEn.length})`).toEqual([]);
+    });
+
+    it('fails when an English key is added without Spanish', () => {
+      const mockEn = { AUTH: { TEST_KEY: 'Hello' } };
+      const mockEs = { AUTH: {} };
+      const enKeys = new Set(extractLeafKeys(mockEn));
+      const esKeys = new Set(extractLeafKeys(mockEs));
+      const missingInEs = [...enKeys].filter((k) => !esKeys.has(k));
+      expect(missingInEs).toContain('AUTH.TEST_KEY');
+    });
+
+    it('fails when a Spanish key is added without English', () => {
+      const mockEn = { AUTH: {} };
+      const mockEs = { AUTH: { TEST_KEY: 'Hola' } };
+      const enKeys = new Set(extractLeafKeys(mockEn));
+      const esKeys = new Set(extractLeafKeys(mockEs));
+      const missingInEn = [...esKeys].filter((k) => !enKeys.has(k));
+      expect(missingInEn).toContain('AUTH.TEST_KEY');
+    });
+  });
 });

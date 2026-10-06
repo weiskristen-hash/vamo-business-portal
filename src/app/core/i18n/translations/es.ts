@@ -24,7 +24,8 @@ export const esTranslations: Record<string, any> = {
     "OFFERINGS": "Servicios",
     "CONTACT": "Contacto",
     "OPENING_HOURS": "Horario de atención",
-    "BREAK": "Pausa"
+    "BREAK": "Pausa",
+    "CLOSE_DIALOG": "Cerrar diálogo"
   },
   "DAYS": {
     "monday": "Lunes",
@@ -148,8 +149,11 @@ export const esTranslations: Record<string, any> = {
     "FORGOT_PASSWORD_TITLE": "¿Olvidaste tu contraseña?",
     "FORGOT_PASSWORD_BTN": "Enviar enlace",
     "FORGOT_PASSWORD_SUCCESS": "¡Enlace enviado! Revisa tu correo.",
+    "FORGOT_PASSWORD_SUCCESS_DISPATCHED": "¡Enlace enviado a {{email}}! Revisa tu correo.",
     "FORGOT_PASSWORD_ERROR": "Algo salió mal. Por favor inténtalo de nuevo.",
     "LOGIN_ERROR": "Inicio de sesión fallido. Por favor verifica tus datos.",
+    "INVALID_CREDENTIALS": "Correo o contraseña no válidos. Por favor verifica tus credenciales y vuelve a intentarlo.",
+    "LOGIN_TIMEOUT": "La solicitud de inicio de sesión ha caducado. Por favor comprueba tu conexión e inténtalo de nuevo.",
     "ERROR_EMAIL_REQUIRED": "El correo electrónico es obligatorio",
     "ERROR_PASSWORD_REQUIRED": "La contraseña es obligatoria",
     "EMAIL_VERIFIED_TITLE": "Correo verificado ✓",
@@ -160,7 +164,8 @@ export const esTranslations: Record<string, any> = {
     "LOGIN_APPLE": "Continuar con Apple",
     "GOOGLE_LOGIN_ERROR": "Error al iniciar sesión con Google. Por favor, inténtalo de nuevo.",
     "GOOGLE_UNAVAILABLE": "El inicio de sesión con Google no está disponible actualmente. Inténtalo de nuevo o usa correo y contraseña.",
-    "GOOGLE_CANCELLED": "Se canceló el inicio de sesión con Google."
+    "GOOGLE_CANCELLED": "Se canceló el inicio de sesión con Google.",
+    "GOOGLE_TOKEN_MISSING": "No se pudieron obtener las credenciales de Google. Por favor, inténtalo de nuevo."
   },
   "HOME": {
     "WHATS_HOT": "🔥 Lo más caliente",
@@ -732,7 +737,10 @@ export const esTranslations: Record<string, any> = {
       "CANCEL": "Cancelar",
       "SEND_RESET_LINK": "Enviar enlace",
       "SENDING": "Enviando…",
-      "ALL_RIGHTS": "Todos los derechos reservados."
+      "ALL_RIGHTS": "Todos los derechos reservados.",
+      "SHOW_PASSWORD": "Mostrar contraseña",
+      "HIDE_PASSWORD": "Ocultar contraseña",
+      "CLOSE_DIALOG": "Cerrar diálogo"
     },
     "REGISTER": {
       "HERO_TITLE": "Crea tu cuenta VAMO.",

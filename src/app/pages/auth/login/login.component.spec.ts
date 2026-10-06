@@ -373,4 +373,147 @@ describe('LoginComponent', () => {
       expect(component.showForgotModal).toBe(true);
     });
   });
+
+  describe('Reactive Language Switching Parity', () => {
+    let i18n: I18nService;
+
+    beforeEach(() => {
+      i18n = TestBed.inject(I18nService);
+      i18n.setLang('en');
+    });
+
+    afterEach(() => {
+      i18n.setLang('en');
+    });
+
+    it('should dynamically switch invalid-password error between EN and ES without retrying login', async () => {
+      // Step A: language EN -> bad password -> English error shown
+      i18n.setLang('en');
+      authServiceSpy.login.mockRejectedValue({
+        errors: [{ extensions: { code: 'INVALID_CREDENTIALS' } }],
+      });
+
+      component.email = 'wrong@vamo.com';
+      component.password = 'badpassword';
+      await component.onSubmit();
+      fixture.detectChanges();
+
+      const enExpected = 'Invalid email or password. Please check your credentials and try again.';
+      expect(component.errorMessage).toBe(enExpected);
+      const alert = fixture.nativeElement.querySelector('.alert-error');
+      expect(alert).toBeTruthy();
+      expect(alert.textContent).toContain(enExpected);
+      expect(authServiceSpy.login).toHaveBeenCalledTimes(1);
+
+      // Step B: while error remains visible, switch to ES without another login attempt
+      i18n.setLang('es');
+      fixture.detectChanges();
+
+      const esExpected = 'Correo o contraseña no válidos. Por favor verifica tus credenciales y vuelve a intentarlo.';
+      expect(component.errorMessage).toBe(esExpected);
+      expect(alert.textContent).toContain(esExpected);
+      // Verify no second login attempt was made
+      expect(authServiceSpy.login).toHaveBeenCalledTimes(1);
+
+      // Step C: switch back to EN -> error becomes English
+      i18n.setLang('en');
+      fixture.detectChanges();
+
+      expect(component.errorMessage).toBe(enExpected);
+      expect(alert.textContent).toContain(enExpected);
+      expect(authServiceSpy.login).toHaveBeenCalledTimes(1);
+    });
+
+    it('should dynamically switch login timeout error between EN and ES without retrying login', async () => {
+      i18n.setLang('en');
+      const timeoutErr = new Error('Timeout');
+      (timeoutErr as any).code = 'LOGIN_TIMEOUT';
+      authServiceSpy.login.mockRejectedValue(timeoutErr);
+
+      component.email = 'operator@business.com';
+      component.password = 'secret';
+      await component.onSubmit();
+      fixture.detectChanges();
+
+      const enExpected = 'The sign-in request timed out. Please check your connection and try again.';
+      const esExpected = 'La solicitud de inicio de sesión ha caducado. Por favor comprueba tu conexión e inténtalo de nuevo.';
+
+      expect(component.errorMessage).toBe(enExpected);
+      const alert = fixture.nativeElement.querySelector('.alert-error');
+      expect(alert).toBeTruthy();
+      expect(alert.textContent).toContain(enExpected);
+      expect(authServiceSpy.login).toHaveBeenCalledTimes(1);
+
+      // Switch to ES
+      i18n.setLang('es');
+      fixture.detectChanges();
+      expect(component.errorMessage).toBe(esExpected);
+      expect(alert.textContent).toContain(esExpected);
+      expect(authServiceSpy.login).toHaveBeenCalledTimes(1);
+
+      // Switch back to EN
+      i18n.setLang('en');
+      fixture.detectChanges();
+      expect(component.errorMessage).toBe(enExpected);
+      expect(alert.textContent).toContain(enExpected);
+      expect(authServiceSpy.login).toHaveBeenCalledTimes(1);
+    });
+
+    it('should dynamically switch Google error states between EN and ES', () => {
+      // 1. Google Cancelled
+      i18n.setLang('en');
+      (component as any).handleGoogleError(new Error('GOOGLE_CANCELLED'));
+      fixture.detectChanges();
+      expect(component.errorMessage).toBe('Google Sign-In was cancelled.');
+      i18n.setLang('es');
+      fixture.detectChanges();
+      expect(component.errorMessage).toBe('Se canceló el inicio de sesión con Google.');
+
+      // 2. Google Unavailable
+      i18n.setLang('en');
+      (component as any).handleGoogleError(new Error('GOOGLE_SDK_UNAVAILABLE'));
+      fixture.detectChanges();
+      expect(component.errorMessage).toBe('Google Sign-In is currently unavailable. Please try again or use email and password.');
+      i18n.setLang('es');
+      fixture.detectChanges();
+      expect(component.errorMessage).toBe('El inicio de sesión con Google no está disponible actualmente. Inténtalo de nuevo o usa correo y contraseña.');
+
+      // 3. Google Token Missing
+      i18n.setLang('en');
+      (component as any).handleGoogleError(new Error('GOOGLE_TOKEN_MISSING'));
+      fixture.detectChanges();
+      expect(component.errorMessage).toBe('Could not retrieve your Google credentials. Please try again.');
+      i18n.setLang('es');
+      fixture.detectChanges();
+      expect(component.errorMessage).toBe('No se pudieron obtener las credenciales de Google. Por favor, inténtalo de nuevo.');
+    });
+
+    it('should dynamically switch password reset success message between EN and ES', async () => {
+      i18n.setLang('en');
+      authServiceSpy.requestPasswordReset.mockResolvedValue({});
+
+      component.forgotEmail = 'operator@business.com';
+      await component.sendPasswordReset();
+      fixture.detectChanges();
+
+      const enExpected = 'A password reset link has been dispatched to operator@business.com. Please check your inbox.';
+      const esExpected = '¡Enlace enviado a operator@business.com! Revisa tu correo.';
+
+      expect(component.successMessage).toBe(enExpected);
+      const alert = fixture.nativeElement.querySelector('.alert-success');
+      expect(alert.textContent).toContain(enExpected);
+
+      // Switch to ES
+      i18n.setLang('es');
+      fixture.detectChanges();
+      expect(component.successMessage).toBe(esExpected);
+      expect(alert.textContent).toContain(esExpected);
+
+      // Switch back to EN
+      i18n.setLang('en');
+      fixture.detectChanges();
+      expect(component.successMessage).toBe(enExpected);
+      expect(alert.textContent).toContain(enExpected);
+    });
+  });
 });

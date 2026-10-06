@@ -205,7 +205,7 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
                   type="button"
                   class="password-toggle-btn"
                   (click)="togglePasswordVisibility()"
-                  [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'"
+                  [attr.aria-label]="(showPassword ? 'PORTAL.LOGIN.HIDE_PASSWORD' : 'PORTAL.LOGIN.SHOW_PASSWORD') | translate"
                   tabindex="0"
                 >
                   <svg *ngIf="showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -243,7 +243,7 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
                   type="button"
                   class="password-toggle-btn"
                   (click)="toggleConfirmPasswordVisibility()"
-                  [attr.aria-label]="showConfirmPassword ? 'Hide password' : 'Show password'"
+                  [attr.aria-label]="(showConfirmPassword ? 'PORTAL.LOGIN.HIDE_PASSWORD' : 'PORTAL.LOGIN.SHOW_PASSWORD') | translate"
                   tabindex="0"
                 >
                   <svg *ngIf="showConfirmPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
