@@ -305,6 +305,62 @@ describe('StripeService', () => {
       );
     });
 
+    it('getBoostAvailability should throw if flowId is missing', async () => {
+      runtimeConfig.updateConfig({ getBoostAvailabilityFlow: '' });
+      await expect(service.getBoostAvailability('area-123')).rejects.toThrow(
+        'Boost availability flow is not configured.'
+      );
+    });
+
+    it('getBoostAvailability should throw if areaId is missing or empty without calling flowPost', async () => {
+      runtimeConfig.updateConfig({ getBoostAvailabilityFlow: 'flow-boost-avail' });
+      const postSpy = vi.spyOn(service, 'flowPost');
+
+      await expect(service.getBoostAvailability('')).rejects.toThrow(
+        'A valid area identifier is required to check boost availability.'
+      );
+      await expect(service.getBoostAvailability('   ')).rejects.toThrow(
+        'A valid area identifier is required to check boost availability.'
+      );
+      await expect(service.getBoostAvailability(null)).rejects.toThrow(
+        'A valid area identifier is required to check boost availability.'
+      );
+      await expect(service.getBoostAvailability(undefined)).rejects.toThrow(
+        'A valid area identifier is required to check boost availability.'
+      );
+      expect(postSpy).not.toHaveBeenCalled();
+    });
+
+    it('getBoostAvailability should throw if response format is invalid', async () => {
+      runtimeConfig.updateConfig({ getBoostAvailabilityFlow: 'flow-boost-avail' });
+
+      // Missing whatsHot
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        mainBanner: { count: 1, limit: 5 },
+      });
+      await expect(service.getBoostAvailability('area-123')).rejects.toThrow(
+        'Boost availability response format is invalid.'
+      );
+
+      // Negative count
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        mainBanner: { count: -1, limit: 5 },
+        whatsHot: { count: 0, limit: 10 },
+      });
+      await expect(service.getBoostAvailability('area-123')).rejects.toThrow(
+        'Boost availability response format is invalid.'
+      );
+
+      // Zero or negative limit
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        mainBanner: { count: 0, limit: 0 },
+        whatsHot: { count: 0, limit: 10 },
+      });
+      await expect(service.getBoostAvailability('area-123')).rejects.toThrow(
+        'Boost availability response format is invalid.'
+      );
+    });
+
     it('getBoostAvailability should return counts, limits, and nextAvailableDate', async () => {
       runtimeConfig.updateConfig({ getBoostAvailabilityFlow: 'flow-boost-avail' });
 

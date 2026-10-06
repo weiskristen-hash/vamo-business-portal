@@ -1393,7 +1393,9 @@ export const esTranslations: Record<string, any> = {
       "ERROR_AVAILABILITY": "No pudimos confirmar la disponibilidad de la promoción. Inténtalo de nuevo.",
       "ACTIVATION_PENDING_TITLE": "Pago recibido — Activación pendiente",
       "ACTIVATION_PENDING_DESC": "Tu pago se completó, pero no pudimos confirmar la activación de este posicionamiento. No vuelvas a realizar el pago. Contacta al soporte de VAMO para recibir ayuda.",
-      "STATUS_ACTIVATION_PENDING": "Pago recibido — activación pendiente"
+      "STATUS_ACTIVATION_PENDING": "Pago recibido — activación pendiente",
+      "ERROR_AVAILABILITY_CHANGED": "La disponibilidad cambió antes del pago. Revisa los posicionamientos disponibles e inténtalo de nuevo.",
+      "IMAGE_ALT": "Imagen para {{name}}"
     },
     "PLACEHOLDER": {
       "BADGE_DEVELOPMENT": "En desarrollo activo",

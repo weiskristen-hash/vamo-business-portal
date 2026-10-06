@@ -264,22 +264,38 @@ export class StripeService {
   async getBoostAvailability(areaId?: string | null): Promise<BoostAvailability> {
     const flowId = runtimeConfig.getBoostAvailabilityFlow;
     if (!flowId) {
-      return {
-        mainBanner: { count: 0, limit: 5, nextAvailableDate: null },
-        whatsHot: { count: 0, limit: 10, nextAvailableDate: null },
-      };
+      throw new Error('Boost availability flow is not configured.');
     }
-    const res = await this.flowPost(flowId, { areaId: areaId ?? null });
+    const cleanAreaId = typeof areaId === 'string' ? areaId.trim() : '';
+    if (!cleanAreaId) {
+      throw new Error('A valid area identifier is required to check boost availability.');
+    }
+
+    const res = await this.flowPost(flowId, { areaId: cleanAreaId });
+
+    const isValidSlot = (slot: any) =>
+      slot &&
+      typeof slot.count === 'number' &&
+      Number.isFinite(slot.count) &&
+      slot.count >= 0 &&
+      typeof slot.limit === 'number' &&
+      Number.isFinite(slot.limit) &&
+      slot.limit > 0;
+
+    if (!isValidSlot(res?.mainBanner) || !isValidSlot(res?.whatsHot)) {
+      throw new Error('Boost availability response format is invalid.');
+    }
+
     return {
       mainBanner: {
-        count: res?.mainBanner?.count ?? 0,
-        limit: res?.mainBanner?.limit ?? 5,
-        nextAvailableDate: res?.mainBanner?.nextAvailableDate ?? null,
+        count: res.mainBanner.count,
+        limit: res.mainBanner.limit,
+        nextAvailableDate: res.mainBanner.nextAvailableDate ?? null,
       },
       whatsHot: {
-        count: res?.whatsHot?.count ?? 0,
-        limit: res?.whatsHot?.limit ?? 10,
-        nextAvailableDate: res?.whatsHot?.nextAvailableDate ?? null,
+        count: res.whatsHot.count,
+        limit: res.whatsHot.limit,
+        nextAvailableDate: res.whatsHot.nextAvailableDate ?? null,
       },
     };
   }
