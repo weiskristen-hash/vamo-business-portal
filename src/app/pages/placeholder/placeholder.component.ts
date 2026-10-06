@@ -173,17 +173,6 @@ export class PlaceholderComponent implements OnInit {
         'PORTAL.PLACEHOLDER.PROMOTIONS.FEAT_BILLING',
       ],
     },
-    insights: {
-      titleKey: 'PORTAL.PLACEHOLDER.INSIGHTS.TITLE',
-      phaseKey: 'PORTAL.PLACEHOLDER.INSIGHTS.PHASE',
-      descriptionKey: 'PORTAL.PLACEHOLDER.INSIGHTS.DESC',
-      featureKeys: [
-        'PORTAL.PLACEHOLDER.INSIGHTS.FEAT_TIMELINE',
-        'PORTAL.PLACEHOLDER.INSIGHTS.FEAT_GROWTH',
-        'PORTAL.PLACEHOLDER.INSIGHTS.FEAT_GEOGRAPHIC',
-        'PORTAL.PLACEHOLDER.INSIGHTS.FEAT_EXPORTS',
-      ],
-    },
   };
 
   currentConfig = signal<ModuleConfig>({
