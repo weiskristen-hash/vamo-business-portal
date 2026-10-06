@@ -1,7 +1,8 @@
 import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
 import { CustomerErrorService } from '../../core/services/customer-error.service';
@@ -14,8 +15,14 @@ import {
   BoostAvailability,
   SavedPaymentMethod,
 } from '../../core/services/stripe.service';
-import { VamoEvent } from '../../core/models/event.model';
+import { VamoEvent, Area } from '../../core/models/event.model';
 import type { Stripe, StripeElements } from '@stripe/stripe-js';
+
+interface MessageDescriptor {
+  key?: string;
+  params?: Record<string, any>;
+  raw?: string;
+}
 
 @Component({
   selector: 'app-promotions',
@@ -35,16 +42,25 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   <div *ngIf="errorMessage()" class="alert alert-danger" role="alert">
     <span class="alert-icon">⚠️</span>
     <span class="alert-text">{{ errorMessage() }}</span>
-    <button type="button" class="alert-close" (click)="errorMessage.set(null)" [attr.aria-label]="'PORTAL.PROMOTIONS.DISMISS' | translate">✕</button>
+    <button type="button" class="alert-close" (click)="errorDescriptor.set(null)" [attr.aria-label]="'PORTAL.PROMOTIONS.DISMISS' | translate">✕</button>
+  </div>
+
+  <div *ngIf="partialSuccessMessage()" class="alert alert-warning" role="alert">
+    <span class="alert-icon">⚠️</span>
+    <div class="alert-content">
+      <strong>{{ 'PORTAL.PROMOTIONS.PARTIAL_SUCCESS_TITLE' | translate }}</strong>
+      <p>{{ partialSuccessMessage() }}</p>
+    </div>
+    <button type="button" class="alert-close" (click)="partialSuccessDescriptor.set(null)" [attr.aria-label]="'PORTAL.PROMOTIONS.DISMISS' | translate">✕</button>
   </div>
 
   <div *ngIf="successMessage()" class="alert alert-success" role="alert">
     <span class="alert-icon">✓</span>
     <div class="alert-content">
-      <strong>{{ isLastScheduled() ? ('PORTAL.PROMOTIONS.SUCCESS_SCHEDULED_TITLE' | translate) : ('PORTAL.PROMOTIONS.SUCCESS_TITLE' | translate) }}</strong>
+      <strong>{{ 'PORTAL.PROMOTIONS.SUCCESS_TITLE' | translate }}</strong>
       <p>{{ successMessage() }}</p>
     </div>
-    <button type="button" class="alert-close" (click)="successMessage.set(null)" [attr.aria-label]="'PORTAL.PROMOTIONS.DISMISS' | translate">✕</button>
+    <button type="button" class="alert-close" (click)="successDescriptor.set(null)" [attr.aria-label]="'PORTAL.PROMOTIONS.DISMISS' | translate">✕</button>
   </div>
 
   <!-- Loading State -->
@@ -137,6 +153,17 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             </select>
           </div>
 
+          <!-- Area Missing Warning -->
+          <div *ngIf="selectedEventId() && hasNoAreaError()" class="alert alert-warning" role="alert">
+            <span class="alert-icon">⚠️</span>
+            <div class="alert-content">
+              <p>{{ 'PORTAL.PROMOTIONS.ERROR_NO_AREA' | translate }}</p>
+              <a [routerLink]="['/app/listings', selectedEventId()]" class="btn btn-secondary btn-sm edit-listing-btn">
+                {{ 'PORTAL.PROMOTIONS.EDIT_LISTING_BTN' | translate }}
+              </a>
+            </div>
+          </div>
+
           <!-- STEP 2: Choose Placements -->
           <div class="form-step" *ngIf="selectedEventId()">
             <div class="step-label">
@@ -145,6 +172,12 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
                 <strong>{{ 'PORTAL.PROMOTIONS.STEP_PLACEMENT_TITLE' | translate }}</strong>
                 <p class="step-desc">{{ 'PORTAL.PROMOTIONS.STEP_PLACEMENT_SUBTITLE' | translate }}</p>
               </div>
+            </div>
+
+            <!-- Availability Loading Indicator -->
+            <div *ngIf="availabilityLoading()" class="availability-loading">
+              <span class="spinner-sm"></span>
+              <span>{{ 'PORTAL.PROMOTIONS.LOADING_AVAILABILITY' | translate }}</span>
             </div>
 
             <div class="placements-grid">
@@ -192,7 +225,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
                     [checked]="selectedPlacements().has('main_banner')"
                     [disabled]="isMainBannerDisabled()"
                     tabindex="-1"
-                    aria-label="Main Banner"
+                    [attr.aria-label]="'PORTAL.PROMOTIONS.MAIN_BANNER_TITLE' | translate"
                   />
                 </div>
               </div>
@@ -240,7 +273,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
                     [checked]="selectedPlacements().has('whats_hot')"
                     [disabled]="isWhatsHotDisabled()"
                     tabindex="-1"
-                    aria-label="What's Hot"
+                    [attr.aria-label]="'PORTAL.PROMOTIONS.WHATS_HOT_TITLE' | translate"
                   />
                 </div>
               </div>
@@ -248,60 +281,10 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             </div>
           </div>
 
-          <!-- STEP 3: Scheduling (Optional) -->
+          <!-- STEP 3: Summary & Payment -->
           <div class="form-step" *ngIf="selectedEventId() && hasSelection()">
             <div class="step-label">
               <span class="step-number">3</span>
-              <div>
-                <strong>{{ 'PORTAL.PROMOTIONS.STEP_SCHEDULE_TITLE' | translate }}</strong>
-                <p class="step-desc">{{ 'PORTAL.PROMOTIONS.STEP_SCHEDULE_SUBTITLE' | translate }}</p>
-              </div>
-            </div>
-
-            <div class="schedule-options">
-              <label class="radio-option">
-                <input
-                  type="radio"
-                  name="scheduleMode"
-                  value="immediate"
-                  [checked]="scheduleMode() === 'immediate'"
-                  (change)="scheduleMode.set('immediate')"
-                />
-                <span class="radio-label">{{ 'PORTAL.PROMOTIONS.SCHEDULE_IMMEDIATE' | translate }}</span>
-              </label>
-
-              <label class="radio-option">
-                <input
-                  type="radio"
-                  name="scheduleMode"
-                  value="future"
-                  [checked]="scheduleMode() === 'future'"
-                  (change)="scheduleMode.set('future')"
-                />
-                <span class="radio-label">{{ 'PORTAL.PROMOTIONS.SCHEDULE_FUTURE' | translate }}</span>
-              </label>
-
-              <div *ngIf="scheduleMode() === 'future'" class="schedule-input-container">
-                <label for="schedule-date" class="input-sublabel">{{ 'PORTAL.PROMOTIONS.SCHEDULE_LABEL' | translate }}</label>
-                <input
-                  id="schedule-date"
-                  type="date"
-                  class="form-control schedule-date-input"
-                  [min]="minStartDate"
-                  [ngModel]="scheduledDate()"
-                  (ngModelChange)="scheduledDate.set($event)"
-                />
-                <p class="schedule-help-text" *ngIf="scheduledDate()">
-                  {{ 'PORTAL.PROMOTIONS.SCHEDULE_NOTICE' | translate: { date: (scheduledDate() | date:'mediumDate') } }}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- STEP 4 & 5: Summary & Payment -->
-          <div class="form-step" *ngIf="selectedEventId() && hasSelection()">
-            <div class="step-label">
-              <span class="step-number">4</span>
               <div>
                 <strong>{{ 'PORTAL.PROMOTIONS.STEP_SUMMARY_TITLE' | translate }}</strong>
               </div>
@@ -316,27 +299,24 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
                 <span class="summary-key">{{ 'PORTAL.PROMOTIONS.SUMMARY_PLACEMENTS' | translate }}</span>
                 <div class="summary-val">
                   <span *ngIf="selectedPlacements().has('main_banner')" class="summary-pill">
-                    {{ 'PORTAL.PROMOTIONS.MAIN_BANNER_TITLE' | translate }} ({{ formatPrice(mainBannerPrice()?.amount ?? 0, 'usd') }})
+                    {{ 'PORTAL.PROMOTIONS.MAIN_BANNER_TITLE' | translate }} ({{ formatPrice(mainBannerPrice()?.amount ?? 0, mainBannerPrice()?.currency ?? 'usd') }})
                   </span>
                   <span *ngIf="selectedPlacements().has('whats_hot')" class="summary-pill">
-                    {{ 'PORTAL.PROMOTIONS.WHATS_HOT_TITLE' | translate }} ({{ formatPrice(whatsHotPrice()?.amount ?? 0, 'usd') }})
+                    {{ 'PORTAL.PROMOTIONS.WHATS_HOT_TITLE' | translate }} ({{ formatPrice(whatsHotPrice()?.amount ?? 0, whatsHotPrice()?.currency ?? 'usd') }})
                   </span>
                 </div>
-              </div>
-              <div class="summary-line">
-                <span class="summary-key">{{ 'PORTAL.PROMOTIONS.SUMMARY_START' | translate }}</span>
-                <span class="summary-val">
-                  {{ scheduleMode() === 'future' && scheduledDate() ? (scheduledDate() | date:'mediumDate') : ('PORTAL.PROMOTIONS.SUMMARY_START_NOW' | translate) }}
-                </span>
               </div>
               <div class="summary-line">
                 <span class="summary-key">{{ 'PORTAL.PROMOTIONS.SUMMARY_DURATION' | translate }}</span>
                 <span class="summary-val">{{ 'PORTAL.PROMOTIONS.SUMMARY_DURATION_VAL' | translate }}</span>
               </div>
-              <div class="summary-total-line">
+              <div class="summary-total-line" *ngIf="hasSameCurrency()">
                 <span class="total-key">{{ 'PORTAL.PROMOTIONS.SUMMARY_TOTAL' | translate }}</span>
                 <span class="total-val">{{ formattedTotal() }}</span>
               </div>
+              <p class="separate-charges-note" *ngIf="selectedPlacements().size > 1">
+                {{ 'PORTAL.PROMOTIONS.SEPARATE_CHARGES_NOTE' | translate }}
+              </p>
             </div>
 
             <!-- Payment Options -->
@@ -388,12 +368,12 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
                   type="button"
                   class="btn btn-primary"
                   *ngIf="!paymentActive()"
-                  [disabled]="isProcessingPayment() || !hasSelection()"
+                  [disabled]="isProcessingPayment() || !hasSelection() || hasNoAreaError()"
                   (click)="proceedToPayment()"
                 >
                   <span *ngIf="isProcessingPayment()">{{ 'PORTAL.PROMOTIONS.PROCESSING' | translate }}</span>
                   <span *ngIf="!isProcessingPayment()">
-                    {{ (scheduleMode() === 'future' ? ('PORTAL.PROMOTIONS.SCHEDULE_BTN' | translate) : ('PORTAL.PROMOTIONS.PAY_BTN' | translate)) }} ({{ formattedTotal() }})
+                    {{ getPayButtonLabel() }} <span *ngIf="hasSameCurrency()">({{ formattedTotal() }})</span>
                   </span>
                 </button>
 
@@ -406,7 +386,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
                 >
                   <span *ngIf="isProcessingPayment()">{{ 'PORTAL.PROMOTIONS.PROCESSING' | translate }}</span>
                   <span *ngIf="!isProcessingPayment()">
-                    {{ (scheduleMode() === 'future' ? ('PORTAL.PROMOTIONS.SCHEDULE_BTN' | translate) : ('PORTAL.PROMOTIONS.PAY_BTN' | translate)) }} ({{ formattedTotal() }})
+                    {{ getPayButtonLabel() }} <span *ngIf="hasSameCurrency()">({{ formattedTotal() }})</span>
                   </span>
                 </button>
 
@@ -417,7 +397,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
                   [disabled]="isProcessingPayment()"
                   (click)="cancelPayment()"
                 >
-                  {{ 'PORTAL.BILLING.CANCEL_DOWNGRADE_BTN' | translate }}
+                  {{ 'PORTAL.PROMOTIONS.CANCEL_PAYMENT' | translate }}
                 </button>
               </div>
 
@@ -476,6 +456,12 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   color: #fca5a5;
 }
 
+.alert-warning {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fcd34d;
+}
+
 .alert-success {
   background: rgba(16, 185, 129, 0.12);
   border: 1px solid rgba(16, 185, 129, 0.3);
@@ -512,46 +498,74 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   opacity: 1;
 }
 
+.edit-listing-btn {
+  margin-top: 0.5rem;
+  display: inline-block;
+}
+
 /* Loading */
 .loading-container {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 320px;
+  padding: 4rem 1rem;
   gap: 1rem;
   color: #a0a0b8;
 }
 
 .spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid rgba(254, 57, 127, 0.2);
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 3px solid rgba(255, 255, 255, 0.1);
   border-top-color: #FE397F;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+.spinner-sm {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #FE397F;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+.availability-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #a0a0b8;
+  margin-bottom: 0.75rem;
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
-/* Cards System */
+.promotions-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* Cards */
 .card {
-  background: #1c1c2e;
+  background: #181826;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
-  padding: 1.75rem;
-  margin-bottom: 2rem;
+  overflow: hidden;
 }
 
 .card-header {
+  padding: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  padding-bottom: 1rem;
+  align-items: center;
 }
 
 .card-title {
@@ -567,26 +581,29 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   margin: 0;
 }
 
-/* Active Placements Grid */
+.card-body {
+  padding: 1.5rem;
+}
+
+/* Active Events Grid */
 .active-events-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 1rem;
 }
 
 .active-event-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
-  padding: 1.25rem;
+  padding: 1rem 1.25rem;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   gap: 0.75rem;
 }
 
 .active-event-title {
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 600;
   color: #ffffff;
   margin: 0 0 0.25rem 0;
@@ -607,25 +624,25 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.35rem 0.65rem;
-  border-radius: 8px;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
 }
 
 .badge-banner {
   background: rgba(254, 57, 127, 0.15);
-  border: 1px solid rgba(254, 57, 127, 0.4);
   color: #FE397F;
+  border: 1px solid rgba(254, 57, 127, 0.3);
 }
 
 .badge-hot {
   background: rgba(245, 158, 11, 0.15);
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  color: #fbbf24;
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
 .empty-state {
@@ -637,16 +654,15 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 .empty-icon {
   font-size: 2.5rem;
   display: block;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .empty-text {
+  margin: 0;
   font-size: 0.9375rem;
-  max-width: 440px;
-  margin: 0 auto;
 }
 
-/* Workflow Steps */
+/* Purchase Workflow */
 .purchase-workflow {
   display: flex;
   flex-direction: column;
@@ -654,102 +670,110 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 }
 
 .form-step {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  padding-bottom: 2rem;
-}
-
-.form-step:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .step-label {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
-  margin-bottom: 1rem;
   cursor: pointer;
 }
 
 .step-number {
+  background: #FE397F;
+  color: #ffffff;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: #FE397F;
-  color: #ffffff;
+  font-size: 0.8125rem;
   font-weight: 700;
-  font-size: 0.875rem;
-  border-radius: 50%;
   flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.step-label strong {
+  font-size: 1rem;
+  color: #ffffff;
+  display: block;
 }
 
 .step-desc {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: #a0a0b8;
-  margin: 0.2rem 0 0 0;
+  margin: 0.15rem 0 0 0;
 }
 
 .select-event-input {
-  width: 100%;
-  max-width: 520px;
+  max-width: 480px;
 }
 
+/* Form Controls */
 .form-control {
-  background: #121220;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #ffffff;
-  padding: 0.75rem 1rem;
+  background: #12121c;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
+  color: #ffffff;
+  padding: 0.65rem 0.85rem;
   font-size: 0.9375rem;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.15s;
 }
 
 .form-control:focus {
   border-color: #FE397F;
 }
 
+.form-control:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Placements Grid */
 .placements-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 1.25rem;
-  margin-top: 1rem;
+  gap: 1rem;
+  margin-top: 0.5rem;
 }
 
 .placement-option {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  border: 2px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
-  padding: 1.5rem;
+  padding: 1.25rem;
   display: flex;
+  align-items: flex-start;
   gap: 1rem;
   cursor: pointer;
   transition: all 0.2s ease;
-  user-select: none;
+  position: relative;
 }
 
 .placement-option:hover:not(.placement-option--disabled) {
   border-color: rgba(254, 57, 127, 0.4);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .placement-option--selected {
   border-color: #FE397F !important;
-  background: rgba(254, 57, 127, 0.08) !important;
+  background: rgba(254, 57, 127, 0.06) !important;
 }
 
 .placement-option--disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
 .placement-icon {
   width: 44px;
   height: 44px;
-  border-radius: 12px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -763,7 +787,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
 .placement-icon--hot {
   background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
+  color: #f59e0b;
 }
 
 .placement-details {
@@ -779,10 +803,10 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 }
 
 .placement-title {
-  font-size: 1.125rem;
+  font-size: 1.05rem;
   font-weight: 600;
-  margin: 0;
   color: #ffffff;
+  margin: 0;
 }
 
 .placement-price {
@@ -792,94 +816,49 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 }
 
 .placement-desc {
-  font-size: 0.84375rem;
+  font-size: 0.8125rem;
   color: #a0a0b8;
-  line-height: 1.4;
   margin: 0 0 0.75rem 0;
+  line-height: 1.4;
 }
 
 .placement-footer-row {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
 }
 
 .status-chip {
   font-size: 0.75rem;
   padding: 0.2rem 0.5rem;
-  border-radius: 6px;
-  font-weight: 600;
+  border-radius: 4px;
+  font-weight: 500;
 }
 
 .chip-active {
   background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
+  color: #6ee7b7;
 }
 
 .chip-sold-out {
   background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+  color: #fca5a5;
 }
 
 .sold-out-date {
-  font-size: 0.7rem;
   opacity: 0.85;
 }
 
 .chip-slots {
   background: rgba(255, 255, 255, 0.08);
-  color: #d1d5db;
+  color: #cbd5e1;
 }
 
 .placement-checkbox input[type="checkbox"] {
   accent-color: #FE397F;
   width: 18px;
   height: 18px;
-  margin-top: 0.25rem;
-}
-
-/* Scheduling Options */
-.schedule-options {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  max-width: 440px;
-}
-
-.radio-option {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
   cursor: pointer;
-  font-size: 0.9375rem;
-}
-
-.radio-option input[type="radio"] {
-  accent-color: #FE397F;
-  width: 16px;
-  height: 16px;
-}
-
-.schedule-input-container {
-  margin-top: 0.5rem;
-  padding-left: 1.5rem;
-}
-
-.input-sublabel {
-  display: block;
-  font-size: 0.8125rem;
-  color: #a0a0b8;
-  margin-bottom: 0.25rem;
-}
-
-.schedule-date-input {
-  max-width: 240px;
-}
-
-.schedule-help-text {
-  font-size: 0.8125rem;
-  color: #a0a0b8;
-  margin-top: 0.35rem;
 }
 
 /* Order Summary */
@@ -936,6 +915,13 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   color: #FE397F;
 }
 
+.separate-charges-note {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.8125rem;
+  color: #a0a0b8;
+  font-style: italic;
+}
+
 /* Payment Step */
 .payment-step-container {
   margin-top: 1.75rem;
@@ -952,59 +938,66 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 .saved-methods-block {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.65rem;
   margin-bottom: 1.25rem;
 }
 
 .saved-card-choice {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.875rem 1rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.15s;
 }
 
 .saved-card-choice:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .saved-card-choice--selected {
   border-color: #FE397F;
-  background: rgba(254, 57, 127, 0.08);
+  background: rgba(254, 57, 127, 0.05);
+}
+
+.saved-card-choice input[type="radio"] {
+  accent-color: #FE397F;
 }
 
 .card-brand-badge {
-  font-size: 0.75rem;
-  font-weight: 700;
   background: rgba(255, 255, 255, 0.1);
   padding: 0.2rem 0.4rem;
   border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
 }
 
 .card-digits {
   font-size: 0.9375rem;
-  color: #ffffff;
+  letter-spacing: 0.05em;
 }
 
 .card-exp {
-  margin-left: auto;
   font-size: 0.8125rem;
   color: #a0a0b8;
+  margin-left: auto;
+}
+
+.new-card-label {
+  font-size: 0.9375rem;
+  color: #ffffff;
 }
 
 .stripe-mount-wrapper {
   margin: 1.25rem 0;
-}
-
-.stripe-mount-box {
   background: #1c1c2e;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
   padding: 1.25rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .checkout-actions {
@@ -1018,13 +1011,19 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.75rem 1.5rem;
-  border-radius: 10px;
-  font-size: 0.9375rem;
   font-weight: 600;
+  border-radius: 10px;
+  padding: 0.7rem 1.25rem;
+  font-size: 0.9375rem;
   cursor: pointer;
   border: none;
-  transition: background 0.15s ease, opacity 0.15s ease;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-primary {
@@ -1034,11 +1033,6 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
 .btn-primary:hover:not(:disabled) {
   background: #e0286e;
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .btn-secondary {
@@ -1073,6 +1067,8 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   private stripeService = inject(StripeService);
   private errorService = inject(CustomerErrorService);
   private i18n = inject(I18nService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
 
   // State Signals
   events = signal<VamoEvent[]>([]);
@@ -1082,17 +1078,19 @@ export class PromotionsComponent implements OnInit, OnDestroy {
 
   selectedEventId = signal<string | null>(null);
   selectedPlacements = signal<Set<AddonType>>(new Set());
-  scheduleMode = signal<'immediate' | 'future'>('immediate');
-  scheduledDate = signal<string>('');
 
   selectedSavedMethod = signal<SavedPaymentMethod | null>(null);
   useNewCard = signal<boolean>(false);
 
   isLoading = signal<boolean>(true);
+  availabilityLoading = signal<boolean>(false);
+  hasNoAreaError = signal<boolean>(false);
   isProcessingPayment = signal<boolean>(false);
-  errorMessage = signal<string | null>(null);
-  successMessage = signal<string | null>(null);
-  isLastScheduled = signal<boolean>(false);
+
+  // Reactive message descriptors
+  errorDescriptor = signal<MessageDescriptor | null>(null);
+  successDescriptor = signal<MessageDescriptor | null>(null);
+  partialSuccessDescriptor = signal<MessageDescriptor | null>(null);
 
   paymentActive = signal<boolean>(false);
   stripeReady = signal<boolean>(false);
@@ -1100,9 +1098,8 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   private stripeInstance: Stripe | null = null;
   private stripeElements: StripeElements | null = null;
   private pendingQueue: AddonType[] = [];
-  private completedAddons: AddonType[] = [];
-
-  readonly minStartDate = new Date().toISOString().split('T')[0];
+  completedAddons = signal<AddonType[]>([]);
+  private routeSub: Subscription | null = null;
 
   // Computed Values
   publishedEvents = computed(() =>
@@ -1163,6 +1160,14 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     !!this.selectedEvent()?.is_whats_hot
   );
 
+  isMainBannerDisabled = computed(() =>
+    this.selectedEventHasMainBanner() || this.mainBannerFull() || this.hasNoAreaError()
+  );
+
+  isWhatsHotDisabled = computed(() =>
+    this.selectedEventHasWhatsHot() || this.whatsHotFull() || this.hasNoAreaError()
+  );
+
   totalAmount = computed(() => {
     let total = 0;
     if (this.selectedPlacements().has('main_banner') && this.mainBannerPrice()) {
@@ -1174,36 +1179,100 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     return total;
   });
 
-  formattedTotal = computed(() =>
-    this.formatPrice(this.totalAmount(), 'usd')
-  );
+  hasSameCurrency = computed(() => {
+    const currencies = new Set<string>();
+    if (this.selectedPlacements().has('main_banner') && this.mainBannerPrice()) {
+      currencies.add(this.mainBannerPrice()!.currency.toLowerCase());
+    }
+    if (this.selectedPlacements().has('whats_hot') && this.whatsHotPrice()) {
+      currencies.add(this.whatsHotPrice()!.currency.toLowerCase());
+    }
+    return currencies.size <= 1;
+  });
+
+  primaryCurrency = computed(() => {
+    if (this.selectedPlacements().has('main_banner') && this.mainBannerPrice()) {
+      return this.mainBannerPrice()!.currency;
+    }
+    if (this.selectedPlacements().has('whats_hot') && this.whatsHotPrice()) {
+      return this.whatsHotPrice()!.currency;
+    }
+    return 'usd';
+  });
+
+  formattedTotal = computed(() => {
+    this.i18n.lang();
+    if (!this.hasSameCurrency()) return '';
+    return this.formatPrice(this.totalAmount(), this.primaryCurrency());
+  });
+
+  // Reactive message strings
+  errorMessage = computed(() => {
+    const d = this.errorDescriptor();
+    if (!d) return null;
+    this.i18n.lang();
+    if (d.key) {
+      return this.i18n.t(d.key, d.params);
+    }
+    return d.raw ?? null;
+  });
+
+  successMessage = computed(() => {
+    const d = this.successDescriptor();
+    if (!d) return null;
+    this.i18n.lang();
+    if (d.key) {
+      return this.i18n.t(d.key, d.params);
+    }
+    return d.raw ?? null;
+  });
+
+  partialSuccessMessage = computed(() => {
+    const d = this.partialSuccessDescriptor();
+    if (!d) return null;
+    this.i18n.lang();
+    if (d.key) {
+      return this.i18n.t(d.key, d.params);
+    }
+    return d.raw ?? null;
+  });
 
   ngOnInit(): void {
     void this.loadData();
+    this.routeSub = this.route.queryParamMap.subscribe((params) => {
+      const qEventId = params.get('eventId');
+      if (qEventId && !this.isLoading()) {
+        const found = this.publishedEvents().find((e) => e.id === qEventId);
+        if (found) {
+          void this.onEventSelected(found.id);
+        } else {
+          this.errorDescriptor.set({ key: 'PORTAL.PROMOTIONS.ERROR_INVALID_EVENT' });
+        }
+      }
+    });
   }
 
   ngOnDestroy(): void {
+    this.routeSub?.unsubscribe();
     this.cleanupStripe();
   }
 
   async loadData(): Promise<void> {
     this.isLoading.set(true);
-    this.errorMessage.set(null);
+    this.errorDescriptor.set(null);
 
     const user = this.authService.currentUser;
     const providerId = user?.provider_link?.id;
 
     try {
-      const [events, prices, availability, methods] = await Promise.all([
+      const [events, prices, methods] = await Promise.all([
         providerId ? this.businessService.getEventsForProvider(providerId) : Promise.resolve([]),
         this.stripeService.getAddonPrices().catch(() => []),
-        this.stripeService.getBoostAvailability().catch(() => null),
         this.stripeService.getSavedPaymentMethods().catch(() => []),
       ]);
 
       this.events.set(events);
       this.addonPrices.set(prices);
-      this.boostAvailability.set(availability);
       this.savedMethods.set(methods);
 
       if (methods.length > 0) {
@@ -1212,22 +1281,80 @@ export class PromotionsComponent implements OnInit, OnDestroy {
       } else {
         this.useNewCard.set(true);
       }
+
+      // Check query params for event preselection
+      const queryEventId = this.route.snapshot.queryParamMap.get('eventId');
+      if (queryEventId) {
+        const found = this.publishedEvents().find((e) => e.id === queryEventId);
+        if (found) {
+          await this.onEventSelected(found.id);
+        } else {
+          this.errorDescriptor.set({ key: 'PORTAL.PROMOTIONS.ERROR_INVALID_EVENT' });
+        }
+      }
     } catch (err) {
-      this.errorMessage.set(this.errorService.toCustomerMessage(err, 'load'));
+      this.errorDescriptor.set(this.errorService.toCustomerErrorKey(err, 'load'));
     } finally {
       this.isLoading.set(false);
     }
   }
 
-  onEventSelected(eventId: string): void {
+  getEventAreaId(event: VamoEvent | null | undefined): string | null {
+    if (!event || !event.areas || event.areas.length === 0) return null;
+    const first = event.areas[0];
+    if (!first) return null;
+    if (typeof first.areas_id === 'string' && first.areas_id.trim()) {
+      return first.areas_id.trim();
+    }
+    if (first.areas_id && typeof first.areas_id === 'object' && 'id' in first.areas_id) {
+      const id = (first.areas_id as Area).id;
+      return typeof id === 'string' && id.trim() ? id.trim() : null;
+    }
+    return null;
+  }
+
+  async onEventSelected(eventId: string | null): Promise<void> {
     this.selectedEventId.set(eventId);
-    // If the event already has an active placement, remove it from selection
-    const next = new Set(this.selectedPlacements());
-    const ev = this.events().find(e => e.id === eventId);
-    if (ev?.is_main_banner) next.delete('main_banner');
-    if (ev?.is_whats_hot) next.delete('whats_hot');
-    this.selectedPlacements.set(next);
+    this.errorDescriptor.set(null);
     this.cancelPayment();
+
+    if (!eventId) {
+      this.hasNoAreaError.set(false);
+      this.boostAvailability.set(null);
+      return;
+    }
+
+    const ev = this.events().find((e) => e.id === eventId);
+    if (!ev) {
+      this.hasNoAreaError.set(false);
+      this.boostAvailability.set(null);
+      return;
+    }
+
+    // Prune active placements already on event
+    const next = new Set(this.selectedPlacements());
+    if (ev.is_main_banner) next.delete('main_banner');
+    if (ev.is_whats_hot) next.delete('whats_hot');
+    this.selectedPlacements.set(next);
+
+    // Validate area
+    const areaId = this.getEventAreaId(ev);
+    if (!areaId) {
+      this.hasNoAreaError.set(true);
+      this.boostAvailability.set(null);
+      return;
+    }
+
+    this.hasNoAreaError.set(false);
+    this.availabilityLoading.set(true);
+    try {
+      const avail = await this.stripeService.getBoostAvailability(areaId);
+      this.boostAvailability.set(avail);
+    } catch {
+      this.boostAvailability.set(null);
+    } finally {
+      this.availabilityLoading.set(false);
+    }
   }
 
   togglePlacement(type: AddonType): void {
@@ -1248,14 +1375,6 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     return this.selectedPlacements().size > 0;
   }
 
-  isMainBannerDisabled(): boolean {
-    return this.selectedEventHasMainBanner() || this.mainBannerFull();
-  }
-
-  isWhatsHotDisabled(): boolean {
-    return this.selectedEventHasWhatsHot() || this.whatsHotFull();
-  }
-
   selectSavedCard(card: SavedPaymentMethod): void {
     this.selectedSavedMethod.set(card);
     this.useNewCard.set(false);
@@ -1267,49 +1386,57 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     this.useNewCard.set(true);
   }
 
+  getPayButtonLabel(): string {
+    if (this.completedAddons().length > 0 && this.selectedPlacements().size > 0) {
+      const remainingType = Array.from(this.selectedPlacements())[0];
+      const placementName = remainingType
+        ? this.i18n.t(
+            remainingType === 'main_banner'
+              ? 'PORTAL.PROMOTIONS.MAIN_BANNER_TITLE'
+              : 'PORTAL.PROMOTIONS.WHATS_HOT_TITLE'
+          )
+        : '';
+      return this.i18n.t('PORTAL.PROMOTIONS.RETRY_BTN', { placement: placementName });
+    }
+    return this.i18n.t('PORTAL.PROMOTIONS.PAY_BTN');
+  }
+
   async proceedToPayment(): Promise<void> {
     const event = this.selectedEvent();
     if (!event) {
-      this.errorMessage.set(this.i18n.t('PORTAL.PROMOTIONS.ERROR_SELECT_EVENT'));
+      this.errorDescriptor.set({ key: 'PORTAL.PROMOTIONS.ERROR_SELECT_EVENT' });
+      return;
+    }
+    if (this.hasNoAreaError()) {
       return;
     }
     if (!this.hasSelection()) {
-      this.errorMessage.set(this.i18n.t('PORTAL.PROMOTIONS.ERROR_SELECT_PLACEMENT'));
+      this.errorDescriptor.set({ key: 'PORTAL.PROMOTIONS.ERROR_SELECT_PLACEMENT' });
       return;
     }
 
     const user = this.authService.currentUser;
     const providerId = user?.provider_link?.id;
     if (!providerId) {
-      this.errorMessage.set(this.i18n.t('PORTAL.PROMOTIONS.ERROR_SELECT_EVENT'));
+      this.errorDescriptor.set({ key: 'PORTAL.PROMOTIONS.ERROR_SELECT_EVENT' });
       return;
     }
 
-    this.errorMessage.set(null);
-    this.completedAddons = [];
-    this.pendingQueue = Array.from(this.selectedPlacements());
+    this.errorDescriptor.set(null);
+    // Queue only remaining uncompleted placements to prevent duplicate charges
+    this.pendingQueue = Array.from(this.selectedPlacements()).filter(
+      (t) => !this.completedAddons().includes(t)
+    );
     await this.processQueue(providerId, event.id);
   }
 
   private async processQueue(providerId: string, eventId: string): Promise<void> {
     if (this.pendingQueue.length === 0) {
-      // Completed all placements
-      const isSched = this.scheduleMode() === 'future' && !!this.scheduledDate();
-      this.isLastScheduled.set(isSched);
-      if (isSched) {
-        this.successMessage.set(
-          this.i18n.t('PORTAL.PROMOTIONS.SUCCESS_SCHEDULED_DESC', {
-            date: this.scheduledDate(),
-          })
-        );
-      } else {
-        this.successMessage.set(this.i18n.t('PORTAL.PROMOTIONS.SUCCESS_DESC'));
-      }
-
+      // All selected placements completed successfully
+      this.successDescriptor.set({ key: 'PORTAL.PROMOTIONS.SUCCESS_DESC' });
+      this.partialSuccessDescriptor.set(null);
       this.selectedPlacements.set(new Set());
-      this.selectedEventId.set(null);
-      this.scheduledDate.set('');
-      this.scheduleMode.set('immediate');
+      this.completedAddons.set([]);
       this.cleanupStripe();
       await this.loadData();
       return;
@@ -1318,16 +1445,11 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     const type = this.pendingQueue[0];
     const price = type === 'main_banner' ? this.mainBannerPrice() : this.whatsHotPrice();
     if (!price) {
-      this.errorMessage.set(this.i18n.t('PORTAL.PROMOTIONS.ERROR_PRICE_NOT_FOUND'));
+      this.errorDescriptor.set({ key: 'PORTAL.PROMOTIONS.ERROR_PRICE_NOT_FOUND' });
       return;
     }
 
     this.isProcessingPayment.set(true);
-
-    const scheduledStart =
-      this.scheduleMode() === 'future' && this.scheduledDate()
-        ? new Date(this.scheduledDate()).toISOString()
-        : undefined;
 
     try {
       const result = await this.stripeService.createAddonPayment(
@@ -1335,13 +1457,13 @@ export class PromotionsComponent implements OnInit, OnDestroy {
         type,
         providerId,
         eventId,
-        scheduledStart
+        undefined
       );
 
       // If 100% coupon / free
       if ('free' in result && result.free) {
-        await this.stripeService.applyAddon(type, undefined, eventId, scheduledStart);
-        this.completedAddons.push(type);
+        await this.stripeService.applyAddon(type, undefined, eventId, undefined);
+        this.recordPlacementSuccess(type, eventId);
         this.pendingQueue.shift();
         await this.processQueue(providerId, eventId);
         return;
@@ -1356,11 +1478,11 @@ export class PromotionsComponent implements OnInit, OnDestroy {
           savedCard.id
         );
         if (error) {
-          this.errorMessage.set(this.errorService.toCustomerMessage(error, 'save'));
+          this.handlePaymentFailure(error);
           return;
         }
-        await this.stripeService.applyAddon(type, undefined, eventId, scheduledStart);
-        this.completedAddons.push(type);
+        await this.stripeService.applyAddon(type, undefined, eventId, undefined);
+        this.recordPlacementSuccess(type, eventId);
         this.pendingQueue.shift();
         await this.processQueue(providerId, eventId);
       } else {
@@ -1369,7 +1491,7 @@ export class PromotionsComponent implements OnInit, OnDestroy {
         setTimeout(() => this.mountPayment(paidResult.clientSecret), 150);
       }
     } catch (err: any) {
-      this.errorMessage.set(this.errorService.toCustomerMessage(err, 'save'));
+      this.handlePaymentFailure(err);
     } finally {
       this.isProcessingPayment.set(false);
     }
@@ -1385,7 +1507,7 @@ export class PromotionsComponent implements OnInit, OnDestroy {
       this.stripeElements = elements;
       this.stripeReady.set(true);
     } catch (err: any) {
-      this.errorMessage.set(this.errorService.toCustomerMessage(err, 'load'));
+      this.errorDescriptor.set(this.errorService.toCustomerErrorKey(err, 'load'));
     }
   }
 
@@ -1398,13 +1520,9 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     if (!event || !providerId) return;
 
     this.isProcessingPayment.set(true);
-    this.errorMessage.set(null);
+    this.errorDescriptor.set(null);
 
     const type = this.pendingQueue[0];
-    const scheduledStart =
-      this.scheduleMode() === 'future' && this.scheduledDate()
-        ? new Date(this.scheduledDate()).toISOString()
-        : undefined;
 
     try {
       const { error } = await this.stripeInstance.confirmPayment({
@@ -1413,27 +1531,70 @@ export class PromotionsComponent implements OnInit, OnDestroy {
       });
 
       if (error) {
-        this.errorMessage.set(this.errorService.toCustomerMessage(error, 'save'));
+        this.handlePaymentFailure(error);
         return;
       }
 
-      await this.stripeService.applyAddon(type, undefined, event.id, scheduledStart);
-      this.completedAddons.push(type);
+      await this.stripeService.applyAddon(type, undefined, event.id, undefined);
+      this.recordPlacementSuccess(type, event.id);
       this.pendingQueue.shift();
 
       this.cleanupStripe();
       await this.processQueue(providerId, event.id);
     } catch (err: any) {
-      this.errorMessage.set(this.errorService.toCustomerMessage(err, 'save'));
+      this.handlePaymentFailure(err);
     } finally {
       this.isProcessingPayment.set(false);
     }
   }
 
+  private recordPlacementSuccess(type: AddonType, eventId: string): void {
+    this.completedAddons.set([...this.completedAddons(), type]);
+
+    // Update local event object so UI immediately reflects active boost
+    const ev = this.events().find((e) => e.id === eventId);
+    if (ev) {
+      if (type === 'main_banner') ev.is_main_banner = true;
+      if (type === 'whats_hot') ev.is_whats_hot = true;
+      this.events.set([...this.events()]);
+    }
+
+    // Remove from selected placements so retry cannot charge it again
+    const next = new Set(this.selectedPlacements());
+    next.delete(type);
+    this.selectedPlacements.set(next);
+  }
+
+  private handlePaymentFailure(err: any): void {
+    if (this.completedAddons().length > 0) {
+      const completedNames = this.completedAddons()
+        .map((t) =>
+          t === 'main_banner'
+            ? this.i18n.t('PORTAL.PROMOTIONS.MAIN_BANNER_TITLE')
+            : this.i18n.t('PORTAL.PROMOTIONS.WHATS_HOT_TITLE')
+        )
+        .join(', ');
+      const failedNames = this.pendingQueue
+        .map((t) =>
+          t === 'main_banner'
+            ? this.i18n.t('PORTAL.PROMOTIONS.MAIN_BANNER_TITLE')
+            : this.i18n.t('PORTAL.PROMOTIONS.WHATS_HOT_TITLE')
+        )
+        .join(', ');
+      this.partialSuccessDescriptor.set({
+        key: 'PORTAL.PROMOTIONS.PARTIAL_SUCCESS_DESC',
+        params: { completed: completedNames, failed: failedNames },
+      });
+    }
+
+    this.errorDescriptor.set(this.errorService.toCustomerErrorKey(err, 'save'));
+    this.pendingQueue = [];
+    this.cleanupStripe();
+  }
+
   cancelPayment(): void {
     this.cleanupStripe();
     this.pendingQueue = [];
-    this.completedAddons = [];
   }
 
   private cleanupStripe(): void {
@@ -1445,7 +1606,8 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   }
 
   formatPrice(amount: number, currency: string): string {
-    return new Intl.NumberFormat(this.i18n.lang() === 'es' ? 'es-DO' : 'en-US', {
+    const lang = this.i18n.lang();
+    return new Intl.NumberFormat(lang === 'es' ? 'es-DO' : 'en-US', {
       style: 'currency',
       currency: (currency || 'usd').toUpperCase(),
       minimumFractionDigits: 0,

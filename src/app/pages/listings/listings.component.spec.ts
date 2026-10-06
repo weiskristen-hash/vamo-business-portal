@@ -383,4 +383,57 @@ describe('ListingsComponent', () => {
       expect(mockEvents[0].address).toBe('Kite Beach, Cabarete');
     });
   });
+
+  describe('Event-Level Boost Entry (Phase 1C.2)', () => {
+    it('should display Boost / Manage Boost button only on published events', () => {
+      component.setStatusFilter('all');
+      fixture.detectChanges();
+
+      const cards = fixture.nativeElement.querySelectorAll('.listing-card');
+      expect(cards.length).toBe(4);
+
+      // ev-1 (published, is_main_banner: true) -> Manage Boost
+      const ev1Card = cards[0];
+      const ev1BoostBtn = ev1Card.querySelector('.boost-btn');
+      expect(ev1BoostBtn).toBeTruthy();
+      expect(ev1BoostBtn.textContent.trim()).toContain('Manage Boost');
+
+      // ev-2 (published, no boost) -> Boost
+      const ev2Card = cards[1];
+      const ev2BoostBtn = ev2Card.querySelector('.boost-btn');
+      expect(ev2BoostBtn).toBeTruthy();
+      expect(ev2BoostBtn.textContent.trim()).toContain('Boost');
+
+      // ev-3 (draft) -> no boost button
+      const ev3Card = cards[2];
+      expect(ev3Card.querySelector('.boost-btn')).toBeNull();
+
+      // ev-4 (archived) -> no boost button
+      const ev4Card = cards[3];
+      expect(ev4Card.querySelector('.boost-btn')).toBeNull();
+    });
+
+    it('should navigate to /app/promotions with eventId query param when boost button is clicked', () => {
+      component.onBoost(mockEvents[1]);
+      expect(router.navigate).toHaveBeenCalledWith(['/app/promotions'], {
+        queryParams: { eventId: 'ev-2' },
+      });
+    });
+
+    it('should reactively switch boost button labels between English and Spanish', () => {
+      component.setStatusFilter('all');
+      i18nService.setLang('en');
+      fixture.detectChanges();
+      const boostBtnEn = fixture.nativeElement.querySelector('.listing-card:nth-child(2) .boost-btn');
+      expect(boostBtnEn.textContent.trim()).toBe('Boost');
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      const boostBtnEs = fixture.nativeElement.querySelector('.listing-card:nth-child(2) .boost-btn');
+      expect(boostBtnEs.textContent.trim()).toBe('Promocionar');
+
+      const manageBtnEs = fixture.nativeElement.querySelector('.listing-card:nth-child(1) .boost-btn');
+      expect(manageBtnEs.textContent.trim()).toBe('Gestionar promoción');
+    });
+  });
 });
