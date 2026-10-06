@@ -1,4 +1,4 @@
-import { Component, OnInit, AfterViewInit, ViewChild, ElementRef, inject, effect } from '@angular/core';
+import { Component, OnInit, AfterViewInit, ViewChild, ElementRef, inject, effect, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -1013,6 +1013,7 @@ export class LoginComponent implements OnInit, AfterViewInit {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private i18n = inject(I18nService);
+  private cdr = inject(ChangeDetectorRef);
 
   @ViewChild('googleBtnContainer') googleBtnContainer?: ElementRef<HTMLDivElement>;
 
@@ -1097,6 +1098,7 @@ export class LoginComponent implements OnInit, AfterViewInit {
   async onGoogleCredentialSuccess(credential: string): Promise<void> {
     this.loading = true;
     this.errorMessage = '';
+    this.cdr.markForCheck();
 
     try {
       const user = await this.authService.loginWithGoogleCredential(credential);
@@ -1105,12 +1107,14 @@ export class LoginComponent implements OnInit, AfterViewInit {
       this.handleGoogleError(err);
     } finally {
       this.loading = false;
+      this.cdr.markForCheck();
     }
   }
 
   async onGoogleLogin(): Promise<void> {
     this.loading = true;
     this.errorMessage = '';
+    this.cdr.markForCheck();
 
     try {
       const user = await this.authService.loginWithGoogle();
@@ -1119,6 +1123,7 @@ export class LoginComponent implements OnInit, AfterViewInit {
       this.handleGoogleError(err);
     } finally {
       this.loading = false;
+      this.cdr.markForCheck();
     }
   }
 
@@ -1128,6 +1133,7 @@ export class LoginComponent implements OnInit, AfterViewInit {
     this.loading = true;
     this.errorMessage = '';
     this.successMessage = '';
+    this.cdr.markForCheck();
 
     try {
       const user = await this.authService.login(this.email.trim(), this.password);
@@ -1139,27 +1145,66 @@ export class LoginComponent implements OnInit, AfterViewInit {
         await this.router.navigate(['/no-business']);
       }
     } catch (err: any) {
-      const code = err?.errors?.[0]?.extensions?.code;
-      if (code === 'INVALID_CREDENTIALS') {
+      if (this.isInvalidCredentials(err)) {
         this.errorMessage = this.i18n.lang() === 'es'
-          ? 'Correo o contraseña no válidos. Por favor verifica tus credenciales.'
+          ? 'Correo o contraseña no válidos. Por favor verifica tus credenciales y vuelve a intentarlo.'
           : 'Invalid email or password. Please check your credentials and try again.';
+      } else if (this.isTimeoutError(err)) {
+        this.errorMessage = this.i18n.lang() === 'es'
+          ? 'La solicitud de inicio de sesión ha caducado. Por favor comprueba tu conexión e inténtalo de nuevo.'
+          : 'The sign-in request timed out. Please check your connection and try again.';
       } else {
         this.errorMessage = this.customerErrorService.toCustomerMessage(err, 'auth');
       }
     } finally {
       this.loading = false;
+      this.cdr.markForCheck();
     }
+  }
+
+  private isInvalidCredentials(err: any): boolean {
+    if (!err) return false;
+    const code = err?.errors?.[0]?.extensions?.code || err?.code;
+    if (code === 'INVALID_CREDENTIALS' || code === 'INVALID_USER_CREDENTIALS') {
+      return true;
+    }
+    const status = err?.status ?? err?.response?.status;
+    if (status === 401) {
+      return true;
+    }
+    const msg = (err?.errors?.[0]?.message || err?.message || '').toLowerCase();
+    if (
+      msg.includes('invalid user credentials') ||
+      msg.includes('invalid credentials') ||
+      msg.includes('invalid email or password')
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  private isTimeoutError(err: any): boolean {
+    if (!err) return false;
+    const code = err?.code;
+    const msg = (err?.message || '').toLowerCase();
+    return (
+      code === 'LOGIN_TIMEOUT' ||
+      code === 'TIMEOUT' ||
+      msg.includes('timeout') ||
+      err?.name === 'TimeoutError'
+    );
   }
 
   openForgotModal(): void {
     this.forgotEmail = this.email;
     this.forgotError = '';
     this.showForgotModal = true;
+    this.cdr.markForCheck();
   }
 
   closeForgotModal(): void {
     this.showForgotModal = false;
+    this.cdr.markForCheck();
   }
 
   async sendPasswordReset(): Promise<void> {
@@ -1167,6 +1212,7 @@ export class LoginComponent implements OnInit, AfterViewInit {
 
     this.forgotLoading = true;
     this.forgotError = '';
+    this.cdr.markForCheck();
 
     try {
       await this.authService.requestPasswordReset(this.forgotEmail.trim());
@@ -1178,6 +1224,7 @@ export class LoginComponent implements OnInit, AfterViewInit {
       this.forgotError = this.customerErrorService.toCustomerMessage(err, 'save', this.i18n.t('AUTH.FORGOT_PASSWORD_ERROR'));
     } finally {
       this.forgotLoading = false;
+      this.cdr.markForCheck();
     }
   }
 
@@ -1185,6 +1232,7 @@ export class LoginComponent implements OnInit, AfterViewInit {
 
   togglePasswordVisibility(): void {
     this.showPassword = !this.showPassword;
+    this.cdr.markForCheck();
   }
 
 

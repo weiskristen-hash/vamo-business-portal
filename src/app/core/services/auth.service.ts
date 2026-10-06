@@ -2,10 +2,10 @@ import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
-import { createItem, passwordRequest, readMe, registerUser } from '@directus/sdk';
-import { directusClient } from '../directus/directus-client';
+import { AuthenticationStorage, createItem, passwordRequest, readMe, registerUser } from '@directus/sdk';
+import { directusClient, createIsolatedDirectusClient } from '../directus/directus-client';
 import { runtimeConfig } from '../config/runtime-config';
-import { createBrowserAuthStorage } from '../directus/browser-auth.storage';
+import { createBrowserAuthStorage, createMemoryAuthStorage } from '../directus/browser-auth.storage';
 import { VamoUser } from '../models/user.model';
 import { environment } from '../../../environments/environment';
 import { GoogleAuthService } from './google-auth.service';
@@ -26,6 +26,7 @@ export class AuthService {
   private refreshPromise: Promise<boolean> | null = null;
   private proactiveRefreshTimer: any = null;
   private restoreSessionNonce = 0;
+  private loginNonce = 0;
 
   constructor() {
     this.restoreSession();
@@ -270,14 +271,72 @@ export class AuthService {
     return user;
   }
 
-  async login(email: string, password: string): Promise<VamoUser> {
-    await directusClient.login({ email, password });
+  protected createIsolatedClient(storage: AuthenticationStorage) {
+    return createIsolatedDirectusClient(storage);
+  }
 
-    const user = await this.loadCurrentUser();
-    this.userSubject.next(user);
-    this.scheduleProactiveRefresh();
+  async login(email: string, password: string, timeoutMs: number = 12000): Promise<VamoUser> {
+    const nonce = ++this.loginNonce;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
-    return user;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        // Invalidate current login nonce so any late response from isolated login is ignored
+        if (nonce === this.loginNonce) {
+          this.loginNonce++;
+        }
+        const timeoutErr = new Error('Authentication request timed out. Please check your connection and try again.');
+        (timeoutErr as any).code = 'LOGIN_TIMEOUT';
+        reject(timeoutErr);
+      }, timeoutMs);
+    });
+
+    try {
+      const tempStorage = createMemoryAuthStorage();
+      const tempClient = this.createIsolatedClient(tempStorage);
+
+      const loginTask = (async () => {
+        await tempClient.login({ email, password });
+
+        // Generation guard: verify request was not superseded or timed out
+        if (nonce !== this.loginNonce) {
+          return null;
+        }
+
+        const authData = await tempStorage.get();
+        if (!authData || !authData.access_token) {
+          throw new Error('Authentication data missing from isolated login attempt');
+        }
+
+        if (nonce !== this.loginNonce) {
+          return null;
+        }
+
+        const canonicalStorage = createBrowserAuthStorage();
+        await canonicalStorage.set(authData);
+
+        if (nonce !== this.loginNonce) {
+          return null;
+        }
+
+        const user = await this.loadCurrentUser();
+        if (nonce !== this.loginNonce) {
+          return null;
+        }
+
+        this.userSubject.next(user);
+        this.scheduleProactiveRefresh();
+        return user;
+      })();
+
+      const result = await Promise.race([loginTask, timeoutPromise]);
+      if (!result) {
+        throw new Error('Authentication aborted');
+      }
+      return result;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /**

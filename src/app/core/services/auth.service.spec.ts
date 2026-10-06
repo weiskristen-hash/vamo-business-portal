@@ -11,6 +11,8 @@ describe('AuthService', () => {
       navigate: vi.fn().mockResolvedValue(true),
     };
 
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+
     TestBed.configureTestingModule({
       providers: [
         AuthService,
@@ -128,6 +130,246 @@ describe('AuthService', () => {
       })
     ).rejects.toMatchObject({
       errors: [{ extensions: { code: 'RECORD_NOT_UNIQUE' } }],
+    });
+  });
+
+  describe('login()', () => {
+    it('1. normal valid password login succeeds, stores complete auth data, updates userSubject, and schedules refresh', async () => {
+      const { createBrowserAuthStorage } = await import('../directus/browser-auth.storage');
+      const mockUser = {
+        id: 'usr-valid',
+        email: 'valid@vamo.com',
+        first_name: 'Maria',
+        last_name: 'Santos',
+        provider_link: { id: 'prov-1', name: 'Maria Cafe' },
+      };
+
+      vi.spyOn(service, 'loadCurrentUser').mockResolvedValue(mockUser as any);
+      vi.spyOn(service as any, 'createIsolatedClient').mockImplementation((storage: any) => ({
+        login: async (creds: any) => {
+          expect(creds).toEqual({ email: 'valid@vamo.com', password: 'correctpass' });
+          await storage.set({
+            access_token: 'valid_access',
+            refresh_token: 'valid_refresh',
+            expires: 900000,
+            expires_at: Date.now() + 900000,
+          });
+        },
+      }));
+
+      const scheduleSpy = vi.spyOn(service as any, 'scheduleProactiveRefresh');
+      const result = await service.login('valid@vamo.com', 'correctpass');
+
+      expect(result.id).toBe('usr-valid');
+      expect(service.currentUser?.email).toBe('valid@vamo.com');
+      const canonicalStorage = createBrowserAuthStorage();
+      const stored = await canonicalStorage.get();
+      expect(stored?.access_token).toBe('valid_access');
+      expect(stored?.refresh_token).toBe('valid_refresh');
+      expect(stored?.expires).toBe(900000);
+      expect(scheduleSpy).toHaveBeenCalled();
+    });
+
+    it('2. bad password fails normally without hanging or updating auth state', async () => {
+      const credErr = {
+        errors: [{ message: 'Invalid user credentials.', extensions: { code: 'INVALID_CREDENTIALS' } }],
+      };
+      vi.spyOn(service as any, 'createIsolatedClient').mockReturnValue({
+        login: vi.fn().mockRejectedValue(credErr),
+      });
+
+      await expect(service.login('valid@vamo.com', 'badpass')).rejects.toMatchObject(credErr);
+      expect(service.currentUser).toBeNull();
+    });
+
+    it('3. hung login times out after specified timeoutMs', async () => {
+      vi.spyOn(service as any, 'createIsolatedClient').mockReturnValue({
+        login: () => new Promise(() => {}),
+      });
+
+      const loginPromise = service.login('hung@vamo.com', 'pass', 50);
+
+      await expect(loginPromise).rejects.toMatchObject({
+        code: 'LOGIN_TIMEOUT',
+      });
+      expect(service.currentUser).toBeNull();
+    });
+
+    it('4-6. late resolution after timeout does not authenticate, does not call loadCurrentUser, and does not modify global auth storage', async () => {
+      const { createBrowserAuthStorage } = await import('../directus/browser-auth.storage');
+      let resolveLogin!: () => void;
+      const pendingLogin = new Promise<void>((resolve) => {
+        resolveLogin = resolve;
+      });
+
+      const loadUserSpy = vi.spyOn(service, 'loadCurrentUser');
+      const canonicalStorage = createBrowserAuthStorage();
+      await canonicalStorage.set(null);
+
+      vi.spyOn(service as any, 'createIsolatedClient').mockImplementation((storageParam: any) => ({
+        login: async () => {
+          await pendingLogin;
+          await storageParam.set({
+            access_token: 'late_access',
+            refresh_token: 'late_refresh',
+            expires: 900000,
+            expires_at: Date.now() + 900000,
+          });
+        },
+      }));
+
+      // Login starts and hangs past timeout
+      const loginPromise = service.login('hung@vamo.com', 'pass', 50);
+      await expect(loginPromise).rejects.toMatchObject({ code: 'LOGIN_TIMEOUT' });
+      expect(service.currentUser).toBeNull();
+
+      // Simulate late resolution
+      resolveLogin();
+      await new Promise((res) => setTimeout(res, 25));
+
+      // 4. late resolution does not authenticate
+      expect(service.currentUser).toBeNull();
+
+      // 5. late resolution does not call loadCurrentUser
+      expect(loadUserSpy).not.toHaveBeenCalled();
+
+      // 6. late resolution does not modify global auth storage
+      const storedData = await canonicalStorage.get();
+      expect(storedData).toBeNull();
+
+      // Proactive refresh is not scheduled
+      expect((service as any).proactiveRefreshTimer).toBeNull();
+    });
+
+    it('CRITICAL RACE TEST: late resolution of timed-out Login A must never clear or corrupt Login B session', async () => {
+      const { createBrowserAuthStorage } = await import('../directus/browser-auth.storage');
+      const { directusClient } = await import('../directus/directus-client');
+
+      const userB = {
+        id: 'usr-b',
+        email: 'user_b@vamo.com',
+        first_name: 'Bob',
+        last_name: 'Builder',
+      };
+
+      let resolveLoginA!: () => void;
+      const pendingLoginA = new Promise<void>((resolve) => {
+        resolveLoginA = resolve;
+      });
+
+      const setTokenSpy = vi.spyOn(directusClient, 'setToken');
+      const logoutSpy = vi.spyOn(service, 'logout');
+      vi.spyOn(service, 'loadCurrentUser').mockResolvedValue(userB as any);
+
+      vi.spyOn(service as any, 'createIsolatedClient').mockImplementation((storageParam: any) => ({
+        login: async ({ email }: { email: string }) => {
+          if (email === 'user_a@vamo.com') {
+            await pendingLoginA;
+            await storageParam.set({
+              access_token: 'token_a',
+              refresh_token: 'refresh_a',
+              expires: 900000,
+              expires_at: Date.now() + 900000,
+            });
+          } else if (email === 'user_b@vamo.com') {
+            await storageParam.set({
+              access_token: 'token_b',
+              refresh_token: 'refresh_b',
+              expires: 900000,
+              expires_at: Date.now() + 900000,
+            });
+          }
+        },
+      }));
+
+      // A. Login A starts and remains pending
+      // B. A times out
+      const loginAPromise = service.login('user_a@vamo.com', 'pass_a', 50);
+      await expect(loginAPromise).rejects.toMatchObject({ code: 'LOGIN_TIMEOUT' });
+      expect(service.currentUser).toBeNull();
+
+      // C. Login B starts
+      // D. B succeeds
+      // E. B becomes current authenticated session
+      const loginBResult = await service.login('user_b@vamo.com', 'pass_b');
+      expect(loginBResult.id).toBe('usr-b');
+      expect(service.currentUser?.id).toBe('usr-b');
+
+      const storage = createBrowserAuthStorage();
+      let stored = await storage.get();
+      expect(stored?.access_token).toBe('token_b');
+      expect(stored?.refresh_token).toBe('refresh_b');
+
+      // F. A resolves late
+      resolveLoginA();
+      await new Promise((res) => setTimeout(res, 30));
+
+      // G. Verify:
+      // - B remains authenticated
+      expect(service.currentUser?.id).toBe('usr-b');
+      expect(service.currentUser?.email).toBe('user_b@vamo.com');
+
+      // - B's stored access token remains unchanged
+      stored = await storage.get();
+      expect(stored?.access_token).toBe('token_b');
+
+      // - B's refresh token remains unchanged
+      expect(stored?.refresh_token).toBe('refresh_b');
+
+      // - currentUser remains B
+      expect(service.currentUser).toEqual(userB);
+
+      // - no global setToken(null)
+      expect(setTokenSpy).not.toHaveBeenCalledWith(null);
+
+      // - no logout/session clear occurs
+      expect(logoutSpy).not.toHaveBeenCalled();
+    });
+
+    it('should verify refresh still works after successful password login', async () => {
+      const { createBrowserAuthStorage } = await import('../directus/browser-auth.storage');
+      const { directusClient } = await import('../directus/directus-client');
+
+      const mockUser = {
+        id: 'usr-valid',
+        email: 'valid@vamo.com',
+      };
+      vi.spyOn(service, 'loadCurrentUser').mockResolvedValue(mockUser as any);
+
+      vi.spyOn(service as any, 'createIsolatedClient').mockImplementation((storageParam: any) => ({
+        login: async () => {
+          await storageParam.set({
+            access_token: 'initial_access_token',
+            refresh_token: 'initial_refresh_token',
+            expires: 900000,
+            expires_at: Date.now() + 900000,
+          });
+        },
+      }));
+
+      const refreshSpy = vi.spyOn(directusClient, 'refresh').mockImplementation(async () => {
+        const storage = createBrowserAuthStorage();
+        const current = await storage.get();
+        expect(current?.refresh_token).toBe('initial_refresh_token');
+        await storage.set({
+          access_token: 'refreshed_access_token',
+          refresh_token: 'new_refresh_token',
+          expires: 900000,
+          expires_at: Date.now() + 900000,
+        });
+        return {} as any;
+      });
+
+      await service.login('valid@vamo.com', 'correctpass');
+
+      // Trigger refreshToken()
+      const refreshResult = await service.refreshToken();
+      expect(refreshResult).toBe(true);
+      expect(refreshSpy).toHaveBeenCalled();
+
+      const finalStorage = await createBrowserAuthStorage().get();
+      expect(finalStorage?.access_token).toBe('refreshed_access_token');
+      expect(finalStorage?.refresh_token).toBe('new_refresh_token');
     });
   });
 });

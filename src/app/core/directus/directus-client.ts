@@ -1,6 +1,6 @@
-import { authentication, createDirectus, rest } from '@directus/sdk';
+import { authentication, createDirectus, rest, AuthenticationStorage } from '@directus/sdk';
 import { runtimeConfig } from '../config/runtime-config';
-import { createBrowserAuthStorage } from './browser-auth.storage';
+import { createBrowserAuthStorage, createMemoryAuthStorage } from './browser-auth.storage';
 import { VamoUser } from '../models/user.model';
 import { Provider } from '../models/provider.model';
 import { VamoEvent, Area } from '../models/event.model';
@@ -10,6 +10,17 @@ export interface VamoSchema {
   providers: Provider[];
   events: VamoEvent[];
   areas: Area[];
+}
+
+export function createIsolatedDirectusClient(storage?: AuthenticationStorage) {
+  return createDirectus<VamoSchema>(runtimeConfig.directusUrl)
+    .with(rest({ credentials: 'include' }))
+    .with(
+      authentication('json', {
+        storage: storage ?? createMemoryAuthStorage(),
+        autoRefresh: false,
+      })
+    );
 }
 
 export const directusClient = createDirectus<VamoSchema>(runtimeConfig.directusUrl)
