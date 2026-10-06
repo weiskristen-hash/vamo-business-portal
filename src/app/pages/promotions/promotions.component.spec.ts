@@ -661,4 +661,246 @@ describe('PromotionsComponent', () => {
       );
     });
   });
+
+  describe('Payment Confirmed / Activation Failed Safety (Phase 1C.2 Hardening)', () => {
+    beforeEach(async () => {
+      await createComponent('ev-1');
+    });
+
+    it('should protect against double-charging when saved card payment succeeds but applyAddon fails', async () => {
+      component.togglePlacement('main_banner');
+      component.selectSavedCard(mockSavedCards[0]);
+
+      // Stripe confirmation succeeds, applyAddon rejects
+      stripeServiceSpy.confirmWithSavedMethod.mockResolvedValueOnce({});
+      stripeServiceSpy.applyAddon.mockRejectedValueOnce(new Error('Directus apply error'));
+
+      await component.proceedToPayment();
+
+      // 1. Stripe confirmation happened exactly once
+      expect(stripeServiceSpy.confirmWithSavedMethod).toHaveBeenCalledTimes(1);
+
+      // 2. createAddonPayment happened exactly once
+      expect(stripeServiceSpy.createAddonPayment).toHaveBeenCalledTimes(1);
+
+      // 3. applyAddon happened exactly once
+      expect(stripeServiceSpy.applyAddon).toHaveBeenCalledTimes(1);
+
+      // 4. Main Banner is NOT marked active
+      const ev = component.events().find((e) => e.id === 'ev-1');
+      expect(ev?.is_main_banner).toBeFalsy();
+      expect(component.selectedEventHasMainBanner()).toBe(false);
+
+      // 5. Customer sees dedicated activation-pending message (NOT "Payment failed")
+      expect(component.hasActivationPending()).toBe(true);
+      expect(component.isActivationPending('main_banner')).toBe(true);
+      expect(component.isPaymentConfirmed('main_banner')).toBe(true);
+      expect(component.getPlacementState('main_banner')).toBe('activation_pending');
+      expect(component.activationPendingMessage()).toContain(
+        "Your payment was completed, but we couldn't confirm activation of this placement."
+      );
+      expect(component.errorMessage()).toBeNull();
+
+      // 6. Normal retry payment CTA for Main Banner is NOT available
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).not.toContain('Retry Main Banner');
+      expect(component.getPayButtonLabel()).not.toContain('Retry');
+      expect(component.isMainBannerDisabled()).toBe(true);
+
+      // 7. Clicking/proceeding again CANNOT call createAddonPayment for Main Banner a second time
+      await component.proceedToPayment();
+      expect(stripeServiceSpy.createAddonPayment).toHaveBeenCalledTimes(1);
+    });
+
+    it('should protect against double-charging when PaymentElement payment succeeds but applyAddon fails', async () => {
+      vi.useFakeTimers();
+      component.togglePlacement('main_banner');
+      component.selectUseNewCard();
+
+      const mockConfirmPayment = vi.fn().mockResolvedValueOnce({ error: undefined });
+      stripeServiceSpy.mountPaymentElement.mockResolvedValueOnce({
+        stripe: { confirmPayment: mockConfirmPayment },
+        elements: {},
+      });
+      stripeServiceSpy.applyAddon.mockRejectedValueOnce(new Error('Network timeout during applyAddon'));
+
+      const proceedPromise = component.proceedToPayment();
+      await proceedPromise;
+
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+      await Promise.resolve();
+      fixture.detectChanges();
+
+      // User confirms inline PaymentElement
+      await component.confirmInlinePayment();
+
+      vi.useRealTimers();
+
+      // 1. ConfirmPayment called once
+      expect(mockConfirmPayment).toHaveBeenCalledTimes(1);
+      // 2. applyAddon called once
+      expect(stripeServiceSpy.applyAddon).toHaveBeenCalledTimes(1);
+
+      // 3. Main banner NOT marked active
+      expect(component.selectedEvent()?.is_main_banner).toBeFalsy();
+      expect(component.selectedEventHasMainBanner()).toBe(false);
+
+      // 4. Activation pending message shown, no generic payment retry
+      expect(component.hasActivationPending()).toBe(true);
+      expect(component.activationPendingMessage()).toContain(
+        "Your payment was completed, but we couldn't confirm activation of this placement."
+      );
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).not.toContain('Retry Main Banner');
+
+      // 5. No second createAddonPayment
+      await component.proceedToPayment();
+      expect(stripeServiceSpy.createAddonPayment).toHaveBeenCalledTimes(1);
+    });
+
+    it('should keep payment retryable when Stripe confirmation fails BEFORE payment succeeds (saved card decline)', async () => {
+      component.togglePlacement('main_banner');
+      component.selectSavedCard(mockSavedCards[0]);
+
+      stripeServiceSpy.confirmWithSavedMethod.mockResolvedValueOnce({
+        error: { type: 'card_error', message: 'Card declined' },
+      });
+
+      await component.proceedToPayment();
+
+      // Activation-pending is FALSE
+      expect(component.hasActivationPending()).toBe(false);
+      expect(component.isActivationPending('main_banner')).toBe(false);
+      expect(component.isPaymentConfirmed('main_banner')).toBe(false);
+      expect(component.activationPendingMessage()).toBeNull();
+
+      // Generic error shown & placement remains selectable for retry
+      expect(component.errorMessage()).toBeTruthy();
+      expect(component.selectedPlacements().has('main_banner')).toBe(true);
+      expect(component.isMainBannerDisabled()).toBe(false);
+    });
+
+    it('should keep payment retryable when PaymentElement confirmation returns error', async () => {
+      vi.useFakeTimers();
+      component.togglePlacement('main_banner');
+      component.selectUseNewCard();
+
+      const mockConfirmPayment = vi.fn().mockResolvedValueOnce({
+        error: { message: 'Insufficient funds' },
+      });
+      stripeServiceSpy.mountPaymentElement.mockResolvedValueOnce({
+        stripe: { confirmPayment: mockConfirmPayment },
+        elements: {},
+      });
+
+      await component.proceedToPayment();
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+      await Promise.resolve();
+      fixture.detectChanges();
+
+      await component.confirmInlinePayment();
+      vi.useRealTimers();
+
+      expect(mockConfirmPayment).toHaveBeenCalledTimes(1);
+
+      // Activation-pending is FALSE
+      expect(component.hasActivationPending()).toBe(false);
+      expect(component.isActivationPending('main_banner')).toBe(false);
+      expect(component.isPaymentConfirmed('main_banner')).toBe(false);
+      expect(component.activationPendingMessage()).toBeNull();
+
+      // Payment retry remains possible
+      expect(component.selectedPlacements().has('main_banner')).toBe(true);
+      expect(component.isMainBannerDisabled()).toBe(false);
+    });
+
+    it('should allow normal retry on free transactions if applyAddon fails without marking payment-confirmed', async () => {
+      component.togglePlacement('main_banner');
+      component.selectSavedCard(mockSavedCards[0]);
+
+      stripeServiceSpy.createAddonPayment.mockResolvedValueOnce({ free: true });
+      stripeServiceSpy.applyAddon.mockRejectedValueOnce(new Error('Apply failed on promo code'));
+
+      await component.proceedToPayment();
+
+      // No Stripe payment occurred: do not mark payment-confirmed or activation-pending
+      expect(component.isPaymentConfirmed('main_banner')).toBe(false);
+      expect(component.hasActivationPending()).toBe(false);
+      expect(component.activationPendingMessage()).toBeNull();
+
+      // Placement not falsely marked active
+      expect(component.selectedEvent()?.is_main_banner).toBeFalsy();
+
+      // Normal safe retry is allowed
+      expect(component.selectedPlacements().has('main_banner')).toBe(true);
+      expect(component.isMainBannerDisabled()).toBe(false);
+    });
+
+    it('should reactively translate activation-pending message live between EN and ES without rerunning calls', async () => {
+      component.togglePlacement('main_banner');
+      component.selectSavedCard(mockSavedCards[0]);
+
+      stripeServiceSpy.confirmWithSavedMethod.mockResolvedValueOnce({});
+      stripeServiceSpy.applyAddon.mockRejectedValueOnce(new Error('apply error'));
+
+      i18nService.setLang('en');
+      await component.proceedToPayment();
+
+      // 1. English activation pending message
+      expect(component.activationPendingMessage()).toBe(
+        "Your payment was completed, but we couldn't confirm activation of this placement. Please do not pay again. Contact VAMO support for assistance."
+      );
+
+      // 2. Switch live to Spanish
+      i18nService.setLang('es');
+      expect(component.activationPendingMessage()).toBe(
+        'Tu pago se completó, pero no pudimos confirmar la activación de este posicionamiento. No vuelvas a realizar el pago. Contacta al soporte de VAMO para recibir ayuda.'
+      );
+
+      // 3. Switch back to English
+      i18nService.setLang('en');
+      expect(component.activationPendingMessage()).toBe(
+        "Your payment was completed, but we couldn't confirm activation of this placement. Please do not pay again. Contact VAMO support for assistance."
+      );
+
+      // Calls were made exactly once and NOT re-run
+      expect(stripeServiceSpy.createAddonPayment).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.confirmWithSavedMethod).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.applyAddon).toHaveBeenCalledTimes(1);
+    });
+
+    it('should immediately stop queue processing when a placement activation fails and not charge remaining placements', async () => {
+      component.togglePlacement('main_banner');
+      component.togglePlacement('whats_hot');
+      component.selectSavedCard(mockSavedCards[0]);
+
+      // Main banner: payment succeeds, but apply fails
+      stripeServiceSpy.confirmWithSavedMethod.mockResolvedValueOnce({});
+      stripeServiceSpy.applyAddon.mockRejectedValueOnce(new Error('apply error on main banner'));
+
+      await component.proceedToPayment();
+
+      // Main banner was charged once and apply was attempted once
+      expect(
+        stripeServiceSpy.createAddonPayment.mock.calls.filter((c: any) => c[1] === 'main_banner').length
+      ).toBe(1);
+      expect(
+        stripeServiceSpy.applyAddon.mock.calls.filter((c: any) => c[0] === 'main_banner').length
+      ).toBe(1);
+
+      // CRITICAL: What's Hot was NEVER charged or created because queue stopped
+      expect(
+        stripeServiceSpy.createAddonPayment.mock.calls.filter((c: any) => c[1] === 'whats_hot').length
+      ).toBe(0);
+      expect(
+        stripeServiceSpy.applyAddon.mock.calls.filter((c: any) => c[0] === 'whats_hot').length
+      ).toBe(0);
+
+      // Main banner is in activation-pending
+      expect(component.isActivationPending('main_banner')).toBe(true);
+      expect(component.hasActivationPending()).toBe(true);
+    });
+  });
 });

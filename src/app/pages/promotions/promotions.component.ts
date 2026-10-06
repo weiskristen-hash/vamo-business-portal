@@ -44,6 +44,15 @@ interface PartialSuccessState {
   </header>
 
   <!-- Global Feedback Banners -->
+  <div *ngIf="activationPendingMessage()" class="alert alert-warning" role="alert">
+    <span class="alert-icon">⚠️</span>
+    <div class="alert-content">
+      <strong>{{ 'PORTAL.PROMOTIONS.ACTIVATION_PENDING_TITLE' | translate }}</strong>
+      <p>{{ activationPendingMessage() }}</p>
+    </div>
+    <button type="button" class="alert-close" (click)="clearActivationPending()" [attr.aria-label]="'PORTAL.PROMOTIONS.DISMISS' | translate">✕</button>
+  </div>
+
   <div *ngIf="errorMessage()" class="alert alert-danger" role="alert">
     <span class="alert-icon">⚠️</span>
     <span class="alert-text">{{ errorMessage() }}</span>
@@ -213,13 +222,16 @@ interface PartialSuccessState {
                     <span *ngIf="selectedEventHasMainBanner()" class="status-chip chip-active">
                       ✓ {{ 'PORTAL.PROMOTIONS.ALREADY_ACTIVE_ON_EVENT' | translate }}
                     </span>
-                    <span *ngIf="!selectedEventHasMainBanner() && mainBannerFull()" class="status-chip chip-sold-out">
+                    <span *ngIf="!selectedEventHasMainBanner() && (isPaymentConfirmed('main_banner') || isActivationPending('main_banner'))" class="status-chip chip-warning">
+                      ⏳ {{ 'PORTAL.PROMOTIONS.STATUS_ACTIVATION_PENDING' | translate }}
+                    </span>
+                    <span *ngIf="!selectedEventHasMainBanner() && !isPaymentConfirmed('main_banner') && !isActivationPending('main_banner') && mainBannerFull()" class="status-chip chip-sold-out">
                       {{ 'PORTAL.PROMOTIONS.SOLD_OUT' | translate }}
                       <span *ngIf="mainBannerNextDate()" class="sold-out-date">
                         ({{ 'PORTAL.PROMOTIONS.SOLD_OUT_NEXT_DATE' | translate: { date: (mainBannerNextDate() | date:'mediumDate') } }})
                       </span>
                     </span>
-                    <span *ngIf="!selectedEventHasMainBanner() && !mainBannerFull() && mainBannerSlotsLeft() !== null" class="status-chip chip-slots">
+                    <span *ngIf="!selectedEventHasMainBanner() && !isPaymentConfirmed('main_banner') && !isActivationPending('main_banner') && !mainBannerFull() && mainBannerSlotsLeft() !== null" class="status-chip chip-slots">
                       {{ 'PORTAL.PROMOTIONS.SLOTS_LEFT' | translate: { count: mainBannerSlotsLeft() } }}
                     </span>
                   </div>
@@ -261,13 +273,16 @@ interface PartialSuccessState {
                     <span *ngIf="selectedEventHasWhatsHot()" class="status-chip chip-active">
                       ✓ {{ 'PORTAL.PROMOTIONS.ALREADY_ACTIVE_ON_EVENT' | translate }}
                     </span>
-                    <span *ngIf="!selectedEventHasWhatsHot() && whatsHotFull()" class="status-chip chip-sold-out">
+                    <span *ngIf="!selectedEventHasWhatsHot() && (isPaymentConfirmed('whats_hot') || isActivationPending('whats_hot'))" class="status-chip chip-warning">
+                      ⏳ {{ 'PORTAL.PROMOTIONS.STATUS_ACTIVATION_PENDING' | translate }}
+                    </span>
+                    <span *ngIf="!selectedEventHasWhatsHot() && !isPaymentConfirmed('whats_hot') && !isActivationPending('whats_hot') && whatsHotFull()" class="status-chip chip-sold-out">
                       {{ 'PORTAL.PROMOTIONS.SOLD_OUT' | translate }}
                       <span *ngIf="whatsHotNextDate()" class="sold-out-date">
                         ({{ 'PORTAL.PROMOTIONS.SOLD_OUT_NEXT_DATE' | translate: { date: (whatsHotNextDate() | date:'mediumDate') } }})
                       </span>
                     </span>
-                    <span *ngIf="!selectedEventHasWhatsHot() && !whatsHotFull() && whatsHotSlotsLeft() !== null" class="status-chip chip-slots">
+                    <span *ngIf="!selectedEventHasWhatsHot() && !isPaymentConfirmed('whats_hot') && !isActivationPending('whats_hot') && !whatsHotFull() && whatsHotSlotsLeft() !== null" class="status-chip chip-slots">
                       {{ 'PORTAL.PROMOTIONS.SLOTS_LEFT' | translate: { count: whatsHotSlotsLeft() } }}
                     </span>
                   </div>
@@ -373,7 +388,7 @@ interface PartialSuccessState {
                   type="button"
                   class="btn btn-primary"
                   *ngIf="!paymentActive()"
-                  [disabled]="isProcessingPayment() || !hasSelection() || hasNoAreaError() || availabilityLoading() || !boostAvailability()"
+                  [disabled]="isProcessingPayment() || !hasSelection() || hasNoAreaError() || availabilityLoading() || !boostAvailability() || hasActivationPending()"
                   (click)="proceedToPayment()"
                 >
                   <span *ngIf="isProcessingPayment()">{{ 'PORTAL.PROMOTIONS.PROCESSING' | translate }}</span>
@@ -845,6 +860,11 @@ interface PartialSuccessState {
   color: #6ee7b7;
 }
 
+.chip-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fcd34d;
+}
+
 .chip-sold-out {
   background: rgba(239, 68, 68, 0.15);
   color: #fca5a5;
@@ -1102,12 +1122,25 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   stripeReady = signal<boolean>(false);
   currentMountedType = signal<AddonType | null>(null);
 
+  // Payment Confirmation & Activation Protection
+  paymentConfirmedTypes = signal<Set<AddonType>>(new Set());
+  activationPendingTypes = signal<Set<AddonType>>(new Set());
+  activationPendingDismissed = signal<boolean>(false);
+
   private stripeInstance: Stripe | null = null;
   private stripeElements: StripeElements | null = null;
   private pendingQueue: AddonType[] = [];
   completedAddons = signal<AddonType[]>([]);
   private routeSub: Subscription | null = null;
   private availabilitySeq = 0;
+
+  hasActivationPending = computed(() => this.activationPendingTypes().size > 0);
+
+  activationPendingMessage = computed(() => {
+    if (this.activationPendingTypes().size === 0 || this.activationPendingDismissed()) return null;
+    this.i18n.lang(); // reactive tracking
+    return this.i18n.t('PORTAL.PROMOTIONS.ACTIVATION_PENDING_DESC');
+  });
 
   // Computed Values
   publishedEvents = computed(() =>
@@ -1174,7 +1207,9 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     this.hasNoAreaError() ||
     this.availabilityLoading() ||
     !this.boostAvailability() ||
-    this.hasAvailabilityError()
+    this.hasAvailabilityError() ||
+    this.paymentConfirmedTypes().has('main_banner') ||
+    this.activationPendingTypes().has('main_banner')
   );
 
   isWhatsHotDisabled = computed(() =>
@@ -1183,7 +1218,9 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     this.hasNoAreaError() ||
     this.availabilityLoading() ||
     !this.boostAvailability() ||
-    this.hasAvailabilityError()
+    this.hasAvailabilityError() ||
+    this.paymentConfirmedTypes().has('whats_hot') ||
+    this.activationPendingTypes().has('whats_hot')
   );
 
   totalAmount = computed(() => {
@@ -1370,6 +1407,9 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     this.errorDescriptor.set(null);
     this.hasAvailabilityError.set(false);
     this.boostAvailability.set(null);
+    this.paymentConfirmedTypes.set(new Set());
+    this.activationPendingTypes.set(new Set());
+    this.activationPendingDismissed.set(false);
     this.cancelPayment();
 
     if (!eventId) {
@@ -1425,6 +1465,7 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   togglePlacement(type: AddonType): void {
     if (type === 'main_banner' && this.isMainBannerDisabled()) return;
     if (type === 'whats_hot' && this.isWhatsHotDisabled()) return;
+    if (this.paymentConfirmedTypes().has(type) || this.activationPendingTypes().has(type)) return;
 
     const current = new Set(this.selectedPlacements());
     if (current.has(type)) {
@@ -1510,10 +1551,16 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     }
 
     this.errorDescriptor.set(null);
-    // Queue only remaining uncompleted placements to prevent duplicate charges
+    // Queue only remaining uncompleted and unconfirmed placements to prevent duplicate charges
     this.pendingQueue = Array.from(this.selectedPlacements()).filter(
-      (t) => !this.completedAddons().includes(t)
+      (t) =>
+        !this.completedAddons().includes(t) &&
+        !this.paymentConfirmedTypes().has(t) &&
+        !this.activationPendingTypes().has(t)
     );
+    if (this.pendingQueue.length === 0) {
+      return;
+    }
     await this.processQueue(providerId, event.id);
   }
 
@@ -1530,6 +1577,17 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     }
 
     const type = this.pendingQueue[0];
+    if (
+      !type ||
+      this.paymentConfirmedTypes().has(type) ||
+      this.activationPendingTypes().has(type) ||
+      this.completedAddons().includes(type)
+    ) {
+      this.pendingQueue.shift();
+      await this.processQueue(providerId, eventId);
+      return;
+    }
+
     const price = type === 'main_banner' ? this.mainBannerPrice() : this.whatsHotPrice();
     if (!price) {
       this.errorDescriptor.set({ key: 'PORTAL.PROMOTIONS.ERROR_PRICE_NOT_FOUND' });
@@ -1549,11 +1607,16 @@ export class PromotionsComponent implements OnInit, OnDestroy {
 
       // If 100% coupon / free
       if ('free' in result && result.free) {
-        await this.stripeService.applyAddon(type, undefined, eventId, undefined);
-        this.recordPlacementSuccess(type, eventId);
-        this.pendingQueue.shift();
-        await this.processQueue(providerId, eventId);
-        return;
+        try {
+          await this.stripeService.applyAddon(type, undefined, eventId, undefined);
+          this.recordPlacementSuccess(type, eventId);
+          this.pendingQueue.shift();
+          await this.processQueue(providerId, eventId);
+          return;
+        } catch (freeErr: any) {
+          this.handlePaymentFailure(freeErr);
+          return;
+        }
       }
 
       const paidResult = result as { clientSecret: string; paymentIntentId: string };
@@ -1568,10 +1631,20 @@ export class PromotionsComponent implements OnInit, OnDestroy {
           this.handlePaymentFailure(error);
           return;
         }
-        await this.stripeService.applyAddon(type, undefined, eventId, undefined);
-        this.recordPlacementSuccess(type, eventId);
-        this.pendingQueue.shift();
-        await this.processQueue(providerId, eventId);
+
+        // Mark payment confirmed BEFORE calling applyAddon
+        this.markPaymentConfirmed(type);
+
+        try {
+          await this.stripeService.applyAddon(type, undefined, eventId, undefined);
+          this.clearPaymentConfirmed(type);
+          this.recordPlacementSuccess(type, eventId);
+          this.pendingQueue.shift();
+          await this.processQueue(providerId, eventId);
+        } catch (applyErr: any) {
+          this.handleActivationFailure(type, applyErr);
+          return;
+        }
       } else {
         // Mount PaymentElement for new card
         this.currentMountedType.set(type);
@@ -1623,14 +1696,27 @@ export class PromotionsComponent implements OnInit, OnDestroy {
         return;
       }
 
-      await this.stripeService.applyAddon(type, undefined, event.id, undefined);
-      this.recordPlacementSuccess(type, event.id);
-      this.pendingQueue.shift();
+      // Mark payment confirmed BEFORE calling applyAddon
+      this.markPaymentConfirmed(type);
 
-      this.cleanupStripe();
-      await this.processQueue(providerId, event.id);
+      try {
+        await this.stripeService.applyAddon(type, undefined, event.id, undefined);
+        this.clearPaymentConfirmed(type);
+        this.recordPlacementSuccess(type, event.id);
+        this.pendingQueue.shift();
+
+        this.cleanupStripe();
+        await this.processQueue(providerId, event.id);
+      } catch (applyErr: any) {
+        this.handleActivationFailure(type, applyErr);
+        return;
+      }
     } catch (err: any) {
-      this.handlePaymentFailure(err);
+      if (this.paymentConfirmedTypes().has(type)) {
+        this.handleActivationFailure(type, err);
+      } else {
+        this.handlePaymentFailure(err);
+      }
     } finally {
       this.isProcessingPayment.set(false);
     }
@@ -1653,6 +1739,28 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     this.selectedPlacements.set(next);
   }
 
+  private handleActivationFailure(type: AddonType, err: any): void {
+    // Mark placement in activation pending state
+    this.activationPendingTypes.update((set) => new Set(set).add(type));
+    this.paymentConfirmedTypes.update((set) => new Set(set).add(type));
+    this.activationPendingDismissed.set(false);
+
+    // Stop automatic processing immediately (do not charge subsequent queued placements)
+    this.pendingQueue = [];
+
+    // Remove from selected placements so user cannot pay for it again
+    const next = new Set(this.selectedPlacements());
+    next.delete(type);
+    this.selectedPlacements.set(next);
+
+    // Clear any generic error or partial success descriptors
+    this.errorDescriptor.set(null);
+    this.partialSuccessState.set(null);
+
+    // Clean up Stripe element
+    this.cleanupStripe();
+  }
+
   private handlePaymentFailure(err: any): void {
     if (this.completedAddons().length > 0) {
       this.partialSuccessState.set({
@@ -1664,6 +1772,37 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     this.errorDescriptor.set(this.errorService.toCustomerErrorKey(err, 'save'));
     this.pendingQueue = [];
     this.cleanupStripe();
+  }
+
+  getPlacementState(type: AddonType): 'not_started' | 'payment_confirmed' | 'activation_pending' | 'completed' {
+    if (this.completedAddons().includes(type)) return 'completed';
+    if (this.activationPendingTypes().has(type)) return 'activation_pending';
+    if (this.paymentConfirmedTypes().has(type)) return 'payment_confirmed';
+    return 'not_started';
+  }
+
+  isPaymentConfirmed(type: AddonType): boolean {
+    return this.paymentConfirmedTypes().has(type);
+  }
+
+  isActivationPending(type: AddonType): boolean {
+    return this.activationPendingTypes().has(type);
+  }
+
+  clearActivationPending(): void {
+    this.activationPendingDismissed.set(true);
+  }
+
+  private markPaymentConfirmed(type: AddonType): void {
+    this.paymentConfirmedTypes.update((set) => new Set(set).add(type));
+  }
+
+  private clearPaymentConfirmed(type: AddonType): void {
+    this.paymentConfirmedTypes.update((set) => {
+      const next = new Set(set);
+      next.delete(type);
+      return next;
+    });
   }
 
   cancelPayment(): void {

@@ -1390,7 +1390,10 @@ export const esTranslations: Record<string, any> = {
       "ERROR_INVALID_EVENT": "La publicación solicitada no se encontró o no es elegible para promoción.",
       "EDIT_LISTING_BTN": "Editar publicación",
       "LOADING_AVAILABILITY": "Comprobando disponibilidad…",
-      "ERROR_AVAILABILITY": "No pudimos confirmar la disponibilidad de la promoción. Inténtalo de nuevo."
+      "ERROR_AVAILABILITY": "No pudimos confirmar la disponibilidad de la promoción. Inténtalo de nuevo.",
+      "ACTIVATION_PENDING_TITLE": "Pago recibido — Activación pendiente",
+      "ACTIVATION_PENDING_DESC": "Tu pago se completó, pero no pudimos confirmar la activación de este posicionamiento. No vuelvas a realizar el pago. Contacta al soporte de VAMO para recibir ayuda.",
+      "STATUS_ACTIVATION_PENDING": "Pago recibido — activación pendiente"
     },
     "PLACEHOLDER": {
       "BADGE_DEVELOPMENT": "En desarrollo activo",
