@@ -1458,6 +1458,7 @@ export const esTranslations: Record<string, any> = {
       "IMAGE_ALT": "Imagen de {{name}}",
       "EMPTY_TITLE": "Aún no hay actividad",
       "EMPTY_DESC": "Cuando las personas vean, compartan o guarden tu negocio y tus publicaciones en la app VAMO, los números aparecerán aquí.",
+      "ERROR_LOAD": "No pudimos cargar tus estadísticas en este momento. Intenta de nuevo.",
       "RETRY": "Intentar de nuevo"
     },
     "ERRORS": {
