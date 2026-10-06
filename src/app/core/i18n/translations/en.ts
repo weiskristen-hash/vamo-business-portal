@@ -24,7 +24,8 @@ export const enTranslations: Record<string, any> = {
     "OFFERINGS": "Offerings",
     "CONTACT": "Contact",
     "OPENING_HOURS": "Opening Hours",
-    "BREAK": "Break"
+    "BREAK": "Break",
+    "CLOSE_DIALOG": "Close dialog"
   },
   "DAYS": {
     "monday": "Monday",
@@ -148,8 +149,11 @@ export const enTranslations: Record<string, any> = {
     "FORGOT_PASSWORD_TITLE": "Forgot password?",
     "FORGOT_PASSWORD_BTN": "Send reset link",
     "FORGOT_PASSWORD_SUCCESS": "Reset link sent! Check your email.",
+    "FORGOT_PASSWORD_SUCCESS_DISPATCHED": "A password reset link has been dispatched to {{email}}. Please check your inbox.",
     "FORGOT_PASSWORD_ERROR": "Something went wrong. Please try again.",
     "LOGIN_ERROR": "Login failed. Please check your credentials.",
+    "INVALID_CREDENTIALS": "Invalid email or password. Please check your credentials and try again.",
+    "LOGIN_TIMEOUT": "The sign-in request timed out. Please check your connection and try again.",
     "ERROR_EMAIL_REQUIRED": "Email address is required",
     "ERROR_PASSWORD_REQUIRED": "Password is required",
     "EMAIL_VERIFIED_TITLE": "Email verified ✓",
@@ -160,7 +164,8 @@ export const enTranslations: Record<string, any> = {
     "LOGIN_APPLE": "Continue with Apple",
     "GOOGLE_LOGIN_ERROR": "Google Sign-In failed. Please try again.",
     "GOOGLE_UNAVAILABLE": "Google Sign-In is currently unavailable. Please try again or use email and password.",
-    "GOOGLE_CANCELLED": "Google Sign-In was cancelled."
+    "GOOGLE_CANCELLED": "Google Sign-In was cancelled.",
+    "GOOGLE_TOKEN_MISSING": "Could not retrieve your Google credentials. Please try again."
   },
   "HOME": {
     "WHATS_HOT": "🔥 What's Hot",
@@ -732,7 +737,10 @@ export const enTranslations: Record<string, any> = {
       "CANCEL": "Cancel",
       "SEND_RESET_LINK": "Send Reset Link",
       "SENDING": "Sending…",
-      "ALL_RIGHTS": "All rights reserved."
+      "ALL_RIGHTS": "All rights reserved.",
+      "SHOW_PASSWORD": "Show password",
+      "HIDE_PASSWORD": "Hide password",
+      "CLOSE_DIALOG": "Close dialog"
     },
     "REGISTER": {
       "HERO_TITLE": "Create your VAMO account.",

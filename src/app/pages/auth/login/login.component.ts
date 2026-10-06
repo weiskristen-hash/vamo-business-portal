@@ -118,7 +118,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
               <line x1="12" y1="8" x2="12" y2="12"></line>
               <line x1="12" y1="16" x2="12.01" y2="16"></line>
             </svg>
-            <span>{{ errorMessage }}</span>
+            <span>{{ errorKey ? (errorKey | translate:errorParams) : errorMessage }}</span>
           </div>
 
           <!-- Success Alert Banner (e.g. Password Reset) -->
@@ -127,7 +127,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
               <polyline points="22 4 12 14.01 9 11.01"></polyline>
             </svg>
-            <span>{{ successMessage }}</span>
+            <span>{{ successKey ? (successKey | translate:successParams) : successMessage }}</span>
           </div>
 
           <!-- Login Form -->
@@ -142,7 +142,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
                 required
                 email
                 class="form-input"
-                placeholder="operator@yourbusiness.com"
+                [placeholder]="'PORTAL.LOGIN.EMAIL_PLACEHOLDER' | translate"
                 autocomplete="email"
                 [disabled]="loading"
               />
@@ -176,7 +176,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
                   type="button"
                   class="password-toggle-btn"
                   (click)="togglePasswordVisibility()"
-                  [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'"
+                  [attr.aria-label]="(showPassword ? 'PORTAL.LOGIN.HIDE_PASSWORD' : 'PORTAL.LOGIN.SHOW_PASSWORD') | translate"
                   tabindex="0"
                 >
                   <!-- Eye Off Icon (visible when showPassword is true) -->
@@ -255,11 +255,11 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
               <h3 id="forgot-modal-title" class="modal-title">{{ 'PORTAL.LOGIN.FORGOT_MODAL_TITLE' | translate }}</h3>
               <p class="modal-subtitle">{{ 'PORTAL.LOGIN.FORGOT_MODAL_SUB' | translate }}</p>
             </div>
-            <button type="button" class="modal-close-btn" (click)="closeForgotModal()" aria-label="Close dialog">×</button>
+            <button type="button" class="modal-close-btn" (click)="closeForgotModal()" [attr.aria-label]="'PORTAL.LOGIN.CLOSE_DIALOG' | translate">×</button>
           </div>
 
           <div *ngIf="forgotError" class="alert-box alert-error">
-            <span>{{ forgotError }}</span>
+            <span>{{ forgotErrorKey ? (forgotErrorKey | translate:forgotErrorParams) : forgotError }}</span>
           </div>
 
           <div class="modal-body">
@@ -270,7 +270,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
                 id="forgot-email"
                 [(ngModel)]="forgotEmail"
                 class="form-input"
-                placeholder="operator@yourbusiness.com"
+                [placeholder]="'PORTAL.LOGIN.EMAIL_PLACEHOLDER' | translate"
                 [disabled]="forgotLoading"
               />
             </div>
@@ -1020,8 +1020,47 @@ export class LoginComponent implements OnInit, AfterViewInit {
   email = '';
   password = '';
   loading = false;
-  errorMessage = '';
-  successMessage = '';
+
+  errorKey: string | null = null;
+  errorParams?: Record<string, string | number>;
+  private rawErrorMessage = '';
+
+  get errorMessage(): string {
+    this.i18n.lang();
+    if (this.errorKey) {
+      return this.i18n.t(this.errorKey, this.errorParams);
+    }
+    return this.rawErrorMessage;
+  }
+
+  set errorMessage(val: string) {
+    if (!val) {
+      this.errorKey = null;
+      this.errorParams = undefined;
+    }
+    this.rawErrorMessage = val;
+  }
+
+  successKey: string | null = null;
+  successParams?: Record<string, string | number>;
+  private rawSuccessMessage = '';
+
+  get successMessage(): string {
+    this.i18n.lang();
+    if (this.successKey) {
+      return this.i18n.t(this.successKey, this.successParams);
+    }
+    return this.rawSuccessMessage;
+  }
+
+  set successMessage(val: string) {
+    if (!val) {
+      this.successKey = null;
+      this.successParams = undefined;
+    }
+    this.rawSuccessMessage = val;
+  }
+
   currentYear = new Date().getFullYear();
 
   googleLoginEnabled = environment.googleLoginEnabled;
@@ -1030,7 +1069,26 @@ export class LoginComponent implements OnInit, AfterViewInit {
   showForgotModal = false;
   forgotEmail = '';
   forgotLoading = false;
-  forgotError = '';
+
+  forgotErrorKey: string | null = null;
+  forgotErrorParams?: Record<string, string | number>;
+  private rawForgotError = '';
+
+  get forgotError(): string {
+    this.i18n.lang();
+    if (this.forgotErrorKey) {
+      return this.i18n.t(this.forgotErrorKey, this.forgotErrorParams);
+    }
+    return this.rawForgotError;
+  }
+
+  set forgotError(val: string) {
+    if (!val) {
+      this.forgotErrorKey = null;
+      this.forgotErrorParams = undefined;
+    }
+    this.rawForgotError = val;
+  }
 
   private returnUrl = '/app/overview';
 
@@ -1040,6 +1098,7 @@ export class LoginComponent implements OnInit, AfterViewInit {
       if (this.isGoogleLoaded && this.googleBtnContainer?.nativeElement) {
         this.renderGoogleButton(currentLang);
       }
+      this.cdr.markForCheck();
     });
   }
 
@@ -1146,15 +1205,15 @@ export class LoginComponent implements OnInit, AfterViewInit {
       }
     } catch (err: any) {
       if (this.isInvalidCredentials(err)) {
-        this.errorMessage = this.i18n.lang() === 'es'
-          ? 'Correo o contraseña no válidos. Por favor verifica tus credenciales y vuelve a intentarlo.'
-          : 'Invalid email or password. Please check your credentials and try again.';
+        this.errorKey = 'AUTH.INVALID_CREDENTIALS';
+        this.errorParams = undefined;
       } else if (this.isTimeoutError(err)) {
-        this.errorMessage = this.i18n.lang() === 'es'
-          ? 'La solicitud de inicio de sesión ha caducado. Por favor comprueba tu conexión e inténtalo de nuevo.'
-          : 'The sign-in request timed out. Please check your connection and try again.';
+        this.errorKey = 'AUTH.LOGIN_TIMEOUT';
+        this.errorParams = undefined;
       } else {
-        this.errorMessage = this.customerErrorService.toCustomerMessage(err, 'auth');
+        const errorInfo = this.customerErrorService.toCustomerErrorKey(err, 'auth');
+        this.errorKey = errorInfo.key;
+        this.errorParams = errorInfo.params;
       }
     } finally {
       this.loading = false;
@@ -1217,11 +1276,11 @@ export class LoginComponent implements OnInit, AfterViewInit {
     try {
       await this.authService.requestPasswordReset(this.forgotEmail.trim());
       this.showForgotModal = false;
-      this.successMessage = this.i18n.lang() === 'es'
-        ? `¡Enlace enviado a ${this.forgotEmail}! Revisa tu correo.`
-        : `A password reset link has been dispatched to ${this.forgotEmail}. Please check your inbox.`;
+      this.successKey = 'AUTH.FORGOT_PASSWORD_SUCCESS_DISPATCHED';
+      this.successParams = { email: this.forgotEmail.trim() };
     } catch (err: any) {
-      this.forgotError = this.customerErrorService.toCustomerMessage(err, 'save', this.i18n.t('AUTH.FORGOT_PASSWORD_ERROR'));
+      this.forgotErrorKey = 'AUTH.FORGOT_PASSWORD_ERROR';
+      this.forgotErrorParams = undefined;
     } finally {
       this.forgotLoading = false;
       this.cdr.markForCheck();
@@ -1239,9 +1298,8 @@ export class LoginComponent implements OnInit, AfterViewInit {
   private handleGoogleError(err: any): void {
     const msg = err?.message || '';
     if (msg === 'GOOGLE_POPUP_CLOSED' || msg === 'GOOGLE_CANCELLED') {
-      this.errorMessage = this.i18n.lang() === 'es'
-        ? 'Se canceló el inicio de sesión con Google.'
-        : 'Google Sign-In was cancelled.';
+      this.errorKey = 'AUTH.GOOGLE_CANCELLED';
+      this.errorParams = undefined;
       return;
     }
 
@@ -1251,23 +1309,19 @@ export class LoginComponent implements OnInit, AfterViewInit {
       msg === 'GOOGLE_PROMPT_NOT_DISPLAYED' ||
       msg === 'GOOGLE_CLIENT_ID_NOT_CONFIGURED'
     ) {
-      this.errorMessage = this.i18n.lang() === 'es'
-        ? 'El inicio de sesión con Google no está disponible actualmente. Inténtalo de nuevo o usa correo y contraseña.'
-        : 'Google Sign-In is currently unavailable. Please try again or use email and password.';
+      this.errorKey = 'AUTH.GOOGLE_UNAVAILABLE';
+      this.errorParams = undefined;
       return;
     }
 
     if (msg === 'GOOGLE_TOKEN_MISSING') {
-      this.errorMessage = this.i18n.lang() === 'es'
-        ? 'No se pudieron obtener las credenciales de Google. Por favor, inténtalo de nuevo.'
-        : 'Could not retrieve your Google credentials. Please try again.';
+      this.errorKey = 'AUTH.GOOGLE_TOKEN_MISSING';
+      this.errorParams = undefined;
       return;
     }
 
-    const fallback = this.i18n.lang() === 'es'
-      ? 'Error al iniciar sesión con Google. Por favor, inténtalo de nuevo.'
-      : 'Google Sign-In failed. Please try again.';
-    this.errorMessage = this.customerErrorService.toCustomerMessage(err, 'auth', fallback);
+    this.errorKey = 'AUTH.GOOGLE_LOGIN_ERROR';
+    this.errorParams = undefined;
   }
 
   private async navigateAfterSocialLogin(user: any): Promise<void> {
