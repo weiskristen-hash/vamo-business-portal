@@ -11,10 +11,10 @@ import { AuthService } from './auth.service';
  * the `analytics_event_daily` rollup collection and the `bookmarks` aggregate.
  * No new tracking, no new fields.
  *
- * IMPORTANT difference vs canonical: the canonical `getInsightsInRange()` reads
- * `analytics_event_daily` with only a date filter. The portal ALWAYS adds an
- * explicit provider scope to the server-side filter (provider FK or one of the
- * provider's own event IDs) and never fetches platform-wide rows.
+ * Query behavior intentionally mirrors the canonical VAMO app: Directus receives
+ * only the requested date range and its existing row-level permissions decide
+ * which analytics rows the authenticated provider account may read. The portal
+ * then applies a client-side provider/event ownership check as defense in depth.
  */
 
 export type InsightsRange = '7d' | '30d' | '90d' | 'all';
@@ -62,9 +62,6 @@ export const METRIC_TYPES: Record<InsightsMetric, readonly string[]> = {
  * `event_whatsapp_click` is intentionally excluded (Phase 1D.1 requirement).
  */
 export const WHATSAPP_TYPES: readonly string[] = ['provider_whatsapp_click'];
-
-/** Max event IDs per `_in` filter to keep request URLs bounded. */
-export const EVENT_ID_CHUNK_SIZE = 100;
 
 const RANGE_DAYS: Record<Exclude<InsightsRange, 'all'>, number> = { '7d': 7, '30d': 30, '90d': 90 };
 
@@ -179,10 +176,10 @@ export class InsightsService {
   readonly analyticsFields = ['id', 'date', 'event_type', 'target_type', 'count', 'event', 'provider'] as const;
 
   /**
-   * Reads `analytics_event_daily` rows in [from, to] scoped server-side to the
-   * provider: rows whose `provider` FK equals `providerId`, OR whose `event` FK
-   * is one of `ownedEventIds` (which must come from a provider-scoped events
-   * query). Rows are re-checked client-side as defence in depth.
+   * Reads `analytics_event_daily` rows in [from, to] using the same date-only
+   * server query as the canonical VAMO app. Directus row-level permissions remain
+   * the authoritative server-side business boundary. Provider/event IDs are used
+   * only to reject any unexpected rows client-side before rendering.
    */
   async getAnalyticsInRange(
     providerId: string,
@@ -194,46 +191,28 @@ export class InsightsService {
       throw new Error('INSIGHTS_PROVIDER_REQUIRED');
     }
 
-    const ownedIds = Array.from(new Set(ownedEventIds.filter((id) => !!id)));
-    const chunks: string[][] = [];
-    for (let i = 0; i < ownedIds.length; i += EVENT_ID_CHUNK_SIZE) {
-      chunks.push(ownedIds.slice(i, i + EVENT_ID_CHUNK_SIZE));
-    }
-
-    // First request always carries the provider scope (+ first chunk of owned events).
-    const scopes: any[][] = [];
-    scopes.push([{ provider: { _eq: providerId } }, ...(chunks[0] ? [{ event: { _in: chunks[0] } }] : [])]);
-    for (const chunk of chunks.slice(1)) {
-      scopes.push([{ event: { _in: chunk } }]);
-    }
-
-    const results = await Promise.all(
-      scopes.map((orScope) =>
-        this.authService.safeRequest(async () => {
-          const items = await directusClient.request<any[]>(
-            readItems('analytics_event_daily' as any, {
-              fields: this.analyticsFields as any,
-              filter: {
-                _and: [{ date: { _between: [from, to] } }, { _or: orScope }],
-              } as any,
-              limit: -1,
-            } as any)
-          );
-          return items || [];
-        })
+    const ownedSet = new Set(ownedEventIds.filter((id) => !!id));
+    const items = await this.authService.safeRequest(async () =>
+      directusClient.request<any[]>(
+        readItems('analytics_event_daily' as any, {
+          fields: this.analyticsFields as any,
+          filter: { date: { _between: [from, to] } } as any,
+          limit: -1,
+        } as any)
       )
     );
 
-    const ownedSet = new Set(ownedIds);
     const seen = new Set<string>();
     const rows: AnalyticsDailyRow[] = [];
-    for (const raw of results.flat()) {
+    for (const raw of items || []) {
       const row = normalizeRow(raw);
       if (!row) continue;
-      // Defence in depth: never keep a row that is not tied to this provider.
+
+      // Defense in depth only. Directus row-level permissions are the server boundary.
       const ownsEvent = !!row.event && ownedSet.has(row.event);
       const ownsProvider = row.provider === providerId;
       if (!ownsEvent && !ownsProvider) continue;
+
       if (row.id !== null) {
         const key = String(row.id);
         if (seen.has(key)) continue;

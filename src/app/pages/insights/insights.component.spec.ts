@@ -288,6 +288,8 @@ describe('InsightsComponent (Phase 1D.1)', () => {
     expect(err).toBeTruthy();
     const text = err?.textContent ?? '';
     expect(text).not.toMatch(/directus|analytics_event_daily|403|permission to access/i);
+    expect(text).toContain("We couldn't load your Insights right now. Please try again.");
+    expect(text).not.toContain("business profile");
     expect(el().querySelector('.kpi-card')).toBeNull();
 
     insightsServiceSpy.getAnalyticsInRange.mockImplementation(() => Promise.resolve([]));

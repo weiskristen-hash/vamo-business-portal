@@ -525,7 +525,7 @@ export class InsightsComponent implements OnInit {
     const providerId = this.authService.currentUser?.provider_link?.id ?? null;
     this.providerId = providerId;
     if (!providerId) {
-      this.errorDescriptor.set({ key: 'PORTAL.ERRORS.LOAD_MSG' });
+      this.errorDescriptor.set({ key: 'PORTAL.INSIGHTS.ERROR_LOAD' });
       this.loading.set(false);
       return;
     }
@@ -545,7 +545,7 @@ export class InsightsComponent implements OnInit {
       this.bookmarks.set(bm);
     } catch (err) {
       if (seq !== this.loadSeq) return;
-      this.errorDescriptor.set(this.errorService.toCustomerErrorKey(err, 'load'));
+      this.errorDescriptor.set(this.toInsightsError(err));
     } finally {
       if (seq === this.loadSeq) this.loading.set(false);
     }
@@ -566,7 +566,7 @@ export class InsightsComponent implements OnInit {
       await this.fetchRange(seq, this.providerId, r);
     } catch (err) {
       if (seq !== this.loadSeq) return;
-      this.errorDescriptor.set(this.errorService.toCustomerErrorKey(err, 'load'));
+      this.errorDescriptor.set(this.toInsightsError(err));
     } finally {
       if (seq === this.loadSeq) this.loading.set(false);
     }
@@ -575,6 +575,19 @@ export class InsightsComponent implements OnInit {
   /** Canonical: metric toggle only re-aggregates the already loaded rows. */
   onMetricChange(m: InsightsMetric): void {
     this.metric.set(m);
+  }
+
+  private toInsightsError(err: unknown): MessageDescriptor {
+    const descriptor = this.errorService.toCustomerErrorKey(err, 'load');
+    // Preserve session/network guidance, but do not mislabel an Insights permission
+    // or data-read failure as a business-profile failure.
+    if (
+      descriptor.key === 'PORTAL.ERRORS.AUTH_MSG' ||
+      descriptor.key === 'PORTAL.ERRORS.NETWORK_MSG'
+    ) {
+      return descriptor;
+    }
+    return { key: 'PORTAL.INSIGHTS.ERROR_LOAD' };
   }
 
   retry(): void {

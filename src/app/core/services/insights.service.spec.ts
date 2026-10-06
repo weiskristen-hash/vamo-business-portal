@@ -3,7 +3,6 @@ import { directusClient } from '../directus/directus-client';
 import { AuthService } from './auth.service';
 import {
   AnalyticsDailyRow,
-  EVENT_ID_CHUNK_SIZE,
   InsightsService,
   METRIC_TYPES,
   WHATSAPP_TYPES,
@@ -55,8 +54,8 @@ describe('InsightsService (Phase 1D.1 canonical parity)', () => {
     service = TestBed.inject(InsightsService);
   });
 
-  describe('provider scoping', () => {
-    it('always filters analytics server-side by provider FK or owned event IDs, with explicit fields', async () => {
+  describe('canonical analytics read with client-side defense', () => {
+    it('uses the canonical date-only server filter with explicit fields', async () => {
       requestMock.mockResolvedValueOnce([]);
       await service.getAnalyticsInRange('prov-1', ['ev-1', 'ev-2'], '2026-09-01', '2026-10-01');
 
@@ -65,58 +64,33 @@ describe('InsightsService (Phase 1D.1 canonical parity)', () => {
       const cmd = queryOf(requestMock.mock.calls[0][0]);
       const url = decodeURIComponent(String(cmd.path ?? '')) + ' ' + decodeURIComponent(JSON.stringify(cmd.params ?? {}));
       expect(url).toContain('analytics_event_daily');
-      expect(url).toContain('prov-1');
-      expect(url).toContain('ev-1');
-      expect(url).toContain('ev-2');
       expect(url).toContain('_between');
+      expect(url).not.toContain('prov-1');
+      expect(url).not.toContain('ev-1');
+      expect(url).not.toContain('ev-2');
       expect(url).not.toContain('*');
     });
 
-    it('builds the exact provider-scoped filter', async () => {
-      const spy = vi.spyOn(service as any, 'getAnalyticsInRange');
+    it('builds exactly the canonical date-range filter', async () => {
       requestMock.mockImplementation(async (cmd: any) => {
         const q = queryOf(cmd);
         const params = q.params ?? {};
         const filter = typeof params.filter === 'string' ? JSON.parse(params.filter) : params.filter;
-        expect(filter).toEqual({
-          _and: [
-            { date: { _between: ['2026-09-01', '2026-10-01'] } },
-            { _or: [{ provider: { _eq: 'prov-1' } }, { event: { _in: ['ev-1'] } }] },
-          ],
-        });
-        const fields = params.fields;
-        expect(String(fields)).toBe('id,date,event_type,target_type,count,event,provider');
+        expect(filter).toEqual({ date: { _between: ['2026-09-01', '2026-10-01'] } });
+        expect(String(params.fields)).toBe('id,date,event_type,target_type,count,event,provider');
         return [];
       });
       await service.getAnalyticsInRange('prov-1', ['ev-1'], '2026-09-01', '2026-10-01');
-      expect(spy).toHaveBeenCalled();
     });
 
-    it('uses only the provider FK scope when the business has no events', async () => {
-      requestMock.mockImplementation(async (cmd: any) => {
-        const params = queryOf(cmd).params ?? {};
-        const filter = typeof params.filter === 'string' ? JSON.parse(params.filter) : params.filter;
-        expect(filter._and[1]).toEqual({ _or: [{ provider: { _eq: 'prov-1' } }] });
-        return [];
-      });
-      await service.getAnalyticsInRange('prov-1', [], '2026-09-01', '2026-10-01');
+    it('uses one analytics request even when the provider owns many events', async () => {
+      const ids = Array.from({ length: 205 }, (_, i) => `ev-${i}`);
+      requestMock.mockResolvedValueOnce([]);
+      await service.getAnalyticsInRange('prov-1', ids, '2026-09-01', '2026-10-01');
       expect(requestMock).toHaveBeenCalledTimes(1);
     });
 
-    it('chunks large owned-event lists and de-duplicates rows by id', async () => {
-      const ids = Array.from({ length: EVENT_ID_CHUNK_SIZE + 5 }, (_, i) => `ev-${i}`);
-      requestMock
-        .mockResolvedValueOnce([{ id: 1, date: '2026-10-01', event_type: 'event_view', target_type: 'event', count: 2, event: 'ev-0' }])
-        .mockResolvedValueOnce([
-          { id: 1, date: '2026-10-01', event_type: 'event_view', target_type: 'event', count: 2, event: 'ev-0' },
-          { id: 2, date: '2026-10-01', event_type: 'event_view', target_type: 'event', count: 3, event: `ev-${EVENT_ID_CHUNK_SIZE + 1}` },
-        ]);
-      const rows = await service.getAnalyticsInRange('prov-1', ids, '2026-09-01', '2026-10-01');
-      expect(requestMock).toHaveBeenCalledTimes(2);
-      expect(rows.map((r) => r.id)).toEqual([1, 2]);
-    });
-
-    it('drops any row not tied to the provider (defence in depth) and normalizes FK objects', async () => {
+    it('drops unexpected rows client-side and normalizes FK objects', async () => {
       requestMock.mockResolvedValueOnce([
         { id: 1, date: '2026-10-01', event_type: 'event_view', target_type: 'event', count: 4, event: { id: 'ev-1' } },
         { id: 2, date: '2026-10-01', event_type: 'event_view', target_type: 'event', count: 99, event: 'someone-elses-event' },
@@ -126,6 +100,15 @@ describe('InsightsService (Phase 1D.1 canonical parity)', () => {
       const rows = await service.getAnalyticsInRange('prov-1', ['ev-1'], '2026-09-01', '2026-10-01');
       expect(rows.map((r) => r.id)).toEqual([1, 3]);
       expect(rows[0].event).toBe('ev-1');
+    });
+
+    it('de-duplicates repeated rows by id', async () => {
+      requestMock.mockResolvedValueOnce([
+        { id: 1, date: '2026-10-01', event_type: 'event_view', target_type: 'event', count: 2, event: 'ev-1' },
+        { id: 1, date: '2026-10-01', event_type: 'event_view', target_type: 'event', count: 2, event: 'ev-1' },
+      ]);
+      const rows = await service.getAnalyticsInRange('prov-1', ['ev-1'], '2026-09-01', '2026-10-01');
+      expect(rows).toHaveLength(1);
     });
 
     it('refuses to query without a provider id', async () => {
