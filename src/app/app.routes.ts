@@ -114,7 +114,7 @@ export const routes: Routes = [
       {
         path: 'insights',
         loadComponent: () =>
-          import('./pages/placeholder/placeholder.component').then((m) => m.PlaceholderComponent),
+          import('./pages/insights/insights.component').then((m) => m.InsightsComponent),
         data: { module: 'insights' },
       },
       {

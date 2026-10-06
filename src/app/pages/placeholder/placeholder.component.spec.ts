@@ -65,18 +65,15 @@ describe('PlaceholderComponent (Settings & Future Modules Localization)', () => 
     expect(compiled.querySelector('.module-title')?.textContent?.trim()).toBe('Promociones y ubicaciones en VAMO');
   });
 
-  it('should initialize Insights placeholder in EN and ES', () => {
+  it('no longer provides an Insights placeholder (Insights is a real page) and never promises untracked metrics', () => {
     createComponentWithRoute('insights');
-    i18n.setLang('en');
-    fixture.detectChanges();
+    expect(component.moduleMap['insights']).toBeUndefined();
 
-    let compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('.module-title')?.textContent?.trim()).toBe('Audience & Performance Insights');
-
-    i18n.setLang('es');
-    fixture.detectChanges();
-
-    compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('.module-title')?.textContent?.trim()).toBe('Estadísticas de audiencia y rendimiento');
+    for (const lang of ['en', 'es'] as const) {
+      i18n.setLang(lang);
+      fixture.detectChanges();
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+      expect(text).not.toMatch(/impression|impresion|geograph|geográf|retention|retención/i);
+    }
   });
 });
