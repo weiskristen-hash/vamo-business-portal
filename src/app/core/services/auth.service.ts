@@ -270,14 +270,30 @@ export class AuthService {
     return user;
   }
 
-  async login(email: string, password: string): Promise<VamoUser> {
-    await directusClient.login({ email, password });
+  async login(email: string, password: string, timeoutMs: number = 12000): Promise<VamoUser> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const timeoutErr = new Error('Authentication request timed out. Please check your connection and try again.');
+        (timeoutErr as any).code = 'LOGIN_TIMEOUT';
+        reject(timeoutErr);
+      }, timeoutMs);
+    });
 
-    const user = await this.loadCurrentUser();
-    this.userSubject.next(user);
-    this.scheduleProactiveRefresh();
-
-    return user;
+    try {
+      return await Promise.race([
+        (async () => {
+          await directusClient.login({ email, password });
+          const user = await this.loadCurrentUser();
+          this.userSubject.next(user);
+          this.scheduleProactiveRefresh();
+          return user;
+        })(),
+        timeoutPromise,
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /**

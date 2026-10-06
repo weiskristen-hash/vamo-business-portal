@@ -3,6 +3,7 @@ import { LoginComponent } from './login.component';
 import { AuthService } from '../../../core/services/auth.service';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { I18nService } from '../../../core/i18n/i18n.service';
 
 describe('LoginComponent', () => {
   let component: LoginComponent;
@@ -192,5 +193,184 @@ describe('LoginComponent', () => {
 
     expect(component.loading).toBe(false);
     expect(component.errorMessage).toBeTruthy();
+  });
+
+  describe('Login Failure & Resilience Regressions', () => {
+    it('should reset loading state, re-enable controls, and restore button text on bad password', async () => {
+      authServiceSpy.login.mockRejectedValue({
+        errors: [{ extensions: { code: 'INVALID_CREDENTIALS' } }],
+      });
+
+      component.email = 'operator@business.com';
+      component.password = 'wrongsecret';
+      fixture.detectChanges();
+
+      const emailInput = fixture.nativeElement.querySelector('#email') as HTMLInputElement;
+      const passwordInput = fixture.nativeElement.querySelector('#password') as HTMLInputElement;
+      const submitBtn = fixture.nativeElement.querySelector('.submit-btn') as HTMLButtonElement;
+
+      expect(submitBtn.disabled).toBe(false);
+
+      const submitPromise = component.onSubmit();
+      expect(component.loading).toBe(true);
+
+      await submitPromise;
+      fixture.detectChanges();
+
+      expect(component.loading).toBe(false);
+      expect(emailInput.disabled).toBe(false);
+      expect(passwordInput.disabled).toBe(false);
+      expect(submitBtn.disabled).toBe(false);
+      expect(submitBtn.textContent).toContain('Login');
+      expect(fixture.nativeElement.querySelector('.spinner')).toBeNull();
+      expect(component.errorMessage).toBe('Invalid email or password. Please check your credentials and try again.');
+    });
+
+    it('should display the exact English error message without raw Directus details on bad credentials', async () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('en');
+
+      authServiceSpy.login.mockRejectedValue({
+        errors: [{ message: 'Invalid user credentials.', extensions: { code: 'INVALID_CREDENTIALS' } }],
+      });
+
+      component.email = 'operator@business.com';
+      component.password = 'badpassword';
+      await component.onSubmit();
+      fixture.detectChanges();
+
+      expect(component.errorMessage).toBe('Invalid email or password. Please check your credentials and try again.');
+      expect(component.errorMessage).not.toContain('Directus');
+      expect(component.errorMessage).not.toContain('extensions');
+      const alert = fixture.nativeElement.querySelector('.alert-error');
+      expect(alert.textContent).toContain('Invalid email or password. Please check your credentials and try again.');
+    });
+
+    it('should display the Spanish equivalent error message when language is set to ES', async () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+
+      authServiceSpy.login.mockRejectedValue({
+        status: 401,
+        message: 'Invalid user credentials.',
+      });
+
+      component.email = 'operator@business.com';
+      component.password = 'badpassword';
+      await component.onSubmit();
+      fixture.detectChanges();
+
+      expect(component.errorMessage).toContain('Correo o contraseña no válidos');
+      expect(component.errorMessage).not.toContain('Directus');
+      expect(component.errorMessage).not.toContain('401');
+      const alert = fixture.nativeElement.querySelector('.alert-error');
+      expect(alert.textContent).toContain('Correo o contraseña no válidos');
+
+      i18n.setLang('en');
+    });
+
+    it('should normalize varied Directus auth errors including HTTP 401 and INVALID_USER_CREDENTIALS', async () => {
+      // Directus variation 1: INVALID_USER_CREDENTIALS code
+      authServiceSpy.login.mockRejectedValue({
+        errors: [{ extensions: { code: 'INVALID_USER_CREDENTIALS' } }],
+      });
+      component.email = 'operator@business.com';
+      component.password = 'badpassword';
+      await component.onSubmit();
+      expect(component.errorMessage).toBe('Invalid email or password. Please check your credentials and try again.');
+
+      // Directus variation 2: HTTP 401 status
+      authServiceSpy.login.mockRejectedValue({
+        status: 401,
+        response: { status: 401 },
+      });
+      await component.onSubmit();
+      expect(component.errorMessage).toBe('Invalid email or password. Please check your credentials and try again.');
+
+      // Directus variation 3: message without extensions
+      authServiceSpy.login.mockRejectedValue({
+        message: 'Invalid user credentials.',
+      });
+      await component.onSubmit();
+      expect(component.errorMessage).toBe('Invalid email or password. Please check your credentials and try again.');
+    });
+
+    it('should handle hung login timeout, resetting loading state and showing customer-safe connection error in EN', async () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('en');
+
+      const timeoutErr = new Error('Authentication request timed out. Please check your connection and try again.');
+      (timeoutErr as any).code = 'LOGIN_TIMEOUT';
+      authServiceSpy.login.mockRejectedValue(timeoutErr);
+
+      component.email = 'operator@business.com';
+      component.password = 'secret';
+      fixture.detectChanges();
+
+      const emailInput = fixture.nativeElement.querySelector('#email') as HTMLInputElement;
+      const passwordInput = fixture.nativeElement.querySelector('#password') as HTMLInputElement;
+      const submitBtn = fixture.nativeElement.querySelector('.submit-btn') as HTMLButtonElement;
+
+      const submitPromise = component.onSubmit();
+      expect(component.loading).toBe(true);
+
+      await submitPromise;
+      fixture.detectChanges();
+
+      expect(component.loading).toBe(false);
+      expect(emailInput.disabled).toBe(false);
+      expect(passwordInput.disabled).toBe(false);
+      expect(submitBtn.disabled).toBe(false);
+      expect(submitBtn.textContent).toContain('Login');
+      expect(fixture.nativeElement.querySelector('.spinner')).toBeNull();
+      expect(component.errorMessage).toBe('The sign-in request timed out. Please check your connection and try again.');
+      expect(component.errorMessage).not.toContain('LOGIN_TIMEOUT');
+    });
+
+    it('should handle hung login timeout in Spanish when language is set to ES', async () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+
+      const timeoutErr = new Error('Authentication request timed out.');
+      (timeoutErr as any).code = 'LOGIN_TIMEOUT';
+      authServiceSpy.login.mockRejectedValue(timeoutErr);
+
+      component.email = 'operator@business.com';
+      component.password = 'secret';
+      await component.onSubmit();
+      fixture.detectChanges();
+
+      expect(component.loading).toBe(false);
+      expect(component.errorMessage).toContain('La solicitud de inicio de sesión ha caducado');
+      i18n.setLang('en');
+    });
+
+    it('should ensure Google login remains completely unaffected by password login error changes', async () => {
+      authServiceSpy.loginWithGoogleCredential = vi.fn().mockResolvedValue({
+        id: 'usr-google',
+        email: 'google@vamo.com',
+        provider_link: { id: 'prov-1', name: 'Google Cafe' },
+      });
+
+      await component.onGoogleCredentialSuccess('mock-google-credential');
+      expect(authServiceSpy.loginWithGoogleCredential).toHaveBeenCalledWith('mock-google-credential');
+      expect(routerSpy.navigateByUrl).toHaveBeenCalled();
+      expect(component.loading).toBe(false);
+    });
+
+    it('should ensure Forgot Password flow remains completely unaffected and resets loading', async () => {
+      authServiceSpy.requestPasswordReset.mockRejectedValue(new Error('Reset service busy'));
+
+      component.openForgotModal();
+      expect(component.showForgotModal).toBe(true);
+      expect(component.forgotLoading).toBe(false);
+
+      component.forgotEmail = 'operator@business.com';
+      await component.sendPasswordReset();
+
+      expect(component.forgotLoading).toBe(false);
+      expect(component.forgotError).toBeTruthy();
+      expect(component.showForgotModal).toBe(true);
+    });
   });
 });

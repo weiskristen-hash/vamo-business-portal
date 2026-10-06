@@ -130,4 +130,49 @@ describe('AuthService', () => {
       errors: [{ extensions: { code: 'RECORD_NOT_UNIQUE' } }],
     });
   });
+
+  describe('login()', () => {
+    it('should authenticate user, update userSubject, and return user profile on valid credentials', async () => {
+      const directusClient = (await import('../directus/directus-client')).directusClient;
+      const mockUser = {
+        id: 'usr-valid',
+        email: 'valid@vamo.com',
+        first_name: 'Maria',
+        last_name: 'Santos',
+        provider_link: { id: 'prov-1', name: 'Maria Cafe' },
+      };
+
+      vi.spyOn(directusClient, 'login').mockResolvedValue(undefined as any);
+      vi.spyOn(service, 'loadCurrentUser').mockResolvedValue(mockUser as any);
+
+      const result = await service.login('valid@vamo.com', 'correctpass');
+
+      expect(directusClient.login).toHaveBeenCalledWith({ email: 'valid@vamo.com', password: 'correctpass' });
+      expect(result.id).toBe('usr-valid');
+      expect(service.currentUser?.email).toBe('valid@vamo.com');
+    });
+
+    it('should reject promptly without hanging when directus credentials fail', async () => {
+      const directusClient = (await import('../directus/directus-client')).directusClient;
+      const credErr = {
+        errors: [{ message: 'Invalid user credentials.', extensions: { code: 'INVALID_CREDENTIALS' } }],
+      };
+      vi.spyOn(directusClient, 'login').mockRejectedValue(credErr);
+
+      await expect(service.login('valid@vamo.com', 'badpass')).rejects.toMatchObject(credErr);
+    });
+
+    it('should abort and reject with LOGIN_TIMEOUT when login hangs past timeoutMs', async () => {
+      const directusClient = (await import('../directus/directus-client')).directusClient;
+      // Mock login to return a promise that never resolves
+      vi.spyOn(directusClient, 'login').mockReturnValue(new Promise(() => {}));
+
+      // Call login with a short 50ms timeout for test speed
+      const loginPromise = service.login('hung@vamo.com', 'pass', 50);
+
+      await expect(loginPromise).rejects.toMatchObject({
+        code: 'LOGIN_TIMEOUT',
+      });
+    });
+  });
 });
