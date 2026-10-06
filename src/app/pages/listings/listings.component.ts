@@ -66,10 +66,6 @@ import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
         <!-- Metrics Overview Bar -->
         <div class="metrics-row">
-          <div class="metric-card" (click)="setStatusFilter('all')" [class.active-metric]="statusFilter === 'all'">
-            <div class="metric-label">{{ 'PORTAL.LISTINGS.METRICS.ALL' | translate }}</div>
-            <div class="metric-value">{{ stats.total }}</div>
-          </div>
           <div class="metric-card metric-success" (click)="setStatusFilter('active')" [class.active-metric]="statusFilter === 'active'">
             <div class="metric-label">{{ 'PORTAL.LISTINGS.METRICS.ACTIVE' | translate }}</div>
             <div class="metric-value">{{ stats.active }}</div>
@@ -106,16 +102,6 @@ import { TranslatePipe } from '../../core/i18n/translate.pipe';
         <div class="filter-controls">
           <!-- Status Pill Tabs -->
           <div class="filter-tabs" role="tablist" [attr.aria-label]="'PORTAL.LISTINGS.STATUS_FILTERS_ARIA' | translate">
-            <button
-              type="button"
-              role="tab"
-              class="filter-tab"
-              [class.active]="statusFilter === 'all'"
-              [attr.aria-selected]="statusFilter === 'all'"
-              (click)="setStatusFilter('all')"
-            >
-              {{ 'PORTAL.LISTINGS.FILTER_ALL' | translate }} ({{ stats.total }})
-            </button>
             <button
               type="button"
               role="tab"
@@ -518,7 +504,7 @@ import { TranslatePipe } from '../../core/i18n/translate.pipe';
     /* Metric Counters */
     .metrics-row {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 16px;
     }
 
@@ -1115,7 +1101,7 @@ export class ListingsComponent implements OnInit {
   filteredEvents: VamoEvent[] = [];
 
   searchQuery = '';
-  statusFilter: 'all' | 'active' | 'draft' | 'past' = 'all';
+  statusFilter: 'active' | 'draft' | 'past' = 'active';
   categoryFilter: string = 'all';
   modeFilter: 'all' | 'single' | 'recurring' = 'all';
 
@@ -1124,7 +1110,6 @@ export class ListingsComponent implements OnInit {
   deletingEvent: VamoEvent | null = null;
 
   stats = {
-    total: 0,
     active: 0,
     draft: 0,
     past: 0,
@@ -1178,7 +1163,6 @@ export class ListingsComponent implements OnInit {
     }
 
     this.stats = {
-      total: this.events.length,
       active,
       draft,
       past,
@@ -1228,7 +1212,7 @@ export class ListingsComponent implements OnInit {
     this.cdr.markForCheck();
   }
 
-  setStatusFilter(filter: 'all' | 'active' | 'draft' | 'past'): void {
+  setStatusFilter(filter: 'active' | 'draft' | 'past'): void {
     this.statusFilter = filter;
     this.applyFilters();
   }
@@ -1240,7 +1224,7 @@ export class ListingsComponent implements OnInit {
 
   resetFilters(): void {
     this.searchQuery = '';
-    this.statusFilter = 'all';
+    this.statusFilter = 'active';
     this.categoryFilter = 'all';
     this.modeFilter = 'all';
     this.applyFilters();

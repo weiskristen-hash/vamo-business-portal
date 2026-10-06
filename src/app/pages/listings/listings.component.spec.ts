@@ -118,14 +118,22 @@ describe('ListingsComponent', () => {
     expect(component).toBeTruthy();
     expect(businessServiceSpy.getEventsForProvider).toHaveBeenCalledWith('provider-123');
     expect(component.events.length).toBe(4);
-    expect(component.stats.total).toBe(4);
     expect(component.stats.active).toBe(2); // ev-1 (single upcoming), ev-2 (recurring)
     expect(component.stats.draft).toBe(1);  // ev-3
     expect(component.stats.past).toBe(1);   // ev-4
   });
 
-  it('should filter listings by status tabs', () => {
-    component.setStatusFilter('active');
+  it('shows only Active, Drafts, and Past status controls', async () => {
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).not.toContain('All Listings');
+    expect((fixture.nativeElement as HTMLElement).querySelectorAll('.metrics-row .metric-card').length).toBe(3);
+    expect((fixture.nativeElement as HTMLElement).querySelectorAll('.filter-tabs .filter-tab').length).toBe(3);
+  });
+
+  it('defaults to Active and filters listings by the three status tabs', () => {
+    expect(component.statusFilter).toBe('active');
     expect(component.filteredEvents.length).toBe(2);
     expect(component.filteredEvents.every((e) => e.status === 'published')).toBe(true);
 
@@ -137,8 +145,8 @@ describe('ListingsComponent', () => {
     expect(component.filteredEvents.length).toBe(1);
     expect(component.filteredEvents[0].id).toBe('ev-4');
 
-    component.setStatusFilter('all');
-    expect(component.filteredEvents.length).toBe(4);
+    component.setStatusFilter('active');
+    expect(component.filteredEvents.length).toBe(2);
   });
 
   it('should filter listings by search query', () => {
