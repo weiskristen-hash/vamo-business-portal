@@ -15,6 +15,9 @@ import { AuthService } from './auth.service';
  * only the requested date range and its existing row-level permissions decide
  * which analytics rows the authenticated provider account may read. The portal
  * then applies a client-side provider/event ownership check as defense in depth.
+ *
+ * The field projection also mirrors canonical because live portal evidence showed
+ * Directus returning FORBIDDEN for the portal's explicit field list.
  */
 
 export type InsightsRange = '7d' | '30d' | '90d' | 'all';
@@ -172,8 +175,12 @@ function normalizeRow(raw: any): AnalyticsDailyRow | null {
 export class InsightsService {
   private authService = inject(AuthService);
 
-  /** Explicit, minimal fields. Foreign keys are read raw (no relational expansion). */
-  readonly analyticsFields = ['id', 'date', 'event_type', 'target_type', 'count', 'event', 'provider'] as const;
+  /**
+   * Exact canonical VAMO Insights field contract.
+   * Using `*` lets Directus return only fields permitted to the authenticated role,
+   * while the event expansion matches the working VAMO app request.
+   */
+  readonly analyticsFields = ['*', 'event.id', 'event.name', 'event.images.directus_files_id'] as const;
 
   /**
    * Reads `analytics_event_daily` rows in [from, to] using the same date-only

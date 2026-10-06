@@ -55,7 +55,7 @@ describe('InsightsService (Phase 1D.1 canonical parity)', () => {
   });
 
   describe('canonical analytics read with client-side defense', () => {
-    it('uses the canonical date-only server filter with explicit fields', async () => {
+    it('uses the canonical date-only server filter and canonical field projection', async () => {
       requestMock.mockResolvedValueOnce([]);
       await service.getAnalyticsInRange('prov-1', ['ev-1', 'ev-2'], '2026-09-01', '2026-10-01');
 
@@ -68,7 +68,10 @@ describe('InsightsService (Phase 1D.1 canonical parity)', () => {
       expect(url).not.toContain('prov-1');
       expect(url).not.toContain('ev-1');
       expect(url).not.toContain('ev-2');
-      expect(url).not.toContain('*');
+      expect(url).toContain('*');
+      expect(url).toContain('event.id');
+      expect(url).toContain('event.name');
+      expect(url).toContain('event.images.directus_files_id');
     });
 
     it('builds exactly the canonical date-range filter', async () => {
@@ -77,7 +80,7 @@ describe('InsightsService (Phase 1D.1 canonical parity)', () => {
         const params = q.params ?? {};
         const filter = typeof params.filter === 'string' ? JSON.parse(params.filter) : params.filter;
         expect(filter).toEqual({ date: { _between: ['2026-09-01', '2026-10-01'] } });
-        expect(String(params.fields)).toBe('id,date,event_type,target_type,count,event,provider');
+        expect(String(params.fields)).toBe('*,event.id,event.name,event.images.directus_files_id');
         return [];
       });
       await service.getAnalyticsInRange('prov-1', ['ev-1'], '2026-09-01', '2026-10-01');
