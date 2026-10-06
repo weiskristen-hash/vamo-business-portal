@@ -2,6 +2,16 @@ import { AuthenticationData, AuthenticationStorage } from '@directus/sdk';
 
 export const BUSINESS_AUTH_STORAGE_KEY = 'vamo_business_portal_session';
 
+export function createMemoryAuthStorage(initialData: AuthenticationData | null = null): AuthenticationStorage {
+  let data: AuthenticationData | null = initialData;
+  return {
+    get: async (): Promise<AuthenticationData | null> => data,
+    set: async (value: AuthenticationData | null): Promise<void> => {
+      data = value;
+    },
+  };
+}
+
 export function createBrowserAuthStorage(key: string = BUSINESS_AUTH_STORAGE_KEY): AuthenticationStorage {
   return {
     get: async (): Promise<AuthenticationData | null> => {

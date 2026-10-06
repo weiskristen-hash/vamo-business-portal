@@ -20,6 +20,7 @@ describe('Google SSO Flow — Phase 3B Parity Specifications', () => {
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
+    vi.spyOn(console, 'info').mockImplementation(() => {});
     originalFetch = globalThis.fetch;
 
     routerSpy = {
@@ -333,7 +334,18 @@ describe('Google SSO Flow — Phase 3B Parity Specifications', () => {
 
   // 17. Normal email/password login remains unchanged
   it('17. Normal email/password login remains unchanged', async () => {
-    const directusLoginSpy = vi.spyOn(directusClient, 'login').mockResolvedValue(undefined as any);
+    const isolatedLoginSpy = vi.fn();
+    vi.spyOn(authService as any, 'createIsolatedClient').mockImplementation((storage: any) => ({
+      login: async (creds: any) => {
+        isolatedLoginSpy(creds);
+        await storage.set({
+          access_token: 'valid_access_token',
+          refresh_token: 'valid_refresh_token',
+          expires: 900000,
+          expires_at: Date.now() + 900000,
+        });
+      },
+    }));
     const loadUserSpy = vi.spyOn(authService, 'loadCurrentUser').mockResolvedValue({
       id: 'usr-pw',
       email: 'user@example.com',
@@ -341,9 +353,10 @@ describe('Google SSO Flow — Phase 3B Parity Specifications', () => {
 
     const user = await authService.login('user@example.com', 'password123');
 
-    expect(directusLoginSpy).toHaveBeenCalledWith({ email: 'user@example.com', password: 'password123' });
+    expect(isolatedLoginSpy).toHaveBeenCalledWith({ email: 'user@example.com', password: 'password123' });
     expect(loadUserSpy).toHaveBeenCalled();
     expect(user.id).toBe('usr-pw');
+    expect(authService.currentUser?.id).toBe('usr-pw');
   });
 
   // 18. Forgot-password remains unchanged
