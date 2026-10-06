@@ -1296,6 +1296,78 @@ export const enTranslations: Record<string, any> = {
       "SUCCESS_CANCELED": "Subscription canceled. You will continue to have access until {{date}}.",
       "SUCCESS_REACTIVATED": "Welcome back! Your subscription renewal has been reactivated."
     },
+    "PROMOTIONS": {
+      "TITLE": "VAMO Promotions & Placements",
+      "SUBTITLE": "Supercharge your visibility with premium home feed banners and What’s Hot placements.",
+      "DISMISS": "Dismiss",
+      "LOADING": "Loading promotional options…",
+
+      "ACTIVE_PLACEMENTS_TITLE": "Active Placements",
+      "ACTIVE_PLACEMENTS_SUBTITLE": "Your listings currently featured across VAMO discovery sections.",
+      "EMPTY_ACTIVE": "No active promotions right now. Promote a listing below to supercharge its reach.",
+      "AVAILABLE_OPTIONS_TITLE": "Promotions & Placements",
+      "INTERVAL_DAYS": "days",
+
+      "BANNER_BADGE": "Main Banner",
+      "HOT_BADGE": "What's Hot",
+      "STATUS_ACTIVE": "Active",
+      "STATUS_SCHEDULED": "Scheduled",
+
+      "STEP_EVENT_TITLE": "1. Select Listing to Promote",
+      "STEP_EVENT_SUBTITLE": "Choose one of your published listings to receive premium visibility.",
+      "EVENT_SELECT_PLACEHOLDER": "Select a published listing…",
+      "NO_PUBLISHED_EVENTS": "No published listings found. You must publish a listing first before adding promotional placements.",
+      "CREATE_LISTING_BTN": "Create Listing",
+
+      "STEP_PLACEMENT_TITLE": "2. Choose Placement",
+      "STEP_PLACEMENT_SUBTITLE": "Select one or both high-impact placement positions across the VAMO app.",
+
+      "MAIN_BANNER_TITLE": "Main Banner",
+      "MAIN_BANNER_DESC": "Put your event or activity front and center on the VAMO home screen for up to 7 days.",
+      "WHATS_HOT_TITLE": "What's Hot",
+      "WHATS_HOT_DESC": "Get extra exposure by featuring your event or activity in the What's Hot section for up to 7 days.",
+
+      "PRICE_PER_DURATION": "{{price}} / 7 days",
+      "SLOTS_LEFT": "{{count}} left",
+      "SOLD_OUT": "Sold Out",
+      "SOLD_OUT_NEXT_DATE": "Fully booked right now. Next available: {{date}}.",
+      "ALREADY_ACTIVE_ON_EVENT": "Already active on this listing",
+
+      "STEP_SCHEDULE_TITLE": "3. Scheduling (Optional)",
+      "STEP_SCHEDULE_SUBTITLE": "Choose when your promotion should start, or start immediately after payment.",
+      "SCHEDULE_LABEL": "Promotion Start Date",
+      "SCHEDULE_IMMEDIATE": "Activate immediately upon payment",
+      "SCHEDULE_FUTURE": "Schedule for a specific date",
+      "SCHEDULE_NOTICE": "Payment is processed now. Your placement will activate on {{date}}.",
+
+      "STEP_SUMMARY_TITLE": "4. Order Summary",
+      "SUMMARY_LISTING": "Listing:",
+      "SUMMARY_PLACEMENTS": "Placements:",
+      "SUMMARY_START": "Start Date:",
+      "SUMMARY_START_NOW": "Immediately",
+      "SUMMARY_DURATION": "Duration:",
+      "SUMMARY_DURATION_VAL": "7 days per placement",
+      "SUMMARY_TOTAL": "Total Due:",
+
+      "STEP_PAYMENT_TITLE": "5. Payment",
+      "SAVED_CARDS_TITLE": "Pay with saved card",
+      "NEW_CARD_TITLE": "Pay with new card",
+      "PAY_BTN": "Pay & Activate Placements",
+      "SCHEDULE_BTN": "Pay & Schedule Placements",
+      "PROCESSING": "Processing payment…",
+
+      "SUCCESS_TITLE": "Your Listing is Now Featured!",
+      "SUCCESS_SCHEDULED_TITLE": "Your Promotion is Scheduled!",
+      "SUCCESS_DESC": "Your placement has been successfully applied and is now visible to customers.",
+      "SUCCESS_SCHEDULED_DESC": "Your placement has been scheduled and will activate on {{date}}.",
+      "PROMOTE_ANOTHER_BTN": "Promote Another Listing",
+      "VIEW_LISTINGS_BTN": "View Listings",
+
+      "ERROR_SELECT_EVENT": "Please select a listing to promote.",
+      "ERROR_SELECT_PLACEMENT": "Please select at least one placement option.",
+      "ERROR_PRICE_NOT_FOUND": "Could not determine price for selected placement.",
+      "ERROR_LOAD": "Could not load promotion options. Please try again."
+    },
     "PLACEHOLDER": {
       "BADGE_DEVELOPMENT": "Under Active Development",
       "PLANNED_CAPABILITIES": "Planned capabilities for this module:",

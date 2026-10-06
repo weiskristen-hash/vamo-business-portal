@@ -17,6 +17,10 @@ export interface RuntimeConfig {
   stripeGetBillingHistoryFlow: string;
   setProviderTierFlow: string;
   providerGetQuotaFlow: string;
+  stripeGetAddonPricesFlow: string;
+  stripeCreateAddonPaymentFlow: string;
+  stripeApplyAddonFlow: string;
+  getBoostAvailabilityFlow: string;
 }
 
 export function stripTrailingSlash(value: string): string {
@@ -53,6 +57,10 @@ let currentConfig: RuntimeConfig = {
   stripeGetBillingHistoryFlow: windowConfig.stripeGetBillingHistoryFlow || environment.STRIPE_GET_BILLING_HISTORY_FLOW || '',
   setProviderTierFlow: windowConfig.setProviderTierFlow || environment.SET_PROVIDER_TIER_FLOW || '',
   providerGetQuotaFlow: windowConfig.providerGetQuotaFlow || environment.PROVIDER_GET_QUOTA_FLOW || '',
+  stripeGetAddonPricesFlow: windowConfig.stripeGetAddonPricesFlow || (environment as any).STRIPE_GET_ADDON_PRICES_FLOW || '',
+  stripeCreateAddonPaymentFlow: windowConfig.stripeCreateAddonPaymentFlow || (environment as any).STRIPE_CREATE_ADDON_PAYMENT_FLOW || '',
+  stripeApplyAddonFlow: windowConfig.stripeApplyAddonFlow || (environment as any).STRIPE_APPLY_ADDON_FLOW || '',
+  getBoostAvailabilityFlow: windowConfig.getBoostAvailabilityFlow || (environment as any).GET_BOOST_AVAILABILITY_FLOW || '',
 };
 
 export const runtimeConfig = {
@@ -109,6 +117,18 @@ export const runtimeConfig = {
   get providerGetQuotaFlow(): string {
     return currentConfig.providerGetQuotaFlow;
   },
+  get stripeGetAddonPricesFlow(): string {
+    return currentConfig.stripeGetAddonPricesFlow;
+  },
+  get stripeCreateAddonPaymentFlow(): string {
+    return currentConfig.stripeCreateAddonPaymentFlow;
+  },
+  get stripeApplyAddonFlow(): string {
+    return currentConfig.stripeApplyAddonFlow;
+  },
+  get getBoostAvailabilityFlow(): string {
+    return currentConfig.getBoostAvailabilityFlow;
+  },
   updateConfig(partial: Partial<RuntimeConfig>): void {
     currentConfig = { ...currentConfig, ...partial };
   },
@@ -130,6 +150,10 @@ export const runtimeConfig = {
       stripeGetBillingHistoryFlow: environment.STRIPE_GET_BILLING_HISTORY_FLOW || '',
       setProviderTierFlow: environment.SET_PROVIDER_TIER_FLOW || '',
       providerGetQuotaFlow: environment.PROVIDER_GET_QUOTA_FLOW || '',
+      stripeGetAddonPricesFlow: (environment as any).STRIPE_GET_ADDON_PRICES_FLOW || '',
+      stripeCreateAddonPaymentFlow: (environment as any).STRIPE_CREATE_ADDON_PAYMENT_FLOW || '',
+      stripeApplyAddonFlow: (environment as any).STRIPE_APPLY_ADDON_FLOW || '',
+      getBoostAvailabilityFlow: (environment as any).GET_BOOST_AVAILABILITY_FLOW || '',
     };
   },
 };

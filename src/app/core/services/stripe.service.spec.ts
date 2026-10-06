@@ -255,4 +255,114 @@ describe('StripeService', () => {
       expect(postSpy).toHaveBeenCalledWith('flow-set-tier', { tier: 'basic' });
     });
   });
+
+  describe('Addon / Boost Flow Methods', () => {
+    it('getAddonPrices should return filtered non-recurring active prices', async () => {
+      runtimeConfig.updateConfig({ stripeGetAddonPricesFlow: 'flow-addon-prices' });
+
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        data: {
+          data: [
+            {
+              id: 'price_banner',
+              product: { name: 'Main Banner', description: 'Hero banner placement' },
+              unit_amount: 3000,
+              currency: 'usd',
+              active: true,
+              recurring: null,
+            },
+            {
+              id: 'price_hot',
+              product: { name: 'What’s Hot', description: 'Hot highlight slot' },
+              unit_amount: 1500,
+              currency: 'usd',
+              active: true,
+              recurring: null,
+            },
+            {
+              id: 'price_inactive',
+              product: { name: 'Old Boost' },
+              unit_amount: 1000,
+              currency: 'usd',
+              active: false,
+            },
+          ],
+        },
+      });
+
+      const prices = await service.getAddonPrices();
+      expect(prices.length).toBe(2);
+      expect(prices[0].id).toBe('price_hot');
+      expect(prices[0].amount).toBe(1500);
+      expect(prices[1].id).toBe('price_banner');
+      expect(prices[1].amount).toBe(3000);
+    });
+
+    it('getAddonPrices should throw if flowId is missing', async () => {
+      runtimeConfig.updateConfig({ stripeGetAddonPricesFlow: '' });
+      await expect(service.getAddonPrices()).rejects.toThrow(
+        "We couldn't load promotion pricing. Please try again."
+      );
+    });
+
+    it('getBoostAvailability should return counts, limits, and nextAvailableDate', async () => {
+      runtimeConfig.updateConfig({ getBoostAvailabilityFlow: 'flow-boost-avail' });
+
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        mainBanner: { count: 3, limit: 5, nextAvailableDate: null },
+        whatsHot: { count: 10, limit: 10, nextAvailableDate: '2026-10-12T00:00:00.000Z' },
+      });
+
+      const avail = await service.getBoostAvailability('area-123');
+      expect(avail.mainBanner.count).toBe(3);
+      expect(avail.mainBanner.limit).toBe(5);
+      expect(avail.whatsHot.count).toBe(10);
+      expect(avail.whatsHot.limit).toBe(10);
+      expect(avail.whatsHot.nextAvailableDate).toBe('2026-10-12T00:00:00.000Z');
+    });
+
+    it('createAddonPayment should post correct payload to Directus flow', async () => {
+      runtimeConfig.updateConfig({ stripeCreateAddonPaymentFlow: 'flow-create-addon-payment' });
+
+      const postSpy = vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        extract_client_secret: {
+          clientSecret: 'pi_test_secret_boost',
+          paymentIntentId: 'pi_test_123',
+        },
+      });
+
+      const res = await service.createAddonPayment(
+        'price_banner_1',
+        'main_banner',
+        'provider-abc',
+        'event-xyz',
+        '2026-10-15T12:00:00.000Z'
+      );
+
+      expect(postSpy).toHaveBeenCalledWith('flow-create-addon-payment', {
+        priceId: 'price_banner_1',
+        type: 'main_banner',
+        providerId: 'provider-abc',
+        eventId: 'event-xyz',
+        scheduledStart: '2026-10-15T12:00:00.000Z',
+        promotionCode: null,
+      });
+      expect((res as any).clientSecret).toBe('pi_test_secret_boost');
+    });
+
+    it('applyAddon should post payload to apply flow without writing directly to events table', async () => {
+      runtimeConfig.updateConfig({ stripeApplyAddonFlow: 'flow-apply-addon' });
+
+      const postSpy = vi.spyOn(service, 'flowPost').mockResolvedValueOnce({ success: true });
+
+      await service.applyAddon('whats_hot', undefined, 'event-xyz', '2026-10-20T00:00:00.000Z');
+
+      expect(postSpy).toHaveBeenCalledWith('flow-apply-addon', {
+        type: 'whats_hot',
+        internalDataId: null,
+        eventId: 'event-xyz',
+        scheduledStart: '2026-10-20T00:00:00.000Z',
+      });
+    });
+  });
 });

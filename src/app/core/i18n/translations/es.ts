@@ -1296,6 +1296,78 @@ export const esTranslations: Record<string, any> = {
       "SUCCESS_CANCELED": "Suscripción cancelada. Mantendrás el acceso hasta el {{date}}.",
       "SUCCESS_REACTIVATED": "¡Bienvenido de vuelta! La renovación de tu suscripción ha sido reactivada."
     },
+    "PROMOTIONS": {
+      "TITLE": "Promociones y Posicionamiento VAMO",
+      "SUBTITLE": "Aumenta tu visibilidad con banners destacados en la pantalla principal y ubicaciones en Lo Más Caliente.",
+      "DISMISS": "Cerrar",
+      "LOADING": "Cargando opciones de promoción…",
+
+      "ACTIVE_PLACEMENTS_TITLE": "Posicionamientos Activos",
+      "ACTIVE_PLACEMENTS_SUBTITLE": "Tus publicaciones destacadas actualmente en las secciones de descubrimiento de VAMO.",
+      "EMPTY_ACTIVE": "No hay promociones activas en este momento. Promociona una publicación a continuación para aumentar su alcance.",
+      "AVAILABLE_OPTIONS_TITLE": "Promociones y Posicionamiento",
+      "INTERVAL_DAYS": "días",
+
+      "BANNER_BADGE": "Banner Principal",
+      "HOT_BADGE": "Lo Más Caliente",
+      "STATUS_ACTIVE": "Activo",
+      "STATUS_SCHEDULED": "Programado",
+
+      "STEP_EVENT_TITLE": "1. Selecciona la publicación a promocionar",
+      "STEP_EVENT_SUBTITLE": "Elige una de tus publicaciones activas para recibir visibilidad destacada.",
+      "EVENT_SELECT_PLACEHOLDER": "Selecciona una publicación activa…",
+      "NO_PUBLISHED_EVENTS": "No se encontraron publicaciones activas. Debes publicar una listing antes de añadir opciones promocionales.",
+      "CREATE_LISTING_BTN": "Crear publicación",
+
+      "STEP_PLACEMENT_TITLE": "2. Elige el posicionamiento",
+      "STEP_PLACEMENT_SUBTITLE": "Selecciona una o ambas ubicaciones de alto impacto en la aplicación VAMO.",
+
+      "MAIN_BANNER_TITLE": "Banner Principal",
+      "MAIN_BANNER_DESC": "Pon tu evento o actividad en el centro de atención en la pantalla de inicio de VAMO durante hasta 7 días.",
+      "WHATS_HOT_TITLE": "Lo Más Caliente",
+      "WHATS_HOT_DESC": "Consigue más visibilidad destacando tu evento o actividad en la sección Lo Más Caliente durante hasta 7 días.",
+
+      "PRICE_PER_DURATION": "{{price}} / 7 días",
+      "SLOTS_LEFT": "{{count}} disponibles",
+      "SOLD_OUT": "Agotado",
+      "SOLD_OUT_NEXT_DATE": "Completo por el momento. Próxima fecha disponible: {{date}}.",
+      "ALREADY_ACTIVE_ON_EVENT": "Ya está activo en esta publicación",
+
+      "STEP_SCHEDULE_TITLE": "3. Programación (Opcional)",
+      "STEP_SCHEDULE_SUBTITLE": "Elige cuándo debe comenzar tu promoción o inicia de inmediato tras el pago.",
+      "SCHEDULE_LABEL": "Fecha de inicio de la promoción",
+      "SCHEDULE_IMMEDIATE": "Activar inmediatamente tras el pago",
+      "SCHEDULE_FUTURE": "Programar para una fecha específica",
+      "SCHEDULE_NOTICE": "El pago se procesa ahora. Tu posicionamiento se activará el {{date}}.",
+
+      "STEP_SUMMARY_TITLE": "4. Resumen del Pedido",
+      "SUMMARY_LISTING": "Publicación:",
+      "SUMMARY_PLACEMENTS": "Posicionamientos:",
+      "SUMMARY_START": "Fecha de inicio:",
+      "SUMMARY_START_NOW": "De inmediato",
+      "SUMMARY_DURATION": "Duración:",
+      "SUMMARY_DURATION_VAL": "7 días por posicionamiento",
+      "SUMMARY_TOTAL": "Total a pagar:",
+
+      "STEP_PAYMENT_TITLE": "5. Método de Pago",
+      "SAVED_CARDS_TITLE": "Pagar con tarjeta guardada",
+      "NEW_CARD_TITLE": "Pagar con tarjeta nueva",
+      "PAY_BTN": "Pagar y activar posicionamiento",
+      "SCHEDULE_BTN": "Pagar y programar posicionamiento",
+      "PROCESSING": "Procesando pago…",
+
+      "SUCCESS_TITLE": "¡Tu publicación ya está destacada!",
+      "SUCCESS_SCHEDULED_TITLE": "¡Tu promoción ha sido programada!",
+      "SUCCESS_DESC": "Tu posicionamiento ha sido aplicado exitosamente y ya es visible para los clientes.",
+      "SUCCESS_SCHEDULED_DESC": "Tu posicionamiento ha sido programado y se activará el {{date}}.",
+      "PROMOTE_ANOTHER_BTN": "Promocionar otra publicación",
+      "VIEW_LISTINGS_BTN": "Ver publicaciones",
+
+      "ERROR_SELECT_EVENT": "Por favor selecciona una publicación para promocionar.",
+      "ERROR_SELECT_PLACEMENT": "Por favor selecciona al menos una opción de posicionamiento.",
+      "ERROR_PRICE_NOT_FOUND": "No se pudo determinar el precio para el posicionamiento seleccionado.",
+      "ERROR_LOAD": "No pudimos cargar las opciones de promoción. Por favor inténtalo de nuevo."
+    },
     "PLACEHOLDER": {
       "BADGE_DEVELOPMENT": "En desarrollo activo",
       "PLANNED_CAPABILITIES": "Funcionalidades planeadas para este módulo:",

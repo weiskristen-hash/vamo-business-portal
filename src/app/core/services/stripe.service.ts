@@ -66,6 +66,28 @@ export interface StripePlan {
   features: string[];
 }
 
+export type AddonType = 'main_banner' | 'whats_hot';
+
+export interface StripeAddonPlan {
+  id: string;
+  name: string;
+  description: string;
+  amount: number;
+  currency: string;
+  interval: string;
+}
+
+export interface BoostAvailabilitySlot {
+  count: number;
+  limit: number;
+  nextAvailableDate: string | null;
+}
+
+export interface BoostAvailability {
+  mainBanner: BoostAvailabilitySlot;
+  whatsHot: BoostAvailabilitySlot;
+}
+
 export const CANONICAL_TIER_FEATURES: Record<'starter' | 'basic' | 'advanced', { maxPosts: number; features: string[] }> = {
   starter: {
     maxPosts: 1,
@@ -216,6 +238,94 @@ export class StripeService {
         features: meta.features,
       };
     });
+  }
+
+  async getAddonPrices(): Promise<StripeAddonPlan[]> {
+    const flowId = runtimeConfig.stripeGetAddonPricesFlow;
+    if (!flowId) {
+      throw new Error("We couldn't load promotion pricing. Please try again.");
+    }
+    const res = await this.flowPost(flowId, {});
+    const stripeBody = res?.data ?? res;
+    return (stripeBody?.data ?? stripeBody ?? [])
+      .filter((price: any) => price.active && price.unit_amount > 0 && !price.recurring)
+      .sort((a: any, b: any) => a.unit_amount - b.unit_amount)
+      .map((price: any) => ({
+        id: price.id,
+        name: price.product?.name ?? 'Add-On',
+        description: price.product?.description ?? '',
+        amount: price.unit_amount ?? 0,
+        currency: price.currency ?? 'usd',
+        interval: 'one_time',
+      }))
+      .filter((p: StripeAddonPlan) => !!p.id);
+  }
+
+  async getBoostAvailability(areaId?: string | null): Promise<BoostAvailability> {
+    const flowId = runtimeConfig.getBoostAvailabilityFlow;
+    if (!flowId) {
+      return {
+        mainBanner: { count: 0, limit: 5, nextAvailableDate: null },
+        whatsHot: { count: 0, limit: 10, nextAvailableDate: null },
+      };
+    }
+    const res = await this.flowPost(flowId, { areaId: areaId ?? null });
+    return {
+      mainBanner: {
+        count: res?.mainBanner?.count ?? 0,
+        limit: res?.mainBanner?.limit ?? 5,
+        nextAvailableDate: res?.mainBanner?.nextAvailableDate ?? null,
+      },
+      whatsHot: {
+        count: res?.whatsHot?.count ?? 0,
+        limit: res?.whatsHot?.limit ?? 10,
+        nextAvailableDate: res?.whatsHot?.nextAvailableDate ?? null,
+      },
+    };
+  }
+
+  async createAddonPayment(
+    priceId: string,
+    type: AddonType,
+    providerId: string,
+    eventId?: string,
+    scheduledStart?: string,
+    promotionCode?: string,
+  ): Promise<{ clientSecret: string; paymentIntentId: string } | { free: true }> {
+    const flowId = runtimeConfig.stripeCreateAddonPaymentFlow;
+    if (!flowId) {
+      throw new Error('Boost payment flow is not configured.');
+    }
+    const data = await this.flowPost(flowId, {
+      priceId,
+      type,
+      providerId,
+      eventId: eventId ?? null,
+      scheduledStart: scheduledStart ?? null,
+      promotionCode: promotionCode ?? null,
+    });
+    if (data?.return_free_addon?.free) return { free: true };
+    const paid = data?.extract_cs_discounted ?? data?.extract_client_secret ?? data;
+    return paid;
+  }
+
+  async applyAddon(
+    type: AddonType,
+    internalDataId?: string,
+    eventId?: string,
+    scheduledStart?: string,
+  ): Promise<any> {
+    const flowId = runtimeConfig.stripeApplyAddonFlow;
+    if (!flowId) {
+      throw new Error('Apply boost flow is not configured.');
+    }
+    const payload = {
+      type,
+      internalDataId: internalDataId ?? null,
+      eventId: eventId ?? null,
+      scheduledStart: scheduledStart ?? null,
+    };
+    return this.flowPost(flowId, payload);
   }
 
   async validatePromoCode(code: string): Promise<PromoResult> {

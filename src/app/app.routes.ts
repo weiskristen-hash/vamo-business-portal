@@ -103,8 +103,13 @@ export const routes: Routes = [
       {
         path: 'promotions',
         loadComponent: () =>
-          import('./pages/placeholder/placeholder.component').then((m) => m.PlaceholderComponent),
+          import('./pages/promotions/promotions.component').then((m) => m.PromotionsComponent),
         data: { module: 'promotions' },
+      },
+      {
+        path: 'boosts',
+        redirectTo: 'promotions',
+        pathMatch: 'full',
       },
       {
         path: 'insights',
