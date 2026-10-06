@@ -331,6 +331,23 @@ import { TranslatePipe } from '../../core/i18n/translate.pipe';
                 <span>{{ 'PORTAL.LISTINGS.EDIT_BTN' | translate }}</span>
               </button>
 
+              <!-- Boost / Manage Boost Action (Published only) -->
+              <button
+                *ngIf="event.status === 'published'"
+                type="button"
+                class="btn btn-sm action-btn boost-btn"
+                [class.btn-primary]="!isEventBoosted(event)"
+                [class.btn-secondary]="isEventBoosted(event)"
+                (click)="onBoost(event)"
+                [disabled]="actionInProgressId === event.id"
+                [title]="(isEventBoosted(event) ? 'PORTAL.LISTINGS.MANAGE_BOOST_TITLE' : 'PORTAL.LISTINGS.BOOST_TITLE') | translate"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                </svg>
+                <span>{{ (isEventBoosted(event) ? 'PORTAL.LISTINGS.MANAGE_BOOST_BTN' : 'PORTAL.LISTINGS.BOOST_BTN') | translate }}</span>
+              </button>
+
               <!-- Duplicate Action -->
               <button
                 type="button"
@@ -1347,6 +1364,16 @@ export class ListingsComponent implements OnInit {
       return `${currency} $${Number(event.price).toFixed(2)}`;
     }
     return this.i18n.t('PORTAL.LISTINGS.FREE');
+  }
+
+  isEventBoosted(event: VamoEvent): boolean {
+    return !!(event.is_main_banner || event.is_whats_hot);
+  }
+
+  onBoost(event: VamoEvent): void {
+    this.router.navigate(['/app/promotions'], {
+      queryParams: { eventId: event.id },
+    });
   }
 
   onEdit(event: VamoEvent): void {
