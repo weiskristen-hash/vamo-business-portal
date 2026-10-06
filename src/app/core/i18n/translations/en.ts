@@ -1393,7 +1393,9 @@ export const enTranslations: Record<string, any> = {
       "ERROR_AVAILABILITY": "We couldn't confirm promotion availability. Please try again.",
       "ACTIVATION_PENDING_TITLE": "Payment Received — Activation Pending",
       "ACTIVATION_PENDING_DESC": "Your payment was completed, but we couldn't confirm activation of this placement. Please do not pay again. Contact VAMO support for assistance.",
-      "STATUS_ACTIVATION_PENDING": "Payment received — activation pending"
+      "STATUS_ACTIVATION_PENDING": "Payment received — activation pending",
+      "ERROR_AVAILABILITY_CHANGED": "Availability changed before checkout. Please review the available placements and try again.",
+      "IMAGE_ALT": "Image for {{name}}"
     },
     "PLACEHOLDER": {
       "BADGE_DEVELOPMENT": "Under Active Development",

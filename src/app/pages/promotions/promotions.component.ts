@@ -101,21 +101,42 @@ interface PartialSuccessState {
 
         <div *ngIf="activeEvents().length > 0" class="active-events-grid">
           <div *ngFor="let ev of activeEvents()" class="active-event-card">
-            <div class="active-event-info">
-              <h3 class="active-event-title">{{ ev.name }}</h3>
-              <p class="active-event-meta" *ngIf="ev.startDate">
-                {{ ev.startDate | date:'mediumDate' }}
-              </p>
+            <div class="active-event-media">
+              <img
+                *ngIf="hasEventImage(ev)"
+                [src]="getEventImageUrl(ev)"
+                [alt]="getEventImageAlt(ev)"
+                class="active-event-img"
+                (error)="onImageError(ev.id)"
+                loading="lazy"
+              />
+              <div *ngIf="!hasEventImage(ev)" class="active-event-img-fallback" aria-hidden="true">
+                <span class="fallback-icon">📅</span>
+              </div>
             </div>
-            <div class="active-event-badges">
-              <span *ngIf="ev.is_main_banner" class="badge badge-banner">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 11 18-5v12L3 14v-3z"></path><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path></svg>
-                {{ 'PORTAL.PROMOTIONS.BANNER_BADGE' | translate }} — {{ 'PORTAL.PROMOTIONS.STATUS_ACTIVE' | translate }}
-              </span>
-              <span *ngIf="ev.is_whats_hot" class="badge badge-hot">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>
-                {{ 'PORTAL.PROMOTIONS.HOT_BADGE' | translate }} — {{ 'PORTAL.PROMOTIONS.STATUS_ACTIVE' | translate }}
-              </span>
+            <div class="active-event-content">
+              <div class="active-event-info">
+                <h3 class="active-event-title">{{ ev.name }}</h3>
+                <div class="active-event-meta-row">
+                  <span class="active-event-meta" *ngIf="ev.startDate">
+                    {{ ev.startDate | date:'mediumDate' }}
+                  </span>
+                  <span class="active-event-meta-dot" *ngIf="ev.startDate && getEventAreaName(ev)">•</span>
+                  <span class="active-event-area" *ngIf="getEventAreaName(ev)">
+                    {{ getEventAreaName(ev) }}
+                  </span>
+                </div>
+              </div>
+              <div class="active-event-badges">
+                <span *ngIf="ev.is_main_banner" class="badge badge-banner">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 11 18-5v12L3 14v-3z"></path><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path></svg>
+                  {{ 'PORTAL.PROMOTIONS.BANNER_BADGE' | translate }} — {{ 'PORTAL.PROMOTIONS.STATUS_ACTIVE' | translate }}
+                </span>
+                <span *ngIf="ev.is_whats_hot" class="badge badge-hot">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>
+                  {{ 'PORTAL.PROMOTIONS.HOT_BADGE' | translate }} — {{ 'PORTAL.PROMOTIONS.STATUS_ACTIVE' | translate }}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -608,7 +629,7 @@ interface PartialSuccessState {
 /* Active Events Grid */
 .active-events-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 1rem;
 }
 
@@ -616,29 +637,117 @@ interface PartialSuccessState {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
-  padding: 1rem 1.25rem;
+  padding: 0.875rem;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 1rem;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.active-event-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.active-event-media {
+  width: 120px;
+  min-width: 120px;
+  height: 90px;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+}
+
+.active-event-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.active-event-img-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(254, 57, 127, 0.12), rgba(79, 70, 229, 0.12));
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.fallback-icon {
+  font-size: 1.5rem;
+  opacity: 0.75;
+}
+
+.active-event-content {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  justify-content: space-between;
+  gap: 0.625rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.active-event-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .active-event-title {
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: #ffffff;
-  margin: 0 0 0.25rem 0;
+  margin: 0;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-event-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+  flex-wrap: wrap;
 }
 
 .active-event-meta {
-  font-size: 0.8125rem;
   color: #a0a0b8;
+  margin: 0;
+}
+
+.active-event-meta-dot {
+  color: #6b6b80;
+}
+
+.active-event-area {
+  color: #c4c4dc;
+  font-weight: 500;
   margin: 0;
 }
 
 .active-event-badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.4rem;
+}
+
+@media (max-width: 520px) {
+  .active-event-card {
+    flex-direction: column;
+  }
+  .active-event-media {
+    width: 100%;
+    min-width: 100%;
+    height: 140px;
+  }
 }
 
 .badge {
@@ -1127,6 +1236,7 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   activationPendingByEvent = signal<Map<string, Set<AddonType>>>(new Map());
   activationPendingDismissedByEvent = signal<Map<string, boolean>>(new Map());
   completedAddonsByEvent = signal<Map<string, Set<AddonType>>>(new Map());
+  failedImageEventIds = signal<Set<string>>(new Set());
 
   // Current Event Scoped Computeds
   paymentConfirmedTypes = computed(() => {
@@ -1421,6 +1531,50 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     return null;
   }
 
+  getEventAreaName(event: VamoEvent | null | undefined): string | null {
+    if (!event || !event.areas || event.areas.length === 0) return null;
+    const first = event.areas[0];
+    if (!first || !first.areas_id) return null;
+    if (typeof first.areas_id === 'object' && 'name' in first.areas_id) {
+      const name = (first.areas_id as Area).name;
+      return typeof name === 'string' && name.trim() ? name.trim() : null;
+    }
+    return null;
+  }
+
+  getEventImageFileId(event: VamoEvent | null | undefined): string | null {
+    if (!event || !event.images || event.images.length === 0) return null;
+    const raw = event.images[0]?.directus_files_id;
+    if (!raw) return null;
+    if (typeof raw === 'string' && raw.trim()) return raw.trim();
+    if (typeof raw === 'object' && 'id' in raw && (raw as any).id) {
+      const id = (raw as any).id;
+      return typeof id === 'string' && id.trim() ? id.trim() : null;
+    }
+    return null;
+  }
+
+  hasEventImage(event: VamoEvent): boolean {
+    if (this.failedImageEventIds().has(event.id)) return false;
+    return !!this.getEventImageFileId(event);
+  }
+
+  getEventImageUrl(event: VamoEvent): string | null {
+    const fileId = this.getEventImageFileId(event);
+    if (!fileId || this.failedImageEventIds().has(event.id)) return null;
+    return this.businessService.getAssetUrl(fileId, 'width=480&height=300&fit=cover&quality=80');
+  }
+
+  onImageError(eventId: string): void {
+    const next = new Set(this.failedImageEventIds());
+    next.add(eventId);
+    this.failedImageEventIds.set(next);
+  }
+
+  getEventImageAlt(event: VamoEvent): string {
+    return this.i18n.t('PORTAL.PROMOTIONS.IMAGE_ALT', { name: event.name || '' });
+  }
+
   async onEventSelected(eventId: string | null): Promise<void> {
     this.availabilitySeq++;
     const currentSeq = this.availabilitySeq;
@@ -1624,7 +1778,61 @@ export class PromotionsComponent implements OnInit, OnDestroy {
       return;
     }
 
+    const ev = this.events().find((e) => e.id === eventId) ?? this.selectedEvent();
+    const areaId = this.getEventAreaId(ev);
+    if (!areaId) {
+      this.hasNoAreaError.set(true);
+      this.errorDescriptor.set({ key: 'PORTAL.PROMOTIONS.ERROR_NO_AREA' });
+      return;
+    }
+
     this.isProcessingPayment.set(true);
+
+    // Re-check availability at the latest safe frontend point before creating payment
+    let latestAvail: BoostAvailability;
+    try {
+      latestAvail = await this.stripeService.getBoostAvailability(areaId);
+      this.boostAvailability.set(latestAvail);
+      this.hasAvailabilityError.set(false);
+    } catch {
+      this.boostAvailability.set(null);
+      this.hasAvailabilityError.set(true);
+      if (this.completedAddons().length > 0) {
+        this.partialSuccessState.set({
+          completedTypes: [...this.completedAddons()],
+          failedTypes: [...this.pendingQueue],
+        });
+      }
+      this.pendingQueue = [];
+      this.errorDescriptor.set({ key: 'PORTAL.PROMOTIONS.ERROR_AVAILABILITY' });
+      this.cleanupStripe();
+      this.isProcessingPayment.set(false);
+      return;
+    }
+
+    const isSoldOut =
+      type === 'main_banner'
+        ? latestAvail.mainBanner.count >= latestAvail.mainBanner.limit
+        : latestAvail.whatsHot.count >= latestAvail.whatsHot.limit;
+
+    if (isSoldOut) {
+      const nextSelection = new Set(this.selectedPlacements());
+      nextSelection.delete(type);
+      this.selectedPlacements.set(nextSelection);
+
+      if (this.completedAddons().length > 0) {
+        this.partialSuccessState.set({
+          completedTypes: [...this.completedAddons()],
+          failedTypes: [type],
+        });
+      }
+
+      this.pendingQueue = [];
+      this.errorDescriptor.set({ key: 'PORTAL.PROMOTIONS.ERROR_AVAILABILITY_CHANGED' });
+      this.cleanupStripe();
+      this.isProcessingPayment.set(false);
+      return;
+    }
 
     try {
       const result = await this.stripeService.createAddonPayment(

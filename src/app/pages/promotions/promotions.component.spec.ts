@@ -48,6 +48,7 @@ describe('PromotionsComponent', () => {
       startDate: '2026-10-16T10:00:00Z',
       is_main_banner: true,
       is_whats_hot: false,
+      images: [{ directus_files_id: 'file-pc-zipline-img' }],
       areas: [
         {
           areas_id: {
@@ -131,6 +132,10 @@ describe('PromotionsComponent', () => {
     businessServiceSpy = {
       getEventsForProvider: vi.fn().mockResolvedValue(JSON.parse(JSON.stringify(mockEvents))),
       updateEvent: vi.fn(),
+      getAssetUrl: vi.fn(
+        (fileIdOrObj: any, transforms?: string) =>
+          `https://api.vamo-app.com/assets/${typeof fileIdOrObj === 'object' ? fileIdOrObj?.id : fileIdOrObj}${transforms ? '?' + transforms : ''}`
+      ),
     };
 
     stripeServiceSpy = {
@@ -1030,6 +1035,180 @@ describe('PromotionsComponent', () => {
 
       // Event A remains locally marked Main Banner active
       expect(ev1?.is_main_banner).toBe(true);
+    });
+  });
+
+  describe('Phase 1C.3 Availability Hardening & Image Cards', () => {
+    it('should re-check availability before creating payment and proceed when slots remain', async () => {
+      await createComponent('ev-1');
+      component.togglePlacement('main_banner');
+
+      // First check was on event selection. Pre-payment check is triggered in processQueue.
+      stripeServiceSpy.getBoostAvailability.mockResolvedValueOnce({
+        mainBanner: { count: 4, limit: 5, nextAvailableDate: null },
+        whatsHot: { count: 3, limit: 10, nextAvailableDate: null },
+      });
+
+      await component.proceedToPayment();
+
+      // Ensure getBoostAvailability was called for ev-1 areaId ('area-uuid-1')
+      expect(stripeServiceSpy.getBoostAvailability).toHaveBeenCalledWith('area-uuid-1');
+      // Payment proceeded
+      expect(stripeServiceSpy.createAddonPayment).toHaveBeenCalledWith(
+        'price_main_banner_test',
+        'main_banner',
+        mockProvider.id,
+        'ev-1',
+        undefined
+      );
+      expect(stripeServiceSpy.applyAddon).toHaveBeenCalledWith(
+        'main_banner',
+        undefined,
+        'ev-1',
+        undefined
+      );
+      expect(component.successMessage()).toBe(
+        'Your placement has been successfully applied and is now visible to customers.'
+      );
+    });
+
+    it('should abort payment, update availability, deselect placement, and show availability changed error when slot becomes sold out before payment', async () => {
+      await createComponent('ev-1');
+      component.togglePlacement('main_banner');
+
+      // Pre-payment re-check reveals mainBanner is now 5/5 (Sold Out)
+      stripeServiceSpy.getBoostAvailability.mockResolvedValueOnce({
+        mainBanner: { count: 5, limit: 5, nextAvailableDate: '2026-10-25T00:00:00Z' },
+        whatsHot: { count: 3, limit: 10, nextAvailableDate: null },
+      });
+
+      await component.proceedToPayment();
+
+      // createAddonPayment must NOT be called
+      expect(stripeServiceSpy.createAddonPayment).not.toHaveBeenCalled();
+      // Availability signal is updated
+      expect(component.boostAvailability()?.mainBanner.count).toBe(5);
+      expect(component.mainBannerFull()).toBe(true);
+      // Placement is removed from selection
+      expect(component.selectedPlacements().has('main_banner')).toBe(false);
+      // Error message indicates availability changed
+      expect(component.errorDescriptor()?.key).toBe('PORTAL.PROMOTIONS.ERROR_AVAILABILITY_CHANGED');
+      expect(component.errorMessage()).toBe(
+        'Availability changed before checkout. Please review the available placements and try again.'
+      );
+    });
+
+    it('should fail closed, abort payment, and show availability error when pre-payment re-check rejects', async () => {
+      await createComponent('ev-1');
+      component.togglePlacement('main_banner');
+
+      // Pre-payment re-check fails / network error
+      stripeServiceSpy.getBoostAvailability.mockRejectedValueOnce(new Error('Availability service timeout'));
+
+      await component.proceedToPayment();
+
+      // createAddonPayment must NOT be called
+      expect(stripeServiceSpy.createAddonPayment).not.toHaveBeenCalled();
+      expect(component.hasAvailabilityError()).toBe(true);
+      expect(component.boostAvailability()).toBeNull();
+      expect(component.errorDescriptor()?.key).toBe('PORTAL.PROMOTIONS.ERROR_AVAILABILITY');
+    });
+
+    it('should render active placement image card with thumbnail when event has image', async () => {
+      await createComponent();
+      fixture.detectChanges();
+
+      const activeCards = fixture.nativeElement.querySelectorAll('.active-event-card');
+      expect(activeCards.length).toBeGreaterThan(0);
+
+      // ev-2 has image 'file-pc-zipline-img'
+      const card = activeCards[0];
+      const img = card.querySelector('.active-event-img') as HTMLImageElement;
+      expect(img).toBeTruthy();
+      expect(img.src).toContain('file-pc-zipline-img');
+      expect(img.alt).toBe('Image for Punta Cana Zip Line');
+      expect(card.querySelector('.active-event-img-fallback')).toBeFalsy();
+    });
+
+    it('should display fallback placeholder when active event has no image', async () => {
+      await createComponent();
+      // Configure ev-1 as active with no images
+      const events = component.events();
+      const ev1 = events.find((e) => e.id === 'ev-1');
+      if (ev1) {
+        ev1.is_whats_hot = true;
+        ev1.images = [];
+      }
+      component.events.set([...events]);
+      fixture.detectChanges();
+
+      const ev1Card = Array.from(fixture.nativeElement.querySelectorAll('.active-event-card')).find(
+        (el: any) => el.textContent.includes('Sunset Catamaran Tour')
+      ) as HTMLElement;
+      expect(ev1Card).toBeTruthy();
+      expect(ev1Card.querySelector('.active-event-img')).toBeFalsy();
+      expect(ev1Card.querySelector('.active-event-img-fallback')).toBeTruthy();
+      expect(ev1Card.querySelector('.fallback-icon')?.textContent).toBe('📅');
+    });
+
+    it('should switch to fallback placeholder if image loading emits error', async () => {
+      await createComponent();
+      fixture.detectChanges();
+
+      // Initially ev-2 has image
+      const ev2 = component.events().find((e) => e.id === 'ev-2')!;
+      expect(component.hasEventImage(ev2)).toBe(true);
+
+      // Trigger image error
+      component.onImageError('ev-2');
+      fixture.detectChanges();
+
+      expect(component.hasEventImage(ev2)).toBe(false);
+      const ev2Card = fixture.nativeElement.querySelector('.active-event-card');
+      expect(ev2Card.querySelector('.active-event-img')).toBeFalsy();
+      expect(ev2Card.querySelector('.active-event-img-fallback')).toBeTruthy();
+    });
+
+    it('should render area name when area is an object with name and omit area when area is a raw UUID string', async () => {
+      await createComponent();
+      // ev-2 has populated area { id: 'area-uuid-2', name: 'Punta Cana' }
+      // ev-1 has raw area { areas_id: 'area-uuid-1' }
+      const events = component.events();
+      const ev1 = events.find((e) => e.id === 'ev-1')!;
+      ev1.is_whats_hot = true;
+      component.events.set([...events]);
+      fixture.detectChanges();
+
+      const cards = fixture.nativeElement.querySelectorAll('.active-event-card');
+      const ev2Card = Array.from(cards).find((c: any) => c.textContent.includes('Punta Cana Zip Line')) as HTMLElement;
+      const ev1Card = Array.from(cards).find((c: any) => c.textContent.includes('Sunset Catamaran Tour')) as HTMLElement;
+
+      // ev-2 shows area name 'Punta Cana'
+      expect(ev2Card.querySelector('.active-event-area')?.textContent?.trim()).toBe('Punta Cana');
+
+      // ev-1 does NOT show area or UUID
+      expect(ev1Card.querySelector('.active-event-area')).toBeFalsy();
+      expect(ev1Card.textContent).not.toContain('area-uuid-1');
+    });
+
+    it('should render single card with both Main Banner and Whats Hot badges when event has both boosts active', async () => {
+      await createComponent();
+      const events = component.events();
+      const ev2 = events.find((e) => e.id === 'ev-2')!;
+      ev2.is_main_banner = true;
+      ev2.is_whats_hot = true;
+      component.events.set([...events]);
+      fixture.detectChanges();
+
+      const cards = fixture.nativeElement.querySelectorAll('.active-event-card');
+      // Should have 1 card for ev-2
+      const ev2Cards = Array.from(cards).filter((c: any) => c.textContent.includes('Punta Cana Zip Line'));
+      expect(ev2Cards.length).toBe(1);
+
+      const badges = ev2Cards[0].querySelectorAll('.badge');
+      expect(badges.length).toBe(2);
+      expect(ev2Cards[0].querySelector('.badge-banner')).toBeTruthy();
+      expect(ev2Cards[0].querySelector('.badge-hot')).toBeTruthy();
     });
   });
 });
