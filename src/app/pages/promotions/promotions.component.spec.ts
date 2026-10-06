@@ -902,5 +902,134 @@ describe('PromotionsComponent', () => {
       expect(component.isActivationPending('main_banner')).toBe(true);
       expect(component.hasActivationPending()).toBe(true);
     });
+
+    it('should preserve activation-pending state and prevent duplicate payment across event switches (A -> B -> A)', async () => {
+      // 1. Select Event A ('ev-1')
+      await component.onEventSelected('ev-1');
+      component.togglePlacement('main_banner');
+      component.selectSavedCard(mockSavedCards[0]);
+
+      // Stripe confirmation succeeds, applyAddon rejects
+      stripeServiceSpy.confirmWithSavedMethod.mockResolvedValueOnce({});
+      stripeServiceSpy.applyAddon.mockRejectedValueOnce(new Error('Apply failed on Event A'));
+
+      await component.proceedToPayment();
+
+      // Event A is in activation-pending
+      expect(component.isActivationPending('main_banner')).toBe(true);
+      expect(component.hasActivationPending()).toBe(true);
+      expect(component.activationPendingMessage()).toBeTruthy();
+      expect(component.isMainBannerDisabled()).toBe(true);
+
+      // 2. Select Event B ('ev-2')
+      await component.onEventSelected('ev-2');
+
+      // Event B does NOT show Event A's activation pending warning
+      expect(component.isActivationPending('main_banner')).toBe(false);
+      expect(component.hasActivationPending()).toBe(false);
+      expect(component.activationPendingMessage()).toBeNull();
+
+      // 3. Select Event A ('ev-1') again
+      await component.onEventSelected('ev-1');
+
+      // Event A STILL reports activation pending!
+      expect(component.isActivationPending('main_banner')).toBe(true);
+      expect(component.hasActivationPending()).toBe(true);
+      expect(component.activationPendingMessage()).toBeTruthy();
+      expect(component.isMainBannerDisabled()).toBe(true);
+
+      // Attempting to proceed to payment again for Event A
+      await component.proceedToPayment();
+
+      // ASSERT:
+      // createAddonPayment call count for Event A Main Banner remains exactly 1!
+      expect(
+        stripeServiceSpy.createAddonPayment.mock.calls.filter(
+          (c: any) => c[1] === 'main_banner' && c[3] === 'ev-1'
+        ).length
+      ).toBe(1);
+      // No second Stripe confirmation
+      expect(stripeServiceSpy.confirmWithSavedMethod).toHaveBeenCalledTimes(1);
+      // No second applyAddon
+      expect(stripeServiceSpy.applyAddon).toHaveBeenCalledTimes(1);
+    });
+
+    it('should keep Event B independent and purchasable when Event A has activation pending', async () => {
+      // Event A ('ev-1') Main Banner activation pending
+      await component.onEventSelected('ev-1');
+      component.togglePlacement('main_banner');
+      component.selectSavedCard(mockSavedCards[0]);
+
+      stripeServiceSpy.confirmWithSavedMethod.mockResolvedValueOnce({});
+      stripeServiceSpy.applyAddon.mockRejectedValueOnce(new Error('Apply failed on Event A'));
+      await component.proceedToPayment();
+
+      expect(component.isActivationPending('main_banner')).toBe(true);
+
+      // Configure Event B with no active Main Banner
+      const events = component.events();
+      const ev2 = events.find((e) => e.id === 'ev-2');
+      if (ev2) ev2.is_main_banner = false;
+      component.events.set([...events]);
+
+      // Switch to Event B
+      await component.onEventSelected('ev-2');
+
+      // Event B has valid area and availability, and Main Banner is NOT disabled by Event A
+      expect(component.isActivationPending('main_banner')).toBe(false);
+      expect(component.hasActivationPending()).toBe(false);
+      expect(component.isMainBannerDisabled()).toBe(false);
+
+      // Event B Main Banner can be toggled and selected
+      component.togglePlacement('main_banner');
+      expect(component.selectedPlacements().has('main_banner')).toBe(true);
+    });
+
+    it('should isolate completed placements across events so Event A completion does not block Event B', async () => {
+      // Event A ('ev-1'): Main Banner succeeds and applies
+      await component.onEventSelected('ev-1');
+      component.togglePlacement('main_banner');
+      component.selectSavedCard(mockSavedCards[0]);
+
+      stripeServiceSpy.confirmWithSavedMethod.mockResolvedValueOnce({});
+      stripeServiceSpy.applyAddon.mockResolvedValueOnce({ success: true });
+      await component.proceedToPayment();
+
+      // Event A has Main Banner active locally
+      const ev1 = component.events().find((e) => e.id === 'ev-1');
+      expect(ev1?.is_main_banner).toBe(true);
+
+      // Configure Event B with no active Main Banner
+      const events = component.events();
+      const ev2 = events.find((e) => e.id === 'ev-2');
+      if (ev2) ev2.is_main_banner = false;
+      component.events.set([...events]);
+
+      // Switch to Event B
+      await component.onEventSelected('ev-2');
+
+      // Event B completedAddons is empty (not inherited from Event A)
+      expect(component.completedAddons()).toEqual([]);
+      expect(component.isMainBannerDisabled()).toBe(false);
+
+      // Select Main Banner on Event B
+      component.togglePlacement('main_banner');
+      expect(component.selectedPlacements().has('main_banner')).toBe(true);
+
+      // Pay for Event B Main Banner
+      stripeServiceSpy.confirmWithSavedMethod.mockResolvedValueOnce({});
+      stripeServiceSpy.applyAddon.mockResolvedValueOnce({ success: true });
+      await component.proceedToPayment();
+
+      // createAddonPayment ran for Event B ('ev-2')
+      expect(
+        stripeServiceSpy.createAddonPayment.mock.calls.filter(
+          (c: any) => c[1] === 'main_banner' && c[3] === 'ev-2'
+        ).length
+      ).toBe(1);
+
+      // Event A remains locally marked Main Banner active
+      expect(ev1?.is_main_banner).toBe(true);
+    });
   });
 });

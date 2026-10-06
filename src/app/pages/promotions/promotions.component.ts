@@ -1122,22 +1122,44 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   stripeReady = signal<boolean>(false);
   currentMountedType = signal<AddonType | null>(null);
 
-  // Payment Confirmation & Activation Protection
-  paymentConfirmedTypes = signal<Set<AddonType>>(new Set());
-  activationPendingTypes = signal<Set<AddonType>>(new Set());
-  activationPendingDismissed = signal<boolean>(false);
+  // Payment Confirmation & Activation Protection (Event-Scoped)
+  paymentConfirmedByEvent = signal<Map<string, Set<AddonType>>>(new Map());
+  activationPendingByEvent = signal<Map<string, Set<AddonType>>>(new Map());
+  activationPendingDismissedByEvent = signal<Map<string, boolean>>(new Map());
+  completedAddonsByEvent = signal<Map<string, Set<AddonType>>>(new Map());
+
+  // Current Event Scoped Computeds
+  paymentConfirmedTypes = computed(() => {
+    const eventId = this.selectedEventId();
+    if (!eventId) return new Set<AddonType>();
+    return this.paymentConfirmedByEvent().get(eventId) ?? new Set<AddonType>();
+  });
+
+  activationPendingTypes = computed(() => {
+    const eventId = this.selectedEventId();
+    if (!eventId) return new Set<AddonType>();
+    return this.activationPendingByEvent().get(eventId) ?? new Set<AddonType>();
+  });
+
+  completedAddons = computed(() => {
+    const eventId = this.selectedEventId();
+    if (!eventId) return [] as AddonType[];
+    return Array.from(this.completedAddonsByEvent().get(eventId) ?? []);
+  });
 
   private stripeInstance: Stripe | null = null;
   private stripeElements: StripeElements | null = null;
   private pendingQueue: AddonType[] = [];
-  completedAddons = signal<AddonType[]>([]);
   private routeSub: Subscription | null = null;
   private availabilitySeq = 0;
 
   hasActivationPending = computed(() => this.activationPendingTypes().size > 0);
 
   activationPendingMessage = computed(() => {
-    if (this.activationPendingTypes().size === 0 || this.activationPendingDismissed()) return null;
+    const eventId = this.selectedEventId();
+    if (!eventId) return null;
+    if (this.activationPendingTypes().size === 0) return null;
+    if (this.activationPendingDismissedByEvent().get(eventId)) return null;
     this.i18n.lang(); // reactive tracking
     return this.i18n.t('PORTAL.PROMOTIONS.ACTIVATION_PENDING_DESC');
   });
@@ -1405,11 +1427,15 @@ export class PromotionsComponent implements OnInit, OnDestroy {
 
     this.selectedEventId.set(eventId);
     this.errorDescriptor.set(null);
+    this.partialSuccessState.set(null);
     this.hasAvailabilityError.set(false);
     this.boostAvailability.set(null);
-    this.paymentConfirmedTypes.set(new Set());
-    this.activationPendingTypes.set(new Set());
-    this.activationPendingDismissed.set(false);
+    this.activationPendingDismissedByEvent.update((map) => {
+      if (!eventId) return map;
+      const next = new Map(map);
+      next.delete(eventId);
+      return next;
+    });
     this.cancelPayment();
 
     if (!eventId) {
@@ -1555,8 +1581,8 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     this.pendingQueue = Array.from(this.selectedPlacements()).filter(
       (t) =>
         !this.completedAddons().includes(t) &&
-        !this.paymentConfirmedTypes().has(t) &&
-        !this.activationPendingTypes().has(t)
+        !this.isPaymentConfirmed(t) &&
+        !this.isActivationPending(t)
     );
     if (this.pendingQueue.length === 0) {
       return;
@@ -1570,7 +1596,11 @@ export class PromotionsComponent implements OnInit, OnDestroy {
       this.successDescriptor.set({ key: 'PORTAL.PROMOTIONS.SUCCESS_DESC' });
       this.partialSuccessState.set(null);
       this.selectedPlacements.set(new Set());
-      this.completedAddons.set([]);
+      this.completedAddonsByEvent.update((map) => {
+        const next = new Map(map);
+        next.delete(eventId);
+        return next;
+      });
       this.cleanupStripe();
       await this.loadData();
       return;
@@ -1579,8 +1609,8 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     const type = this.pendingQueue[0];
     if (
       !type ||
-      this.paymentConfirmedTypes().has(type) ||
-      this.activationPendingTypes().has(type) ||
+      this.isPaymentConfirmed(type) ||
+      this.isActivationPending(type) ||
       this.completedAddons().includes(type)
     ) {
       this.pendingQueue.shift();
@@ -1633,16 +1663,16 @@ export class PromotionsComponent implements OnInit, OnDestroy {
         }
 
         // Mark payment confirmed BEFORE calling applyAddon
-        this.markPaymentConfirmed(type);
+        this.markPaymentConfirmed(type, eventId);
 
         try {
           await this.stripeService.applyAddon(type, undefined, eventId, undefined);
-          this.clearPaymentConfirmed(type);
+          this.clearPaymentConfirmed(type, eventId);
           this.recordPlacementSuccess(type, eventId);
           this.pendingQueue.shift();
           await this.processQueue(providerId, eventId);
         } catch (applyErr: any) {
-          this.handleActivationFailure(type, applyErr);
+          this.handleActivationFailure(type, eventId, applyErr);
           return;
         }
       } else {
@@ -1697,23 +1727,23 @@ export class PromotionsComponent implements OnInit, OnDestroy {
       }
 
       // Mark payment confirmed BEFORE calling applyAddon
-      this.markPaymentConfirmed(type);
+      this.markPaymentConfirmed(type, event.id);
 
       try {
         await this.stripeService.applyAddon(type, undefined, event.id, undefined);
-        this.clearPaymentConfirmed(type);
+        this.clearPaymentConfirmed(type, event.id);
         this.recordPlacementSuccess(type, event.id);
         this.pendingQueue.shift();
 
         this.cleanupStripe();
         await this.processQueue(providerId, event.id);
       } catch (applyErr: any) {
-        this.handleActivationFailure(type, applyErr);
+        this.handleActivationFailure(type, event.id, applyErr);
         return;
       }
     } catch (err: any) {
-      if (this.paymentConfirmedTypes().has(type)) {
-        this.handleActivationFailure(type, err);
+      if (this.isPaymentConfirmed(type)) {
+        this.handleActivationFailure(type, event.id, err);
       } else {
         this.handlePaymentFailure(err);
       }
@@ -1723,7 +1753,13 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   }
 
   private recordPlacementSuccess(type: AddonType, eventId: string): void {
-    this.completedAddons.set([...this.completedAddons(), type]);
+    this.completedAddonsByEvent.update((map) => {
+      const next = new Map(map);
+      const set = new Set(next.get(eventId) ?? []);
+      set.add(type);
+      next.set(eventId, set);
+      return next;
+    });
 
     // Update local event object so UI immediately reflects active boost
     const ev = this.events().find((e) => e.id === eventId);
@@ -1739,11 +1775,27 @@ export class PromotionsComponent implements OnInit, OnDestroy {
     this.selectedPlacements.set(next);
   }
 
-  private handleActivationFailure(type: AddonType, err: any): void {
-    // Mark placement in activation pending state
-    this.activationPendingTypes.update((set) => new Set(set).add(type));
-    this.paymentConfirmedTypes.update((set) => new Set(set).add(type));
-    this.activationPendingDismissed.set(false);
+  private handleActivationFailure(type: AddonType, eventId: string, err: any): void {
+    // Mark placement in activation pending state for this event
+    this.activationPendingByEvent.update((map) => {
+      const next = new Map(map);
+      const set = new Set(next.get(eventId) ?? []);
+      set.add(type);
+      next.set(eventId, set);
+      return next;
+    });
+    this.paymentConfirmedByEvent.update((map) => {
+      const next = new Map(map);
+      const set = new Set(next.get(eventId) ?? []);
+      set.add(type);
+      next.set(eventId, set);
+      return next;
+    });
+    this.activationPendingDismissedByEvent.update((map) => {
+      const next = new Map(map);
+      next.delete(eventId);
+      return next;
+    });
 
     // Stop automatic processing immediately (do not charge subsequent queued placements)
     this.pendingQueue = [];
@@ -1776,8 +1828,8 @@ export class PromotionsComponent implements OnInit, OnDestroy {
 
   getPlacementState(type: AddonType): 'not_started' | 'payment_confirmed' | 'activation_pending' | 'completed' {
     if (this.completedAddons().includes(type)) return 'completed';
-    if (this.activationPendingTypes().has(type)) return 'activation_pending';
-    if (this.paymentConfirmedTypes().has(type)) return 'payment_confirmed';
+    if (this.isActivationPending(type)) return 'activation_pending';
+    if (this.isPaymentConfirmed(type)) return 'payment_confirmed';
     return 'not_started';
   }
 
@@ -1790,17 +1842,31 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   }
 
   clearActivationPending(): void {
-    this.activationPendingDismissed.set(true);
+    const eventId = this.selectedEventId();
+    if (!eventId) return;
+    this.activationPendingDismissedByEvent.update((map) => {
+      const next = new Map(map);
+      next.set(eventId, true);
+      return next;
+    });
   }
 
-  private markPaymentConfirmed(type: AddonType): void {
-    this.paymentConfirmedTypes.update((set) => new Set(set).add(type));
+  private markPaymentConfirmed(type: AddonType, eventId: string): void {
+    this.paymentConfirmedByEvent.update((map) => {
+      const next = new Map(map);
+      const set = new Set(next.get(eventId) ?? []);
+      set.add(type);
+      next.set(eventId, set);
+      return next;
+    });
   }
 
-  private clearPaymentConfirmed(type: AddonType): void {
-    this.paymentConfirmedTypes.update((set) => {
-      const next = new Set(set);
-      next.delete(type);
+  private clearPaymentConfirmed(type: AddonType, eventId: string): void {
+    this.paymentConfirmedByEvent.update((map) => {
+      const next = new Map(map);
+      const set = new Set(next.get(eventId) ?? []);
+      set.delete(type);
+      next.set(eventId, set);
       return next;
     });
   }
