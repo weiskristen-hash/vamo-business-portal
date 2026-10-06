@@ -11,6 +11,8 @@ describe('AuthService', () => {
       navigate: vi.fn().mockResolvedValue(true),
     };
 
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+
     TestBed.configureTestingModule({
       providers: [
         AuthService,
@@ -173,6 +175,43 @@ describe('AuthService', () => {
       await expect(loginPromise).rejects.toMatchObject({
         code: 'LOGIN_TIMEOUT',
       });
+    });
+
+    it('should ignore late login resolution after timeout and prevent auth state mutations', async () => {
+      const directusClient = (await import('../directus/directus-client')).directusClient;
+      let resolveLogin!: (val?: any) => void;
+      const pendingLoginPromise = new Promise((resolve) => {
+        resolveLogin = resolve;
+      });
+
+      vi.spyOn(directusClient, 'login').mockReturnValue(pendingLoginPromise as any);
+      const loadUserSpy = vi.spyOn(service, 'loadCurrentUser');
+      const setTokenSpy = vi.spyOn(directusClient, 'setToken').mockResolvedValue(undefined as any);
+
+      // 1. directusClient.login() remains pending past timeout
+      // 2. service rejects LOGIN_TIMEOUT
+      const loginPromise = service.login('hung@vamo.com', 'pass', 50);
+
+      await expect(loginPromise).rejects.toMatchObject({
+        code: 'LOGIN_TIMEOUT',
+      });
+      expect(service.currentUser).toBeNull();
+
+      // 3. simulate the original login resolving afterward
+      resolveLogin({ access_token: 'late_access', refresh_token: 'late_refresh' });
+      await new Promise((res) => setTimeout(res, 20));
+
+      // 4. verify loadCurrentUser is NOT called after timeout
+      expect(loadUserSpy).not.toHaveBeenCalled();
+
+      // 5. verify currentUser is NOT updated
+      expect(service.currentUser).toBeNull();
+
+      // 6. verify proactive refresh is NOT scheduled
+      expect((service as any).proactiveRefreshTimer).toBeNull();
+
+      // Verify that any late tokens stored by SDK are wiped
+      expect(setTokenSpy).toHaveBeenCalledWith(null);
     });
   });
 });

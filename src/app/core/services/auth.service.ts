@@ -26,6 +26,7 @@ export class AuthService {
   private refreshPromise: Promise<boolean> | null = null;
   private proactiveRefreshTimer: any = null;
   private restoreSessionNonce = 0;
+  private loginNonce = 0;
 
   constructor() {
     this.restoreSession();
@@ -271,9 +272,15 @@ export class AuthService {
   }
 
   async login(email: string, password: string, timeoutMs: number = 12000): Promise<VamoUser> {
+    const nonce = ++this.loginNonce;
     let timer: ReturnType<typeof setTimeout> | undefined;
+
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
+        // Invalidate current login nonce so any late response from directusClient.login is ignored
+        if (nonce === this.loginNonce) {
+          this.loginNonce++;
+        }
         const timeoutErr = new Error('Authentication request timed out. Please check your connection and try again.');
         (timeoutErr as any).code = 'LOGIN_TIMEOUT';
         reject(timeoutErr);
@@ -281,16 +288,34 @@ export class AuthService {
     });
 
     try {
-      return await Promise.race([
-        (async () => {
-          await directusClient.login({ email, password });
-          const user = await this.loadCurrentUser();
-          this.userSubject.next(user);
-          this.scheduleProactiveRefresh();
-          return user;
-        })(),
-        timeoutPromise,
-      ]);
+      const loginTask = (async () => {
+        await directusClient.login({ email, password });
+        // Generation guard: verify request was not superseded or timed out
+        if (nonce !== this.loginNonce) {
+          try {
+            await directusClient.setToken(null);
+          } catch {}
+          return null;
+        }
+
+        const user = await this.loadCurrentUser();
+        if (nonce !== this.loginNonce) {
+          try {
+            await directusClient.setToken(null);
+          } catch {}
+          return null;
+        }
+
+        this.userSubject.next(user);
+        this.scheduleProactiveRefresh();
+        return user;
+      })();
+
+      const result = await Promise.race([loginTask, timeoutPromise]);
+      if (!result) {
+        throw new Error('Authentication aborted');
+      }
+      return result;
     } finally {
       if (timer) clearTimeout(timer);
     }
