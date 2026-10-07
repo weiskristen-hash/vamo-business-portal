@@ -68,8 +68,9 @@ export class AuthService {
       await this.proactiveRefreshCheck();
       return await fn();
     } catch (err: any) {
-      const code = err?.errors?.[0]?.extensions?.code;
-      const isExpired = code === 'TOKEN_EXPIRED';
+      const code = err?.errors?.[0]?.extensions?.code || err?.code;
+      const status = err?.status || err?.response?.status;
+      const isExpired = code === 'TOKEN_EXPIRED' || code === 'INVALID_TOKEN' || status === 401;
 
       if (isExpired) {
         const refreshed = await this.refreshToken();
@@ -93,8 +94,8 @@ export class AuthService {
           this.scheduleProactiveRefresh();
           return true;
         } catch (err) {
-          console.warn('[AuthService] Token refresh failed, logging out session:', err);
-          await this.logout(false);
+          console.warn('[AuthService] Token refresh failed, handling session expiry:', err);
+          await this.handleSessionExpired();
           return false;
         } finally {
           this.refreshPromise = null;
@@ -102,6 +103,102 @@ export class AuthService {
       })();
     }
     return this.refreshPromise;
+  }
+
+  // ======================================================
+  // 🔹 SESSION EXPIRY & RETURN URL HANDLING
+  // ======================================================
+
+  private isRedirectingForExpiry = false;
+
+  sanitizeReturnUrl(url: string | null | undefined): string {
+    if (!url || typeof url !== 'string') return '/app/overview';
+    const trimmed = url.trim();
+    // Prevent open redirects & malformed paths
+    if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) {
+      return '/app/overview';
+    }
+    if (/[\r\n\t\\]/.test(trimmed)) {
+      return '/app/overview';
+    }
+    // Must be under the portal (specifically /app)
+    if (!trimmed.startsWith('/app')) {
+      return '/app/overview';
+    }
+    return trimmed;
+  }
+
+  private getCurrentRouteUrl(): string {
+    try {
+      if (this.router.url && this.router.url !== '/' && !this.router.url.startsWith('/login')) {
+        return this.router.url;
+      }
+      if (typeof window !== 'undefined' && window.location) {
+        const path = window.location.pathname + window.location.search;
+        if (path && path !== '/' && !path.startsWith('/login')) {
+          return path;
+        }
+      }
+    } catch {}
+    return '/app/overview';
+  }
+
+  async handleSessionExpired(): Promise<void> {
+    if (this.proactiveRefreshTimer) {
+      clearTimeout(this.proactiveRefreshTimer);
+      this.proactiveRefreshTimer = null;
+    }
+
+    try {
+      await directusClient.setToken(null);
+    } catch (e) {
+      console.warn('[AuthService] Error clearing directus client token:', e);
+    }
+
+    try {
+      const storage = createBrowserAuthStorage();
+      await storage.set(null);
+    } catch (e) {
+      console.warn('[AuthService] Error clearing browser auth storage:', e);
+    }
+
+    try {
+      await directusClient.logout();
+    } catch {
+      // 400 or invalid token is expected when session is already dead
+    }
+
+    this.userSubject.next(null);
+
+    if (this.isRedirectingForExpiry) {
+      return;
+    }
+    this.isRedirectingForExpiry = true;
+
+    try {
+      const currentUrl = this.getCurrentRouteUrl();
+      const returnUrl = this.sanitizeReturnUrl(currentUrl);
+
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        try {
+          window.sessionStorage.setItem('vamo_expired_session', 'true');
+          window.sessionStorage.setItem('vamo_expired_return_url', returnUrl);
+        } catch {
+          // ignore storage restrictions
+        }
+      }
+
+      await this.router.navigate(['/login'], {
+        queryParams: {
+          returnUrl,
+          reason: 'expired',
+        },
+      });
+    } finally {
+      setTimeout(() => {
+        this.isRedirectingForExpiry = false;
+      }, 1000);
+    }
   }
 
   // ======================================================
@@ -176,6 +273,13 @@ export class AuthService {
   async restoreSession(): Promise<VamoUser | null> {
     const nonce = ++this.restoreSessionNonce;
     try {
+      const storage = createBrowserAuthStorage();
+      const session = await storage.get();
+      if (!session || (!session.access_token && !session.refresh_token)) {
+        this.userSubject.next(null);
+        return null;
+      }
+
       const user = await this.safeRequest(() => this.loadCurrentUser());
       if (nonce !== this.restoreSessionNonce) return null;
 
@@ -461,6 +565,26 @@ export class AuthService {
     if (this.proactiveRefreshTimer) {
       clearTimeout(this.proactiveRefreshTimer);
       this.proactiveRefreshTimer = null;
+    }
+
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        window.sessionStorage.removeItem('vamo_expired_session');
+        window.sessionStorage.removeItem('vamo_expired_return_url');
+      } catch {}
+    }
+
+    try {
+      const storage = createBrowserAuthStorage();
+      await storage.set(null);
+    } catch (e) {
+      console.warn('[AuthService] Error clearing browser auth storage:', e);
+    }
+
+    try {
+      await directusClient.setToken(null);
+    } catch (e) {
+      console.warn('[AuthService] Error clearing directus client token:', e);
     }
 
     try {

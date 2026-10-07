@@ -86,7 +86,7 @@ interface PartialSuccessState {
   <div *ngIf="!isLoading()" class="promotions-content">
 
     <!-- ── ACTIVE PROMOTIONS SECTION ───────────────────────────────── -->
-    <section class="card active-placements-card">
+    <section *ngIf="activeEvents().length > 0" class="card active-placements-card">
       <div class="card-header">
         <div>
           <h2 class="card-title">{{ 'PORTAL.PROMOTIONS.ACTIVE_PLACEMENTS_TITLE' | translate }}</h2>
@@ -94,12 +94,7 @@ interface PartialSuccessState {
         </div>
       </div>
       <div class="card-body">
-        <div *ngIf="activeEvents().length === 0" class="empty-state">
-          <span class="empty-icon">✨</span>
-          <p class="empty-text">{{ 'PORTAL.PROMOTIONS.EMPTY_ACTIVE' | translate }}</p>
-        </div>
-
-        <div *ngIf="activeEvents().length > 0" class="active-events-grid">
+        <div class="active-events-grid">
           <div *ngFor="let ev of activeEvents()" class="active-event-card">
             <div class="active-event-media">
               <img
@@ -414,7 +409,7 @@ interface PartialSuccessState {
                 >
                   <span *ngIf="isProcessingPayment()">{{ 'PORTAL.PROMOTIONS.PROCESSING' | translate }}</span>
                   <span *ngIf="!isProcessingPayment()">
-                    {{ getPayButtonLabel() }} <span *ngIf="hasSameCurrency() && !isRetrying()">({{ formattedTotal() }})</span>
+                    {{ getPayButtonLabel() }}
                   </span>
                 </button>
 
@@ -1684,7 +1679,8 @@ export class PromotionsComponent implements OnInit, OnDestroy {
         : '';
       return this.i18n.t('PORTAL.PROMOTIONS.RETRY_BTN', { placement: placementName });
     }
-    return this.i18n.t('PORTAL.PROMOTIONS.PAY_BTN');
+    const priceStr = this.hasSameCurrency() ? this.formattedTotal() : '';
+    return this.i18n.t('PORTAL.PROMOTIONS.PAY_BTN', { price: priceStr });
   }
 
   getConfirmButtonLabel(): string {

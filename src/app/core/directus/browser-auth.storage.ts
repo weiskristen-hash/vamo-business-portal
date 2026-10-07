@@ -23,6 +23,9 @@ export function createBrowserAuthStorage(key: string = BUSINESS_AUTH_STORAGE_KEY
 
       try {
         const parsed = JSON.parse(raw);
+        if (!parsed || (!parsed.access_token && !parsed.refresh_token)) {
+          return null;
+        }
         return parsed as AuthenticationData;
       } catch (err) {
         console.warn('[BrowserAuthStorage] Failed to parse auth session JSON:', err);
@@ -34,7 +37,7 @@ export function createBrowserAuthStorage(key: string = BUSINESS_AUTH_STORAGE_KEY
       if (typeof window === 'undefined' || !window.localStorage) {
         return;
       }
-      if (!value) {
+      if (!value || (!value.access_token && !value.refresh_token)) {
         window.localStorage.removeItem(key);
         return;
       }

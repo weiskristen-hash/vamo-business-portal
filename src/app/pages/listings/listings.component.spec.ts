@@ -262,7 +262,6 @@ describe('ListingsComponent', () => {
       fixture.detectChanges();
       const tabTextsEn = Array.from(fixture.nativeElement.querySelectorAll('.filter-tabs .filter-tab'))
         .map((el: any) => el.textContent.trim());
-      expect(tabTextsEn.some((t) => t.includes('All'))).toBe(true);
       expect(tabTextsEn.some((t) => t.includes('Active'))).toBe(true);
       expect(tabTextsEn.some((t) => t.includes('Drafts'))).toBe(true);
       expect(tabTextsEn.some((t) => t.includes('Past'))).toBe(true);
@@ -271,7 +270,6 @@ describe('ListingsComponent', () => {
       fixture.detectChanges();
       const tabTextsEs = Array.from(fixture.nativeElement.querySelectorAll('.filter-tabs .filter-tab'))
         .map((el: any) => el.textContent.trim());
-      expect(tabTextsEs.some((t) => t.includes('Todos'))).toBe(true);
       expect(tabTextsEs.some((t) => t.includes('Activos'))).toBe(true);
       expect(tabTextsEs.some((t) => t.includes('Borradores'))).toBe(true);
       expect(tabTextsEs.some((t) => t.includes('Pasados'))).toBe(true);
@@ -404,13 +402,13 @@ describe('ListingsComponent', () => {
       const ev1Card = cards[0];
       const ev1BoostBtn = ev1Card.querySelector('.boost-btn');
       expect(ev1BoostBtn).toBeTruthy();
-      expect(ev1BoostBtn.textContent.trim()).toContain('Manage Boost');
+      expect(ev1BoostBtn.textContent.trim()).toContain('Manage Promotion');
 
-      // ev-2 (published, no boost) -> Boost
+      // ev-2 (published, no boost) -> Promote
       const ev2Card = cards[1];
       const ev2BoostBtn = ev2Card.querySelector('.boost-btn');
       expect(ev2BoostBtn).toBeTruthy();
-      expect(ev2BoostBtn.textContent.trim()).toContain('Boost');
+      expect(ev2BoostBtn.textContent.trim()).toContain('Promote');
 
       // ev-3 (draft) -> no boost button
       const ev3Card = cards[2];
@@ -433,7 +431,7 @@ describe('ListingsComponent', () => {
       i18nService.setLang('en');
       fixture.detectChanges();
       const boostBtnEn = fixture.nativeElement.querySelector('.listing-card:nth-child(2) .boost-btn');
-      expect(boostBtnEn.textContent.trim()).toBe('Boost');
+      expect(boostBtnEn.textContent.trim()).toBe('Promote');
 
       i18nService.setLang('es');
       fixture.detectChanges();

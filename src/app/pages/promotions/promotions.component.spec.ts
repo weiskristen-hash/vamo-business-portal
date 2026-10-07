@@ -200,8 +200,8 @@ describe('PromotionsComponent', () => {
       expect(component.isLoading()).toBe(false);
 
       const compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.querySelector('.page-title')?.textContent).toContain('VAMO Promotions & Placements');
-      expect(compiled.querySelector('.page-subtitle')?.textContent).toContain('Supercharge your visibility');
+      expect(compiled.querySelector('.page-title')?.textContent).toContain('Promote a Post');
+      expect(compiled.querySelector('.page-subtitle')?.textContent).toContain('Get more visibility for one of your active VAMO posts.');
     });
 
     it('should render active placements for events with is_main_banner or is_whats_hot', () => {
@@ -213,6 +213,15 @@ describe('PromotionsComponent', () => {
       expect(activeSection).toBeTruthy();
       expect(activeSection?.textContent).toContain('Punta Cana Zip Line');
       expect(activeSection?.textContent).toContain('Main Banner');
+    });
+
+    it('should not render active placements section when activeEvents is empty', () => {
+      component.events.set(mockEvents.map((e) => ({ ...e, is_main_banner: false, is_whats_hot: false })));
+      fixture.detectChanges();
+
+      expect(component.activeEvents().length).toBe(0);
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.active-placements-card')).toBeNull();
     });
 
     it('should filter only published events in the event select dropdown', () => {
@@ -609,8 +618,8 @@ describe('PromotionsComponent', () => {
       fixture.detectChanges();
 
       const compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.querySelector('.page-title')?.textContent).toContain('Promociones y Posicionamiento VAMO');
-      expect(compiled.querySelector('.page-subtitle')?.textContent).toContain('Aumenta tu visibilidad');
+      expect(compiled.querySelector('.page-title')?.textContent).toContain('Promocionar una publicación');
+      expect(compiled.querySelector('.page-subtitle')?.textContent).toContain('Obtén más visibilidad para una de tus publicaciones activas en VAMO.');
 
       component.togglePlacement('main_banner');
       fixture.detectChanges();
@@ -619,6 +628,8 @@ describe('PromotionsComponent', () => {
       expect(text).toContain('Banner Principal');
       expect(text).toContain('Lo Más Caliente');
       expect(text).toContain('Resumen del Pedido');
+      expect(text).toContain('Pagar');
+      expect(text).toContain('y promocionar');
     });
 
     it('should reactively update error messages when language changes', () => {
