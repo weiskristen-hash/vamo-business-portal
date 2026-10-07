@@ -712,18 +712,10 @@ export const esTranslations: Record<string, any> = {
       "TAG": "PORTAL DE NEGOCIOS"
     },
     "LOGIN": {
-      "HERO_TITLE": "Administra tu negocio VAMO desde un solo lugar.",
-      "HERO_DESC": "Gestiona tu perfil, eventos, promociones y alcance de clientes desde un panel sencillo.",
-      "FEAT_1_TITLE": "ADMINISTRA TODO EN UN SOLO LUGAR",
-      "FEAT_1_DESC": "Actualiza el perfil de tu negocio, eventos y promociones.",
-      "FEAT_2_TITLE": "MANTENTE SINCRONIZADO CON VAMO",
-      "FEAT_2_DESC": "Tus cambios aparecen en toda la experiencia VAMO.",
-      "FEAT_3_TITLE": "LLEGA A MÁS CLIENTES",
-      "FEAT_3_DESC": "Mantente visible para residentes y viajeros que buscan actividades.",
-      "LIVE_PLATFORM": "PLATAFORMA EN VIVO",
-      "DOMINICAN_REPUBLIC": "República Dominicana",
-      "PREVIEW_TITLE": "Tu Negocio VAMO",
-      "PREVIEW_SUB": "Gestiona tu perfil, eventos y promociones en un solo lugar.",
+      "HERO_TITLE": "Te damos la bienvenida a tu panel de VAMO Business",
+      "HERO_DESC": "Gestiona el perfil de tu negocio, publicaciones, promociones y rendimiento desde la web.",
+      "HERO_SYNC_NOTE": "Todo lo que gestionas aquí se mantiene sincronizado con VAMO.",
+      "SESSION_EXPIRED_NOTICE": "Tu sesión ha caducado. Por favor inicia sesión de nuevo.",
       "CARD_TITLE": "Iniciar sesión en VAMO",
       "CARD_SUB": "Gestiona tu negocio, eventos y promociones.",
       "EMAIL_LABEL": "Correo electrónico",
@@ -820,7 +812,7 @@ export const esTranslations: Record<string, any> = {
       "NAV_PROFILE": "Perfil del negocio",
       "NAV_LISTINGS": "Publicaciones",
       "NAV_CREATE_LISTING": "Crear publicación",
-      "NAV_PROMOTIONS": "Promociones",
+      "NAV_PROMOTIONS": "Promocionar publicación",
       "NAV_INSIGHTS": "Estadísticas",
       "NAV_BILLING": "Facturación",
       "NAV_SETTINGS": "Configuración",
@@ -1309,8 +1301,8 @@ export const esTranslations: Record<string, any> = {
       "SUCCESS_REACTIVATED": "¡Bienvenido de vuelta! La renovación de tu suscripción ha sido reactivada."
     },
     "PROMOTIONS": {
-      "TITLE": "Promociones y Posicionamiento VAMO",
-      "SUBTITLE": "Aumenta tu visibilidad con banners destacados en la pantalla principal y ubicaciones en Lo Más Caliente.",
+      "TITLE": "Promocionar una publicación",
+      "SUBTITLE": "Obtén más visibilidad para una de tus publicaciones activas en VAMO.",
       "DISMISS": "Cerrar",
       "LOADING": "Cargando opciones de promoción…",
 
@@ -1323,7 +1315,6 @@ export const esTranslations: Record<string, any> = {
       "BANNER_BADGE": "Banner Principal",
       "HOT_BADGE": "Lo Más Caliente",
       "STATUS_ACTIVE": "Activo",
-      "STATUS_SCHEDULED": "Programado",
 
       "STEP_EVENT_TITLE": "1. Selecciona la publicación a promocionar",
       "STEP_EVENT_SUBTITLE": "Elige una de tus publicaciones activas para recibir visibilidad destacada.",
@@ -1345,14 +1336,7 @@ export const esTranslations: Record<string, any> = {
       "SOLD_OUT_NEXT_DATE": "Completo por el momento. Próxima fecha disponible: {{date}}.",
       "ALREADY_ACTIVE_ON_EVENT": "Ya está activo en esta publicación",
 
-      "STEP_SCHEDULE_TITLE": "3. Programación (Opcional)",
-      "STEP_SCHEDULE_SUBTITLE": "Elige cuándo debe comenzar tu promoción o inicia de inmediato tras el pago.",
-      "SCHEDULE_LABEL": "Fecha de inicio de la promoción",
-      "SCHEDULE_IMMEDIATE": "Activar inmediatamente tras el pago",
-      "SCHEDULE_FUTURE": "Programar para una fecha específica",
-      "SCHEDULE_NOTICE": "El pago se procesa ahora. Tu posicionamiento se activará el {{date}}.",
-
-      "STEP_SUMMARY_TITLE": "4. Resumen del Pedido",
+      "STEP_SUMMARY_TITLE": "3. Resumen del Pedido",
       "SUMMARY_LISTING": "Publicación:",
       "SUMMARY_PLACEMENTS": "Posicionamientos:",
       "SUMMARY_START": "Fecha de inicio:",
@@ -1361,17 +1345,14 @@ export const esTranslations: Record<string, any> = {
       "SUMMARY_DURATION_VAL": "7 días por posicionamiento",
       "SUMMARY_TOTAL": "Total a pagar:",
 
-      "STEP_PAYMENT_TITLE": "5. Método de Pago",
+      "STEP_PAYMENT_TITLE": "4. Método de Pago",
       "SAVED_CARDS_TITLE": "Pagar con tarjeta guardada",
       "NEW_CARD_TITLE": "Pagar con tarjeta nueva",
-      "PAY_BTN": "Pagar y activar posicionamiento",
-      "SCHEDULE_BTN": "Pagar y programar posicionamiento",
+      "PAY_BTN": "Pagar {{price}} y promocionar",
       "PROCESSING": "Procesando pago…",
 
       "SUCCESS_TITLE": "¡Tu publicación ya está destacada!",
-      "SUCCESS_SCHEDULED_TITLE": "¡Tu promoción ha sido programada!",
       "SUCCESS_DESC": "Tu posicionamiento ha sido aplicado exitosamente y ya es visible para los clientes.",
-      "SUCCESS_SCHEDULED_DESC": "Tu posicionamiento ha sido programado y se activará el {{date}}.",
       "PROMOTE_ANOTHER_BTN": "Promocionar otra publicación",
       "VIEW_LISTINGS_BTN": "Ver publicaciones",
 

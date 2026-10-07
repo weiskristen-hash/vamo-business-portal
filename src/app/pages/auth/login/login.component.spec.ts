@@ -17,6 +17,12 @@ describe('LoginComponent', () => {
       requestPasswordReset: vi.fn(),
       loginWithGoogle: vi.fn().mockReturnValue(new Promise(() => {})),
       loginWithProvider: vi.fn(),
+      sanitizeReturnUrl: vi.fn().mockImplementation((url: string) => {
+        if (!url || typeof url !== 'string' || !url.startsWith('/app') || url.startsWith('//')) {
+          return '/app/overview';
+        }
+        return url;
+      }),
     };
 
     routerSpy = {
@@ -159,13 +165,60 @@ describe('LoginComponent', () => {
     expect(component.loading).toBe(true);
   });
 
-  it('should display neutral VAMO Business preview card copy without cross-platform claims', () => {
-    const previewCard = fixture.nativeElement.querySelector('.hero-preview-card');
-    expect(previewCard).toBeTruthy();
-    expect(previewCard.textContent).toContain('Your VAMO Business');
-    expect(previewCard.textContent).toContain('Manage your profile, events, and promotions in one place.');
-    expect(previewCard.textContent).not.toContain('Dominican Discovery Network');
-    expect(previewCard.textContent).not.toContain('Instant sync across iOS, Android, and Web');
+  it('should display simplified SaaS dashboard hero copy and not render preview card or bullets', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    const heroTitle = compiled.querySelector('.hero-title');
+    const heroDesc = compiled.querySelector('.hero-description');
+    const heroSyncNote = compiled.querySelector('.hero-sync-note');
+
+    expect(heroTitle?.textContent).toContain('Welcome to your VAMO Business Dashboard');
+    expect(heroDesc?.textContent).toContain('Manage your business profile, posts, promotions, and performance from the web.');
+    expect(heroSyncNote?.textContent).toContain('Everything you manage here stays synced with VAMO.');
+
+    // Bullets and preview card removed
+    expect(compiled.querySelector('.hero-preview-card')).toBeNull();
+    expect(compiled.querySelector('.hero-features')).toBeNull();
+  });
+
+  it('should display friendly notice banner when session expired reason or storage flag is set', async () => {
+    sessionStorage.setItem('vamo_expired_session', 'true');
+    sessionStorage.setItem('vamo_expired_return_url', '/app/promotions');
+
+    const expiredFixture = TestBed.createComponent(LoginComponent);
+    const expiredComp = expiredFixture.componentInstance;
+    expiredFixture.detectChanges();
+
+    expect(expiredComp.sessionExpiredNotice).toBe(true);
+    const alertWarning = expiredFixture.nativeElement.querySelector('.alert-warning');
+    expect(alertWarning).toBeTruthy();
+    expect(alertWarning.textContent).toContain('Your session expired. Please sign in again.');
+
+    sessionStorage.clear();
+  });
+
+  it('should clear session expiry flags upon successful login and navigate to sanitized returnUrl', async () => {
+    sessionStorage.setItem('vamo_expired_session', 'true');
+    sessionStorage.setItem('vamo_expired_return_url', '/app/promotions');
+
+    const loginFixture = TestBed.createComponent(LoginComponent);
+    const loginComp = loginFixture.componentInstance;
+    loginFixture.detectChanges();
+
+    authServiceSpy.login.mockResolvedValue({
+      id: 'usr-1',
+      email: 'owner@beachbar.com',
+      provider_link: { id: 'prov-1', name: 'Beach Bar' },
+    });
+
+    loginComp.email = 'owner@beachbar.com';
+    loginComp.password = 'password123';
+    await loginComp.onSubmit();
+
+    expect(routerSpy.navigateByUrl).toHaveBeenCalledWith('/app/promotions');
+    expect(sessionStorage.getItem('vamo_expired_session')).toBeNull();
+    expect(sessionStorage.getItem('vamo_expired_return_url')).toBeNull();
+
+    sessionStorage.clear();
   });
 
   it('should translate unexpected backend errors into customer-safe message without leaking Directus internals', async () => {

@@ -6,7 +6,12 @@ describe('AuthService', () => {
   let service: AuthService;
   let routerSpy: any;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    const { createBrowserAuthStorage } = await import('../directus/browser-auth.storage');
+    const { directusClient } = await import('../directus/directus-client');
+    await createBrowserAuthStorage().set(null);
+    await directusClient.setToken(null);
+
     routerSpy = {
       navigate: vi.fn().mockResolvedValue(true),
     };
@@ -21,6 +26,14 @@ describe('AuthService', () => {
     });
 
     service = TestBed.inject(AuthService);
+  });
+
+  afterEach(async () => {
+    const { createBrowserAuthStorage } = await import('../directus/browser-auth.storage');
+    const { directusClient } = await import('../directus/directus-client');
+    await createBrowserAuthStorage().set(null);
+    await directusClient.setToken(null);
+    vi.restoreAllMocks();
   });
 
   it('should be created', () => {
@@ -370,6 +383,169 @@ describe('AuthService', () => {
       const finalStorage = await createBrowserAuthStorage().get();
       expect(finalStorage?.access_token).toBe('refreshed_access_token');
       expect(finalStorage?.refresh_token).toBe('new_refresh_token');
+    });
+  });
+
+  describe('Session Expiry Handling & Return URL (UX Cleanup)', () => {
+    it('access token expires → refresh succeeds → request retries transparently', async () => {
+      const { directusClient } = await import('../directus/directus-client');
+      vi.spyOn(directusClient, 'refresh').mockResolvedValue({} as any);
+
+      let callCount = 0;
+      const apiCall = vi.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          const err: any = new Error('Token expired');
+          err.errors = [{ extensions: { code: 'TOKEN_EXPIRED' } }];
+          throw err;
+        }
+        return 'success-data';
+      });
+
+      const result = await service.safeRequest(apiCall);
+      expect(result).toBe('success-data');
+      expect(callCount).toBe(2);
+      expect(directusClient.refresh).toHaveBeenCalledTimes(1);
+      expect(routerSpy.navigate).not.toHaveBeenCalled();
+    });
+
+    it('access token expires → refresh fails → local session cleared and redirected to /login with reason=expired', async () => {
+      const { createBrowserAuthStorage } = await import('../directus/browser-auth.storage');
+      const { directusClient } = await import('../directus/directus-client');
+
+      const storage = createBrowserAuthStorage();
+      await storage.set({ access_token: 'valid_tok', refresh_token: 'dead_refresh' });
+      vi.spyOn(directusClient, 'refresh').mockRejectedValue(new Error('Invalid refresh token'));
+      vi.spyOn(directusClient, 'logout').mockRejectedValue(new Error('400 Bad Request')); // logout failure must not block cleanup
+
+      const apiCall = vi.fn().mockImplementation(async () => {
+        const err: any = new Error('Token expired');
+        err.errors = [{ extensions: { code: 'TOKEN_EXPIRED' } }];
+        throw err;
+      });
+
+      await expect(service.safeRequest(apiCall)).rejects.toThrow();
+
+      // Local session is cleared
+      const stored = await storage.get();
+      expect(stored).toBeNull();
+      expect(service.currentUser).toBeNull();
+
+      // Redirected to /login with reason: 'expired'
+      expect(routerSpy.navigate).toHaveBeenCalledWith(['/login'], {
+        queryParams: expect.objectContaining({
+          reason: 'expired',
+        }),
+      });
+    });
+
+    it('expired-session returnUrl preserved for protected routes', async () => {
+      const { directusClient } = await import('../directus/directus-client');
+      vi.spyOn(directusClient, 'refresh').mockRejectedValue(new Error('Refresh failed'));
+
+      // Simulate being on a protected page
+      (service as any).router.url = '/app/listings/edit/event-abc';
+
+      await service.refreshToken();
+
+      expect(routerSpy.navigate).toHaveBeenCalledWith(['/login'], {
+        queryParams: {
+          returnUrl: '/app/listings/edit/event-abc',
+          reason: 'expired',
+        },
+      });
+    });
+
+    it('unsafe external or non-app returnUrl is sanitized to /app/overview', () => {
+      expect(service.sanitizeReturnUrl('https://evil.com/phish')).toBe('/app/overview');
+      expect(service.sanitizeReturnUrl('//evil.com')).toBe('/app/overview');
+      expect(service.sanitizeReturnUrl('/\\evil.com')).toBe('/app/overview');
+      expect(service.sanitizeReturnUrl('javascript:alert(1)')).toBe('/app/overview');
+      expect(service.sanitizeReturnUrl('/login')).toBe('/app/overview');
+      expect(service.sanitizeReturnUrl('/outside')).toBe('/app/overview');
+      expect(service.sanitizeReturnUrl('')).toBe('/app/overview');
+      expect(service.sanitizeReturnUrl(null)).toBe('/app/overview');
+
+      // Valid internal protected routes are preserved
+      expect(service.sanitizeReturnUrl('/app/insights')).toBe('/app/insights');
+      expect(service.sanitizeReturnUrl('/app/promotions?eventId=ev-123')).toBe('/app/promotions?eventId=ev-123');
+      expect(service.sanitizeReturnUrl('/app/listings/create')).toBe('/app/listings/create');
+    });
+
+    it('network failure does NOT log user out', async () => {
+      const { directusClient } = await import('../directus/directus-client');
+      const refreshSpy = vi.spyOn(directusClient, 'refresh');
+
+      const apiCall = vi.fn().mockImplementation(async () => {
+        throw new Error('Failed to fetch');
+      });
+
+      await expect(service.safeRequest(apiCall)).rejects.toThrow('Failed to fetch');
+      expect(refreshSpy).not.toHaveBeenCalled();
+      expect(routerSpy.navigate).not.toHaveBeenCalled();
+    });
+
+    it('403 forbidden error does NOT log user out', async () => {
+      const { directusClient } = await import('../directus/directus-client');
+      const refreshSpy = vi.spyOn(directusClient, 'refresh');
+
+      const apiCall = vi.fn().mockImplementation(async () => {
+        const err: any = new Error('Forbidden');
+        err.status = 403;
+        err.errors = [{ extensions: { code: 'FORBIDDEN' } }];
+        throw err;
+      });
+
+      await expect(service.safeRequest(apiCall)).rejects.toThrow('Forbidden');
+      expect(refreshSpy).not.toHaveBeenCalled();
+      expect(routerSpy.navigate).not.toHaveBeenCalled();
+    });
+
+    it('concurrent refresh failures do not create multiple redirects', async () => {
+      const { directusClient } = await import('../directus/directus-client');
+      vi.spyOn(directusClient, 'refresh').mockRejectedValue(new Error('Invalid token'));
+
+      const apiCall1 = async () => {
+        const err: any = new Error('Token expired');
+        err.errors = [{ extensions: { code: 'TOKEN_EXPIRED' } }];
+        throw err;
+      };
+      const apiCall2 = async () => {
+        const err: any = new Error('Token expired');
+        err.errors = [{ extensions: { code: 'TOKEN_EXPIRED' } }];
+        throw err;
+      };
+      const apiCall3 = async () => {
+        const err: any = new Error('Token expired');
+        err.errors = [{ extensions: { code: 'TOKEN_EXPIRED' } }];
+        throw err;
+      };
+
+      // Run 3 concurrent requests that all fail with TOKEN_EXPIRED
+      await Promise.allSettled([
+        service.safeRequest(apiCall1),
+        service.safeRequest(apiCall2),
+        service.safeRequest(apiCall3),
+      ]);
+
+      // directusClient.refresh only called once
+      expect(directusClient.refresh).toHaveBeenCalledTimes(1);
+      // navigation only called once
+      expect(routerSpy.navigate).toHaveBeenCalledTimes(1);
+      expect(routerSpy.navigate).toHaveBeenCalledWith(['/login'], expect.objectContaining({
+        queryParams: expect.objectContaining({ reason: 'expired' }),
+      }));
+    });
+
+    it('manual logout behaves normally and does not show session-expired notice', async () => {
+      sessionStorage.setItem('vamo_expired_session', 'true');
+      sessionStorage.setItem('vamo_expired_return_url', '/app/promotions');
+
+      await service.logout(true);
+
+      expect(routerSpy.navigate).toHaveBeenCalledWith(['/login']);
+      expect(sessionStorage.getItem('vamo_expired_session')).toBeNull();
+      expect(sessionStorage.getItem('vamo_expired_return_url')).toBeNull();
     });
   });
 });

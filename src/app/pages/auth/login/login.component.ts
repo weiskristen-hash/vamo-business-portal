@@ -36,60 +36,9 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
             <p class="hero-description">
               {{ 'PORTAL.LOGIN.HERO_DESC' | translate }}
             </p>
-
-            <!-- Customer-Facing Benefit Items -->
-            <div class="hero-features">
-              <div class="feature-item">
-                <div class="feature-icon-wrap" aria-hidden="true">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="20 6 9 17 4 12"></polyline>
-                  </svg>
-                </div>
-                <div class="feature-text">
-                  <strong>{{ 'PORTAL.LOGIN.FEAT_1_TITLE' | translate }}</strong>
-                  <span>{{ 'PORTAL.LOGIN.FEAT_1_DESC' | translate }}</span>
-                </div>
-              </div>
-
-              <div class="feature-item">
-                <div class="feature-icon-wrap" aria-hidden="true">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="20 6 9 17 4 12"></polyline>
-                  </svg>
-                </div>
-                <div class="feature-text">
-                  <strong>{{ 'PORTAL.LOGIN.FEAT_2_TITLE' | translate }}</strong>
-                  <span>{{ 'PORTAL.LOGIN.FEAT_2_DESC' | translate }}</span>
-                </div>
-              </div>
-
-              <div class="feature-item">
-                <div class="feature-icon-wrap" aria-hidden="true">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="20 6 9 17 4 12"></polyline>
-                  </svg>
-                </div>
-                <div class="feature-text">
-                  <strong>{{ 'PORTAL.LOGIN.FEAT_3_TITLE' | translate }}</strong>
-                  <span>{{ 'PORTAL.LOGIN.FEAT_3_DESC' | translate }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Subtle Product Interface Preview Card -->
-          <div class="hero-preview-card" aria-hidden="true">
-            <div class="preview-header">
-              <div class="preview-badge">
-                <span class="preview-pulse-dot"></span>
-                <span>{{ 'PORTAL.LOGIN.LIVE_PLATFORM' | translate }}</span>
-              </div>
-              <span class="preview-meta-tag">{{ 'PORTAL.LOGIN.DOMINICAN_REPUBLIC' | translate }}</span>
-            </div>
-            <div class="preview-body">
-              <div class="preview-title">{{ 'PORTAL.LOGIN.PREVIEW_TITLE' | translate }}</div>
-              <div class="preview-sub">{{ 'PORTAL.LOGIN.PREVIEW_SUB' | translate }}</div>
-            </div>
+            <p class="hero-sync-note">
+              {{ 'PORTAL.LOGIN.HERO_SYNC_NOTE' | translate }}
+            </p>
           </div>
 
           <!-- Left Footer -->
@@ -110,6 +59,16 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
             <h2 class="card-title">{{ 'PORTAL.LOGIN.CARD_TITLE' | translate }}</h2>
             <p class="card-subtitle">{{ 'PORTAL.LOGIN.CARD_SUB' | translate }}</p>
           </header>
+
+          <!-- Session Expired Alert Banner -->
+          <div *ngIf="sessionExpiredNotice" class="alert-box alert-warning" role="alert">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <span>{{ 'PORTAL.LOGIN.SESSION_EXPIRED_NOTICE' | translate }}</span>
+          </div>
 
           <!-- Error Alert Banner -->
           <div *ngIf="errorMessage" class="alert-box alert-error" role="alert">
@@ -393,113 +352,11 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       margin: 0;
     }
 
-    .hero-features {
-      display: flex;
-      flex-direction: column;
-      gap: 18px;
-      margin-top: 10px;
-    }
-
-    .feature-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 14px;
-    }
-
-    .feature-icon-wrap {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      background: rgba(236, 72, 153, 0.12);
-      border: 1px solid rgba(236, 72, 153, 0.25);
-      color: var(--vamo-pink, #ec4899);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      margin-top: 2px;
-    }
-
-    .feature-text {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .feature-text strong {
+    .hero-sync-note {
       font-size: 0.88rem;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      color: #f1f5f9;
-    }
-
-    .feature-text span {
-      font-size: 0.84rem;
-      color: #94a3b8;
-      line-height: 1.45;
-    }
-
-    .hero-preview-card {
-      background: rgba(15, 23, 42, 0.7);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 14px;
-      padding: 16px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      backdrop-filter: blur(8px);
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-    }
-
-    .preview-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .preview-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(56, 189, 248, 0.12);
-      border: 1px solid rgba(56, 189, 248, 0.25);
-      padding: 3px 8px;
-      border-radius: 9999px;
-      font-size: 0.68rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      color: #38bdf8;
-    }
-
-    .preview-pulse-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #38bdf8;
-      box-shadow: 0 0 8px #38bdf8;
-    }
-
-    .preview-meta-tag {
-      font-size: 0.74rem;
+      line-height: 1.5;
       color: #64748b;
-      font-weight: 500;
-    }
-
-    .preview-body {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .preview-title {
-      font-size: 0.94rem;
-      font-weight: 700;
-      color: #ffffff;
-    }
-
-    .preview-sub {
-      font-size: 0.8rem;
-      color: #94a3b8;
+      margin: 4px 0 0 0;
     }
 
     .hero-footer {
@@ -575,6 +432,12 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       background: rgba(239, 68, 68, 0.1);
       border: 1px solid rgba(239, 68, 68, 0.3);
       color: #b91c1c;
+    }
+
+    .alert-warning {
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      color: #b45309;
     }
 
     .alert-success {
@@ -978,8 +841,6 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
         font-size: 1.8rem;
       }
 
-      .hero-features,
-      .hero-preview-card,
       .hero-footer {
         display: none;
       }
@@ -1090,6 +951,7 @@ export class LoginComponent implements OnInit, AfterViewInit {
     this.rawForgotError = val;
   }
 
+  sessionExpiredNotice = false;
   private returnUrl = '/app/overview';
 
   constructor() {
@@ -1103,7 +965,23 @@ export class LoginComponent implements OnInit, AfterViewInit {
   }
 
   ngOnInit(): void {
-    this.returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/app/overview';
+    const queryReason = this.route.snapshot.queryParams['reason'];
+    let sessionStoredReturnUrl: string | null = null;
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        if (window.sessionStorage.getItem('vamo_expired_session') === 'true') {
+          this.sessionExpiredNotice = true;
+        }
+        sessionStoredReturnUrl = window.sessionStorage.getItem('vamo_expired_return_url');
+      } catch {}
+    }
+    if (queryReason === 'expired') {
+      this.sessionExpiredNotice = true;
+    }
+
+    const rawReturnUrl = this.route.snapshot.queryParams['returnUrl'] || sessionStoredReturnUrl || '/app/overview';
+    this.returnUrl = this.authService.sanitizeReturnUrl(rawReturnUrl);
+
     if (typeof window !== 'undefined' && this.googleLoginEnabled) {
       this.googleAuthService.loadGoogleScript()
         .then(() => {
@@ -1196,6 +1074,13 @@ export class LoginComponent implements OnInit, AfterViewInit {
 
     try {
       const user = await this.authService.login(this.email.trim(), this.password);
+
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        try {
+          window.sessionStorage.removeItem('vamo_expired_session');
+          window.sessionStorage.removeItem('vamo_expired_return_url');
+        } catch {}
+      }
 
       // Check if user has provider_link
       if (user.provider_link && user.provider_link.id) {
@@ -1330,18 +1215,23 @@ export class LoginComponent implements OnInit, AfterViewInit {
 
     try {
       if (typeof window !== 'undefined' && window.sessionStorage) {
+        window.sessionStorage.removeItem('vamo_expired_session');
+        window.sessionStorage.removeItem('vamo_expired_return_url');
+
         signupIntent = window.sessionStorage.getItem('vamo_auth_signup_intent');
         window.sessionStorage.removeItem('vamo_auth_signup_intent');
 
         const storedReturnUrl = window.sessionStorage.getItem('vamo_auth_return_url');
-        if (storedReturnUrl && this.isSafeInternalUrl(storedReturnUrl)) {
-          returnUrl = storedReturnUrl;
+        if (storedReturnUrl) {
+          returnUrl = this.authService.sanitizeReturnUrl(storedReturnUrl);
         }
         window.sessionStorage.removeItem('vamo_auth_return_url');
       }
     } catch {
       // Ignore storage restrictions
     }
+
+    returnUrl = this.authService.sanitizeReturnUrl(returnUrl);
 
     const hasLinkedBusiness = !!(user?.provider_link && user.provider_link.id);
 
