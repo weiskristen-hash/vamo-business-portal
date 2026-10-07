@@ -938,6 +938,7 @@ export const enTranslations: Record<string, any> = {
       "PHONE_INVALID": "Please enter a valid phone number.",
       "WHATSAPP_LABEL": "WhatsApp Number",
       "WHATSAPP_BADGE": "Customer Preferred",
+      "WA_SAME_AS_PHONE": "Same as phone number",
       "WHATSAPP_PLACEHOLDER": "+1 (809) 555-0123",
       "WHATSAPP_INVALID": "Please enter a valid WhatsApp number.",
       "WHATSAPP_TEST": "Test wa.me chat ↗",

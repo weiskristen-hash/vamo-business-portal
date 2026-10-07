@@ -279,5 +279,48 @@ describe('BusinessService', () => {
         service.updateEvent('past-event-1', { name: 'Attempted Change' }, [], [], undefined, [], pastEvent)
       ).rejects.toThrow('PAST_EVENT_READ_ONLY');
     });
+
+    it('should fetch fresh persisted record in updateEvent and reject past event even if caller provides no existing event', async () => {
+      const persistedPast: VamoEvent = {
+        id: 'past-directus-1',
+        name: 'Past In Directus',
+        status: 'published',
+        startDate: '2020-01-01',
+        endDate: '2020-01-02',
+      };
+      const getEventByIdSpy = vi.spyOn(service, 'getEventById').mockResolvedValueOnce(persistedPast);
+
+      await expect(
+        service.updateEvent('past-directus-1', { name: 'Attempted Change' })
+      ).rejects.toThrow('PAST_EVENT_READ_ONLY');
+
+      expect(getEventByIdSpy).toHaveBeenCalledWith('past-directus-1');
+    });
+
+    it('should reject pauseEvent on past or archived event with customer-safe error', async () => {
+      const pastEvent: VamoEvent = {
+        id: 'past-to-pause',
+        name: 'Past Event Cannot Pause',
+        status: 'published',
+        startDate: '2020-01-01',
+      };
+      vi.spyOn(service, 'getEventById').mockResolvedValueOnce(pastEvent);
+
+      await expect(service.pauseEvent('past-to-pause')).rejects.toThrow('PAST_EVENT_CANNOT_BE_PAUSED');
+    });
+
+    it('should reject publishEvent on incomplete draft or past schedule', async () => {
+      const incompleteDraft: VamoEvent = {
+        id: 'incomplete-draft-1',
+        name: 'Incomplete Draft',
+        status: 'draft',
+        category: 'music',
+        description: 'Short', // under 10 chars
+        images: [],
+      };
+      vi.spyOn(service, 'getEventById').mockResolvedValueOnce(incompleteDraft);
+
+      await expect(service.publishEvent('incomplete-draft-1')).rejects.toThrow('DESC_MIN');
+    });
   });
 });

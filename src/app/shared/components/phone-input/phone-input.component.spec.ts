@@ -65,4 +65,72 @@ describe('PhoneInputComponent', () => {
     expect(select).toBeTruthy();
     expect(select.options.length).toBeGreaterThan(5);
   });
+
+  it('updates country to Spain and emits +34612345678 when pasting +34 612 345 678 into empty DR-default field', () => {
+    let emitted = '';
+    component.valueChange.subscribe((val) => (emitted = val));
+
+    const pasteEvent = {
+      preventDefault: vi.fn(),
+      clipboardData: {
+        getData: vi.fn().mockReturnValue('+34 612 345 678'),
+      },
+    } as any;
+
+    component.onPaste(pasteEvent);
+
+    expect(pasteEvent.preventDefault).toHaveBeenCalled();
+    expect(component.selectedCountry.iso2).toBe('ES');
+    expect(component.nationalNumber).toBe('612345678');
+    expect(emitted).toBe('+34612345678');
+  });
+
+  it('detects 00 international prefix when pasting 0034 612 345 678 and emits +34612345678', () => {
+    let emitted = '';
+    component.valueChange.subscribe((val) => (emitted = val));
+
+    const pasteEvent = {
+      preventDefault: vi.fn(),
+      clipboardData: {
+        getData: vi.fn().mockReturnValue('0034 612 345 678'),
+      },
+    } as any;
+
+    component.onPaste(pasteEvent);
+
+    expect(pasteEvent.preventDefault).toHaveBeenCalled();
+    expect(component.selectedCountry.iso2).toBe('ES');
+    expect(component.nationalNumber).toBe('612345678');
+    expect(emitted).toBe('+34612345678');
+  });
+
+  it('selects OTHER and preserves raw international number without prepending +1 when pasting unsupported country (+81)', () => {
+    let emitted = '';
+    component.valueChange.subscribe((val) => (emitted = val));
+
+    const pasteEvent = {
+      preventDefault: vi.fn(),
+      clipboardData: {
+        getData: vi.fn().mockReturnValue('+81 90 1234 5678'),
+      },
+    } as any;
+
+    component.onPaste(pasteEvent);
+
+    expect(pasteEvent.preventDefault).toHaveBeenCalled();
+    expect(component.selectedCountry.iso2).toBe('OTHER');
+    expect(component.nationalNumber).toBe('819012345678');
+    expect(emitted).toBe('+819012345678');
+  });
+
+  it('auto-detects international prefix when typed or changed directly via onNationalNumberChange', () => {
+    let emitted = '';
+    component.valueChange.subscribe((val) => (emitted = val));
+
+    component.onNationalNumberChange('+34 612 345 678');
+
+    expect(component.selectedCountry.iso2).toBe('ES');
+    expect(component.nationalNumber).toBe('612345678');
+    expect(emitted).toBe('+34612345678');
+  });
 });

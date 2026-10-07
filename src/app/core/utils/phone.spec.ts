@@ -74,7 +74,18 @@ describe('Phone Utilities', () => {
 
     const esCountry = COUNTRIES.find((c) => c.iso2 === 'ES')!;
     expect(formatE164(esCountry, '612345678')).toBe('+34612345678');
-    expect(formatE164(esCountry, '34612345678')).toBe('+34612345678');
+    // If entered with explicit international prefix:
+    expect(formatE164(esCountry, '+34 612 345 678')).toBe('+34612345678');
+    expect(formatE164(esCountry, '0034 612 345 678')).toBe('+34612345678');
+    // Does not assume national digits starting with country code already have prefix:
+    expect(formatE164(esCountry, '341234567')).toBe('+34341234567');
+  });
+
+  it('preserves unsupported international numbers without prepending +1', () => {
+    const resJP = parsePhone('+81 90 1234 5678');
+    expect(resJP.country.iso2).toBe('OTHER');
+    expect(formatE164(resJP.country, resJP.nationalNumber)).toBe('+819012345678');
+    expect(isValidPhone('+81 90 1234 5678')).toBe(true);
   });
 
   it('generates correct wa.me link with digits only', () => {

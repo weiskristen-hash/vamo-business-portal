@@ -2574,6 +2574,15 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         }
       }
 
+      // Revalidate schedule against current DR clock right before write
+      if (status === 'published' && !this.validateCurrentSchedule(true)) {
+        const firstErrorKey = Object.values(this.scheduleErrors).find(Boolean);
+        this.errorMessage = firstErrorKey ? this.i18n.t(firstErrorKey) : this.i18n.t('PORTAL.LISTINGS.ERRORS.START_DATE_PAST');
+        this.submitting = false;
+        this.cdr.markForCheck();
+        return;
+      }
+
       const payload: Partial<VamoEvent> = {
         name: this.draft.name ?? undefined,
         category: this.draft.category ?? undefined,

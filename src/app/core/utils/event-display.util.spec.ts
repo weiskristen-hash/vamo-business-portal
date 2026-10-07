@@ -4,6 +4,10 @@ import {
   getEventCoverImageUrl,
   isEventActive,
   isEventPast,
+  isEventEnded,
+  isEventUpcoming,
+  isEventOngoing,
+  validateEventForPublish,
   getNormalizedEventStatus,
   getEventStatusBadge,
   formatEventSchedule,
@@ -179,5 +183,263 @@ describe('Event Display Utilities', () => {
     );
     expect(pastBadge.status).toBe('past');
     expect(pastBadge.cssClass).toBe('badge-neutral');
+  });
+
+  describe('Schedule Classification with End-Time & DR Timezone', () => {
+    // Reference date: 2026-10-07 18:00:00 DR time (UTC-4 -> 22:00:00 UTC)
+    const refClock = {
+      drTodayStr: '2026-10-07',
+      drTimeStr: '18:00:00',
+      drNowMs: new Date('2026-10-07T22:00:00.000Z').getTime(),
+    };
+
+    it('detects event ending today at 14:00 as ended at 18:00 DR time', () => {
+      const endedToday: VamoEvent = {
+        id: 'ended-today',
+        name: 'Lunch Special',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-07',
+        from: '12:00:00',
+        to: '14:00:00',
+      };
+      expect(isEventEnded(endedToday, refClock)).toBe(true);
+      expect(isEventOngoing(endedToday, refClock)).toBe(false);
+      expect(isEventUpcoming(endedToday, refClock)).toBe(false);
+      expect(isEventPast(endedToday, refClock)).toBe(true);
+      expect(isEventActive(endedToday, refClock)).toBe(false);
+    });
+
+    it('detects event ending today at 20:00 as ongoing at 18:00 DR time', () => {
+      const ongoingToday: VamoEvent = {
+        id: 'ongoing-today',
+        name: 'Evening Concert',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-07',
+        from: '17:00:00',
+        to: '20:00:00',
+      };
+      expect(isEventEnded(ongoingToday, refClock)).toBe(false);
+      expect(isEventOngoing(ongoingToday, refClock)).toBe(true);
+      expect(isEventUpcoming(ongoingToday, refClock)).toBe(false);
+      expect(isEventPast(ongoingToday, refClock)).toBe(false);
+      expect(isEventActive(ongoingToday, refClock)).toBe(true);
+    });
+
+    it('detects upcoming event later tonight at 21:00 as upcoming at 18:00 DR time', () => {
+      const upcomingTonight: VamoEvent = {
+        id: 'upcoming-tonight',
+        name: 'Late DJ Set',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-07',
+        from: '21:00:00',
+        to: '23:00:00',
+      };
+      expect(isEventEnded(upcomingTonight, refClock)).toBe(false);
+      expect(isEventOngoing(upcomingTonight, refClock)).toBe(false);
+      expect(isEventUpcoming(upcomingTonight, refClock)).toBe(true);
+      expect(isEventPast(upcomingTonight, refClock)).toBe(false);
+      expect(isEventActive(upcomingTonight, refClock)).toBe(true);
+    });
+
+    it('handles overnight event (22:00 to 02:00 next day)', () => {
+      const overnightEvent: VamoEvent = {
+        id: 'overnight-1',
+        name: 'Nightclub Party',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-07',
+        from: '22:00:00',
+        to: '02:00:00', // to < from implies next day end at 2026-10-08 02:00
+      };
+
+      // At 18:00 on Oct 7: upcoming
+      expect(isEventUpcoming(overnightEvent, refClock)).toBe(true);
+      expect(isEventOngoing(overnightEvent, refClock)).toBe(false);
+      expect(isEventEnded(overnightEvent, refClock)).toBe(false);
+
+      // At 23:30 on Oct 7: ongoing
+      const midNightClock = {
+        drTodayStr: '2026-10-07',
+        drTimeStr: '23:30:00',
+        drNowMs: new Date('2026-10-08T03:30:00.000Z').getTime(),
+      };
+      expect(isEventOngoing(overnightEvent, midNightClock)).toBe(true);
+      expect(isEventEnded(overnightEvent, midNightClock)).toBe(false);
+
+      // At 01:15 on Oct 8: still ongoing (next day before 02:00)
+      const nextDayClock = {
+        drTodayStr: '2026-10-08',
+        drTimeStr: '01:15:00',
+        drNowMs: new Date('2026-10-08T05:15:00.000Z').getTime(),
+      };
+      expect(isEventOngoing(overnightEvent, nextDayClock)).toBe(true);
+      expect(isEventEnded(overnightEvent, nextDayClock)).toBe(false);
+
+      // At 03:00 on Oct 8: ended
+      const nextDayEndedClock = {
+        drTodayStr: '2026-10-08',
+        drTimeStr: '03:00:00',
+        drNowMs: new Date('2026-10-08T07:00:00.000Z').getTime(),
+      };
+      expect(isEventEnded(overnightEvent, nextDayEndedClock)).toBe(true);
+      expect(isEventOngoing(overnightEvent, nextDayEndedClock)).toBe(false);
+    });
+
+    it('keeps all-day event active through 23:59:59 of applicable day', () => {
+      const allDayEvent: VamoEvent = {
+        id: 'allday-1',
+        name: 'Holiday Festival',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-07',
+        allDay: true,
+      };
+
+      // At 18:00 DR time on Oct 7: ongoing/active
+      expect(isEventEnded(allDayEvent, refClock)).toBe(false);
+      expect(isEventOngoing(allDayEvent, refClock)).toBe(true);
+      expect(isEventActive(allDayEvent, refClock)).toBe(true);
+
+      // At 23:59:50 DR time on Oct 7: still active
+      const lateClock = {
+        drTodayStr: '2026-10-07',
+        drTimeStr: '23:59:50',
+        drNowMs: new Date('2026-10-08T03:59:50.000Z').getTime(),
+      };
+      expect(isEventEnded(allDayEvent, lateClock)).toBe(false);
+
+      // On next day Oct 8 00:00:01: ended
+      const nextDayClock = {
+        drTodayStr: '2026-10-08',
+        drTimeStr: '00:00:01',
+        drNowMs: new Date('2026-10-08T04:00:01.000Z').getTime(),
+      };
+      expect(isEventEnded(allDayEvent, nextDayClock)).toBe(true);
+      expect(isEventPast(allDayEvent, nextDayClock)).toBe(true);
+    });
+
+    it('keeps open-ended event active through 23:59:59 of start day', () => {
+      const openEndEvent: VamoEvent = {
+        id: 'openend-1',
+        name: 'Art Exhibition Opening',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-07',
+        from: '10:00:00',
+        openEnd: true,
+      };
+
+      // At 18:00 DR time on Oct 7: ongoing/active
+      expect(isEventEnded(openEndEvent, refClock)).toBe(false);
+      expect(isEventOngoing(openEndEvent, refClock)).toBe(true);
+
+      // Next day Oct 8: ended
+      const nextDayClock = {
+        drTodayStr: '2026-10-08',
+        drTimeStr: '08:00:00',
+        drNowMs: new Date('2026-10-08T12:00:00.000Z').getTime(),
+      };
+      expect(isEventEnded(openEndEvent, nextDayClock)).toBe(true);
+    });
+
+    it('considers published recurring event active indefinitely', () => {
+      const recurringEvent: VamoEvent = {
+        id: 'rec-indefinite',
+        name: 'Weekly Salsa',
+        status: 'published',
+        mode: 'recurring',
+        recurring: { days: ['wed', 'sat'] },
+      };
+      expect(isEventActive(recurringEvent, refClock)).toBe(true);
+      expect(isEventPast(recurringEvent, refClock)).toBe(false);
+      expect(isEventEnded(recurringEvent, refClock)).toBe(false);
+    });
+
+    it('considers archived events past regardless of schedule', () => {
+      const archivedFutureEvent: VamoEvent = {
+        id: 'arch-future',
+        name: 'Cancelled Gala',
+        status: 'archived',
+        mode: 'single',
+        startDate: '2026-12-01',
+      };
+      expect(isEventPast(archivedFutureEvent, refClock)).toBe(true);
+      expect(isEventActive(archivedFutureEvent, refClock)).toBe(false);
+      expect(isEventEnded(archivedFutureEvent, refClock)).toBe(true);
+    });
+  });
+
+  describe('validateEventForPublish', () => {
+    const validDraft: Partial<VamoEvent> = {
+      name: 'Valid Concert Event',
+      category: 'music',
+      description: 'A great live music concert featuring local bands.',
+      images: [{ id: 1, directus_files_id: 'file-123' }],
+      mode: 'single',
+      startDate: '2026-11-01',
+      from: '19:00:00',
+      to: '22:00:00',
+    };
+
+    it('passes for a complete, valid draft with future schedule', () => {
+      const res = validateEventForPublish(validDraft);
+      expect(res.valid).toBe(true);
+      expect(res.errorCode).toBeNull();
+    });
+
+    it('rejects draft without title/name', () => {
+      const res = validateEventForPublish({ ...validDraft, name: '' });
+      expect(res.valid).toBe(false);
+      expect(res.errorCode).toBe('NAME_REQUIRED');
+    });
+
+    it('rejects draft without category', () => {
+      const res = validateEventForPublish({ ...validDraft, category: '' });
+      expect(res.valid).toBe(false);
+      expect(res.errorCode).toBe('CATEGORY_REQUIRED');
+    });
+
+    it('rejects draft with description under 10 chars', () => {
+      const res = validateEventForPublish({ ...validDraft, description: 'Too short' });
+      expect(res.valid).toBe(false);
+      expect(res.errorCode).toBe('DESC_MIN');
+    });
+
+    it('rejects draft with empty images array', () => {
+      const res = validateEventForPublish({ ...validDraft, images: [] });
+      expect(res.valid).toBe(false);
+      expect(res.errorCode).toBe('PHOTO_REQUIRED');
+    });
+
+    it('rejects single event with past end schedule', () => {
+      const res = validateEventForPublish(
+        {
+          ...validDraft,
+          startDate: '2026-10-07',
+          from: '10:00:00',
+          to: '14:00:00',
+        },
+        {
+          drTodayStr: '2026-10-07',
+          drTimeStr: '18:00:00',
+          drNowMs: new Date('2026-10-07T22:00:00.000Z').getTime(),
+        }
+      );
+      expect(res.valid).toBe(false);
+      expect(res.errorCode).toBe('SCHEDULE_PAST_ERROR');
+    });
+
+    it('rejects recurring event without weekdays', () => {
+      const res = validateEventForPublish({
+        ...validDraft,
+        mode: 'recurring',
+        recurring: { days: [] },
+      });
+      expect(res.valid).toBe(false);
+      expect(res.errorCode).toBe('WEEKDAYS_REQUIRED');
+    });
   });
 });

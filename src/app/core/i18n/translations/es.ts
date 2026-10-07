@@ -938,6 +938,7 @@ export const esTranslations: Record<string, any> = {
       "PHONE_INVALID": "Por favor ingresa un número de teléfono válido.",
       "WHATSAPP_LABEL": "Número de WhatsApp",
       "WHATSAPP_BADGE": "Preferido por clientes",
+      "WA_SAME_AS_PHONE": "Mismo número que el teléfono",
       "WHATSAPP_PLACEHOLDER": "+1 (809) 555-0123",
       "WHATSAPP_INVALID": "Por favor ingresa un número de WhatsApp válido.",
       "WHATSAPP_TEST": "Probar chat wa.me ↗",

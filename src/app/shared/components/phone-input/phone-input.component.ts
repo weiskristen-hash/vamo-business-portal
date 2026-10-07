@@ -12,7 +12,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
-import { COUNTRIES, CountryInfo, DEFAULT_COUNTRY, parsePhone, formatE164 } from '../../../core/utils/phone';
+import { COUNTRIES, CountryInfo, DEFAULT_COUNTRY, INTERNATIONAL_COUNTRY, parsePhone, formatE164 } from '../../../core/utils/phone';
 import { I18nService } from '../../../core/i18n/i18n.service';
 
 @Component({
@@ -39,12 +39,12 @@ import { I18nService } from '../../../core/i18n/i18n.service';
           [attr.aria-label]="isSpanish ? 'Código de país' : 'Country calling code'"
         >
           <option *ngFor="let c of countries" [value]="c.iso2">
-            {{ c.flag }} {{ isSpanish ? c.nameEs : c.nameEn }} (+{{ c.dialCode }})
+            {{ c.flag }} {{ isSpanish ? c.nameEs : c.nameEn }} {{ c.dialCode ? '(+' + c.dialCode + ')' : '' }}
           </option>
         </select>
         <span class="country-display" aria-hidden="true">
           <span class="country-flag">{{ selectedCountry.flag }}</span>
-          <span class="country-dial">+{{ selectedCountry.dialCode }}</span>
+          <span class="country-dial">{{ selectedCountry.dialCode ? '+' + selectedCountry.dialCode : '+' }}</span>
           <span class="dropdown-chevron">▼</span>
         </span>
       </div>
@@ -60,6 +60,7 @@ import { I18nService } from '../../../core/i18n/i18n.service';
         [required]="required"
         [(ngModel)]="nationalNumber"
         (ngModelChange)="onNationalNumberChange($event)"
+        (paste)="onPaste($event)"
         (blur)="onBlur()"
         autocomplete="tel-national"
       />
@@ -184,7 +185,7 @@ export class PhoneInputComponent implements ControlValueAccessor, OnInit, OnChan
   @Output() blurred = new EventEmitter<void>();
   @Output() valueChange = new EventEmitter<string>();
 
-  countries: CountryInfo[] = COUNTRIES;
+  countries: CountryInfo[] = [...COUNTRIES, INTERNATIONAL_COUNTRY];
   selectedCountry: CountryInfo = DEFAULT_COUNTRY;
   nationalNumber = '';
 
@@ -251,9 +252,34 @@ export class PhoneInputComponent implements ControlValueAccessor, OnInit, OnChan
   }
 
   onNationalNumberChange(val: string): void {
+    const trimmed = (val || '').trim();
+    if (trimmed.startsWith('+') || trimmed.startsWith('00')) {
+      const parsed = parsePhone(trimmed);
+      this.selectedCountry = parsed.country;
+      this.nationalNumber = parsed.nationalNumber;
+      this.isUserEdited = true;
+      this.emitValue();
+      this.cdr.markForCheck();
+      return;
+    }
+
     this.nationalNumber = val;
     this.isUserEdited = true;
     this.emitValue();
+  }
+
+  onPaste(event: ClipboardEvent): void {
+    const text = event.clipboardData?.getData('text') || '';
+    const trimmed = text.trim();
+    if (trimmed.startsWith('+') || trimmed.startsWith('00')) {
+      event.preventDefault();
+      const parsed = parsePhone(trimmed);
+      this.selectedCountry = parsed.country;
+      this.nationalNumber = parsed.nationalNumber;
+      this.isUserEdited = true;
+      this.emitValue();
+      this.cdr.markForCheck();
+    }
   }
 
   onBlur(): void {

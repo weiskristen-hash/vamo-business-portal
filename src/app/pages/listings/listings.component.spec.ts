@@ -459,4 +459,57 @@ describe('ListingsComponent', () => {
       expect(manageBtnEs.textContent.trim()).toBe('Gestionar promoción');
     });
   });
+
+  describe('Pause and Publish Lifecycle Guards', () => {
+    it('routes incomplete draft to /app/listings/create with eventId and error message on quick publish', async () => {
+      const incompleteDraft: VamoEvent = {
+        id: 'ev-inc-draft',
+        name: 'Incomplete Draft',
+        status: 'draft',
+        category: 'music',
+        description: 'Short', // < 10 chars
+        images: [],
+      };
+
+      await component.onPublish(incompleteDraft);
+
+      expect(component.error).toBeTruthy();
+      expect(router.navigate).toHaveBeenCalledWith(['/app/listings/create'], {
+        queryParams: { eventId: 'ev-inc-draft' },
+      });
+      expect(businessServiceSpy.publishEvent).not.toHaveBeenCalled();
+    });
+
+    it('rejects onPause on past events and sets error without calling businessService', async () => {
+      const pastEvent: VamoEvent = {
+        id: 'ev-past-1',
+        name: 'Past Event',
+        status: 'published',
+        startDate: '2020-01-01',
+      };
+
+      expect(component.canPause(pastEvent)).toBe(false);
+      await component.onPause(pastEvent);
+
+      expect(component.error).toBe(i18nService.t('PORTAL.LISTINGS.ERRORS.PAST_EVENT_NO_EDIT'));
+      expect(businessServiceSpy.pauseEvent).not.toHaveBeenCalled();
+    });
+
+    it('hides the pause button in template on past published events', async () => {
+      const pastPublished: VamoEvent = {
+        id: 'ev-past-pub',
+        name: 'Past Published Concert',
+        status: 'published',
+        startDate: '2020-01-01',
+        category: 'music',
+      };
+      component.events = [pastPublished];
+      component.setStatusFilter('all');
+      fixture.detectChanges();
+
+      const card = fixture.nativeElement.querySelector('.listing-card');
+      const pauseBtn = card.querySelector('.pause-btn');
+      expect(pauseBtn).toBeNull();
+    });
+  });
 });

@@ -6,12 +6,23 @@ export const DR_TIMEZONE_OFFSET_HOURS = -4;
 /**
  * Returns the current date (YYYY-MM-DD) and current time (HH:mm) in Dominican Republic timezone.
  */
-export function getDrCurrentDateTime(): { todayStr: string; currentTimeStr: string } {
-  const drNow = new Date(Date.now() + DR_TIMEZONE_OFFSET_HOURS * 60 * 60 * 1000);
+export function getDrCurrentDateTime(reference?: Date | number): { todayStr: string; currentTimeStr: string; nowMs: number } {
+  const baseMs = reference instanceof Date ? reference.getTime() : (typeof reference === 'number' ? reference : Date.now());
+  const drNow = new Date(baseMs + DR_TIMEZONE_OFFSET_HOURS * 60 * 60 * 1000);
   const iso = drNow.toISOString();
   const todayStr = iso.split('T')[0];
   const currentTimeStr = iso.split('T')[1].substring(0, 5); // HH:mm
-  return { todayStr, currentTimeStr };
+  return { todayStr, currentTimeStr, nowMs: baseMs };
+}
+
+/**
+ * Adds integer days to a YYYY-MM-DD date string.
+ */
+export function addDaysToDateStr(dateStr: string, days: number): string {
+  const clean = dateStr.split('T')[0];
+  const [y, m, d] = clean.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return dt.toISOString().split('T')[0];
 }
 
 export interface ScheduleValidationResult {

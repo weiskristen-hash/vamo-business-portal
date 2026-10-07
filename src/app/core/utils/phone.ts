@@ -193,9 +193,20 @@ export const COUNTRIES: CountryInfo[] = [
 
 export const DEFAULT_COUNTRY: CountryInfo = COUNTRIES[0]; // Dominican Republic
 
+export const INTERNATIONAL_COUNTRY: CountryInfo = {
+  iso2: 'OTHER',
+  nameEn: 'International',
+  nameEs: 'Internacional',
+  dialCode: '',
+  flag: '🌐',
+  placeholder: '+123 456 7890',
+};
+
 /**
  * Parses any incoming phone string into its matching country and national digits.
- * Preserves legacy input and distinguishes +1 Caribbean/US/CA.
+ * Detects explicit international notation (+, 00).
+ * Preserves unsupported/ambiguous international numbers without prepending +1.
+ * Does not assume national digits starting with country code already have prefix.
  */
 export function parsePhone(value: string | null | undefined): {
   country: CountryInfo;
@@ -207,10 +218,12 @@ export function parsePhone(value: string | null | undefined): {
     return { country: DEFAULT_COUNTRY, nationalNumber: '', originalValue };
   }
 
-  const cleaned = value.trim().replace(/^00/, '+');
+  const rawTrimmed = value.trim();
+  const hasInternationalPrefix = rawTrimmed.startsWith('+') || rawTrimmed.startsWith('00');
+  const cleaned = rawTrimmed.replace(/^00/, '+');
   const digitsOnly = cleaned.replace(/\D/g, '');
 
-  if (cleaned.startsWith('+')) {
+  if (hasInternationalPrefix) {
     // Check if starts with +1
     if (cleaned.startsWith('+1')) {
       const rest = digitsOnly.substring(1); // digits after +1
@@ -231,7 +244,6 @@ export function parsePhone(value: string | null | undefined): {
         return { country: COUNTRIES.find((c) => c.iso2 === 'BS') || DEFAULT_COUNTRY, nationalNumber: rest, originalValue };
       }
       // Check CA common area codes or fallback to US / DO
-      // Default other +1 to US
       const usCountry = COUNTRIES.find((c) => c.iso2 === 'US') || DEFAULT_COUNTRY;
       return { country: usCountry, nationalNumber: rest, originalValue };
     }
@@ -247,11 +259,12 @@ export function parsePhone(value: string | null | undefined): {
       }
     }
 
-    // Unknown international dial code fallback to DO with national digits
-    return { country: DEFAULT_COUNTRY, nationalNumber: digitsOnly, originalValue };
+    // Explicit international notation (+ or 00) for country not in list:
+    // Preserve unsupported/ambiguous international numbers without prepending +1
+    return { country: INTERNATIONAL_COUNTRY, nationalNumber: digitsOnly, originalValue };
   }
 
-  // Not starting with +
+  // Not starting with + or 00 (national entry without explicit international prefix)
   // Check if starts with 1 followed by 10 digits (e.g. 18095550123)
   if (digitsOnly.length === 11 && digitsOnly.startsWith('1')) {
     const rest = digitsOnly.substring(1);
@@ -267,30 +280,37 @@ export function parsePhone(value: string | null | undefined): {
     return { country: DEFAULT_COUNTRY, nationalNumber: digitsOnly, originalValue };
   }
 
-  // Check other countries' dial codes if digits starts with them
-  for (const c of COUNTRIES) {
-    if (c.dialCode !== '1' && digitsOnly.startsWith(c.dialCode) && digitsOnly.length > c.dialCode.length + 5) {
-      return { country: c, nationalNumber: digitsOnly.substring(c.dialCode.length), originalValue };
-    }
-  }
-
-  // Default to DO with the raw digits
+  // Do not assume national digits starting with country code already have prefix.
+  // In the absence of an explicit + or 00 prefix, treat as national digits for default country.
   return { country: DEFAULT_COUNTRY, nationalNumber: digitsOnly, originalValue };
 }
 
 /**
  * Formats a country and national digits into standard E.164 string.
+ * Detects explicit international notation (+, 00) if passed into value.
+ * Does not assume national digits starting with country code already have prefix.
  */
 export function formatE164(country: CountryInfo, nationalNumber: string): string {
-  const digits = nationalNumber.replace(/\D/g, '');
+  const trimmed = (nationalNumber || '').trim();
+  if (!trimmed) return '';
+
+  if (trimmed.startsWith('+') || trimmed.startsWith('00')) {
+    const parsed = parsePhone(trimmed);
+    const digits = parsed.nationalNumber.replace(/\D/g, '');
+    if (parsed.country.iso2 === 'OTHER' || !parsed.country.dialCode) {
+      return digits ? `+${digits}` : '';
+    }
+    return `+${parsed.country.dialCode}${digits}`;
+  }
+
+  const digits = trimmed.replace(/\D/g, '');
   if (!digits) return '';
 
-  // Avoid doubling the dial code if user pasted it into national number field
-  if (digits.startsWith(country.dialCode) && country.dialCode !== '1') {
+  if (country.iso2 === 'OTHER' || !country.dialCode) {
     return `+${digits}`;
   }
 
-  // For DO (+1), if user typed e.g. 18095551234 in the input
+  // For DO/US (+1), if user typed e.g. 18095551234 in the national input
   if (country.dialCode === '1' && digits.length === 11 && digits.startsWith('1')) {
     return `+${digits}`;
   }
@@ -318,11 +338,15 @@ export function isValidPhone(value: string | null | undefined): boolean {
   const parsed = parsePhone(value);
   const digits = parsed.nationalNumber.replace(/\D/g, '');
 
+  if (parsed.country.iso2 === 'OTHER' || !parsed.country.dialCode) {
+    return digits.length >= 7 && digits.length <= 15;
+  }
+
   if (parsed.country.dialCode === '1') {
     // NANP numbers (DO, US, CA, PR, JM, BS) require 10 digits
     return digits.length === 10;
   }
 
-  // Other international numbers typically range between 7 and 13 digits
+  // Other international numbers typically range between 7 and 15 digits
   return digits.length >= 7 && digits.length <= 15;
 }

@@ -17,6 +17,7 @@ import {
   formatEventTimeWindow,
   calculateSharedEventStats,
   canEditEvent,
+  validateEventForPublish,
 } from '../../core/utils/event-display.util';
 
 @Component({
@@ -377,7 +378,7 @@ import {
 
               <!-- Pause / Publish Toggle -->
               <button
-                *ngIf="event.status === 'published'"
+                *ngIf="canPause(event)"
                 type="button"
                 class="btn btn-ghost btn-sm action-btn pause-btn"
                 (click)="onPause(event)"
@@ -1291,6 +1292,18 @@ export class ListingsComponent implements OnInit {
     return canEditEvent(event, this.businessService);
   }
 
+  isEventPast(event: VamoEvent): boolean {
+    return isEventPast(event, this.businessService);
+  }
+
+  isEventActive(event: VamoEvent): boolean {
+    return isEventActive(event, this.businessService);
+  }
+
+  canPause(event: VamoEvent): boolean {
+    return event.status === 'published' && !this.isEventPast(event);
+  }
+
   onBoost(event: VamoEvent): void {
     this.router.navigate(['/app/promotions'], {
       queryParams: { eventId: event.id },
@@ -1329,6 +1342,11 @@ export class ListingsComponent implements OnInit {
   }
 
   async onPause(event: VamoEvent): Promise<void> {
+    if (!this.canPause(event)) {
+      this.error = this.i18n.t('PORTAL.LISTINGS.ERRORS.PAST_EVENT_NO_EDIT');
+      return;
+    }
+
     this.actionInProgressId = event.id;
     this.cdr.markForCheck();
 
@@ -1345,6 +1363,16 @@ export class ListingsComponent implements OnInit {
   }
 
   async onPublish(event: VamoEvent): Promise<void> {
+    const validation = validateEventForPublish(event);
+    if (!validation.valid) {
+      // Draft is incomplete or past — route to editor with helpful message
+      this.error = this.i18n.t(validation.messageKey);
+      this.router.navigate(['/app/listings/create'], {
+        queryParams: { eventId: event.id },
+      });
+      return;
+    }
+
     this.actionInProgressId = event.id;
     this.cdr.markForCheck();
 
