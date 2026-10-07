@@ -21,6 +21,7 @@ export interface RuntimeConfig {
   stripeCreateAddonPaymentFlow: string;
   stripeApplyAddonFlow: string;
   getBoostAvailabilityFlow: string;
+  deleteAccountFlow: string;
 }
 
 export function stripTrailingSlash(value: string): string {
@@ -61,6 +62,7 @@ let currentConfig: RuntimeConfig = {
   stripeCreateAddonPaymentFlow: windowConfig.stripeCreateAddonPaymentFlow || (environment as any).STRIPE_CREATE_ADDON_PAYMENT_FLOW || '',
   stripeApplyAddonFlow: windowConfig.stripeApplyAddonFlow || (environment as any).STRIPE_APPLY_ADDON_FLOW || '',
   getBoostAvailabilityFlow: windowConfig.getBoostAvailabilityFlow || (environment as any).GET_BOOST_AVAILABILITY_FLOW || '',
+  deleteAccountFlow: windowConfig.deleteAccountFlow || (environment as any).DELETE_ACCOUNT_FLOW || '',
 };
 
 export const runtimeConfig = {
@@ -129,6 +131,9 @@ export const runtimeConfig = {
   get getBoostAvailabilityFlow(): string {
     return currentConfig.getBoostAvailabilityFlow;
   },
+  get deleteAccountFlow(): string {
+    return currentConfig.deleteAccountFlow;
+  },
   updateConfig(partial: Partial<RuntimeConfig>): void {
     currentConfig = { ...currentConfig, ...partial };
   },
@@ -154,6 +159,7 @@ export const runtimeConfig = {
       stripeCreateAddonPaymentFlow: (environment as any).STRIPE_CREATE_ADDON_PAYMENT_FLOW || '',
       stripeApplyAddonFlow: (environment as any).STRIPE_APPLY_ADDON_FLOW || '',
       getBoostAvailabilityFlow: (environment as any).GET_BOOST_AVAILABILITY_FLOW || '',
+      deleteAccountFlow: (environment as any).DELETE_ACCOUNT_FLOW || '',
     };
   },
 };

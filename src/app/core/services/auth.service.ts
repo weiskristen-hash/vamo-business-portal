@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
-import { AuthenticationStorage, createItem, passwordRequest, readMe, registerUser } from '@directus/sdk';
+import { AuthenticationStorage, createItem, passwordRequest, readMe, registerUser, updateMe } from '@directus/sdk';
 import { directusClient, createIsolatedDirectusClient } from '../directus/directus-client';
 import { runtimeConfig } from '../config/runtime-config';
 import { createBrowserAuthStorage, createMemoryAuthStorage } from '../directus/browser-auth.storage';
@@ -606,6 +606,62 @@ export class AuthService {
 
   async requestPasswordReset(email: string, resetUrl: string = environment.defaultResetRedirect): Promise<void> {
     await directusClient.request(passwordRequest(email, resetUrl));
+  }
+
+  // ======================================================
+  // 🔹 USER PROFILE & ACCOUNT MANAGEMENT
+  // ======================================================
+
+  /**
+   * Updates authenticated user's first name, last name, and/or email using canonical updateMe.
+   * Reloads current user and emits through userSubject to update app reactively.
+   */
+  async updateProfile(data: { first_name: string; last_name: string; email: string }): Promise<VamoUser> {
+    await this.safeRequest(() =>
+      directusClient.request(
+        updateMe({
+          first_name: data.first_name.trim(),
+          last_name: data.last_name.trim(),
+          email: data.email.trim().toLowerCase(),
+        })
+      )
+    );
+
+    const updatedUser = await this.loadCurrentUser();
+    this.userSubject.next(updatedUser);
+    return updatedUser;
+  }
+
+  /**
+   * Deletes authenticated user account using canonical DELETE_ACCOUNT_FLOW Directus Flow.
+   * Strictly targets current authenticated user session via Bearer token (no user ID passed from client).
+   * Clears auth session on success.
+   */
+  async deleteAccount(): Promise<void> {
+    const token = await directusClient.getToken();
+    if (!token) throw new Error('Not authenticated');
+
+    const flowId = runtimeConfig.deleteAccountFlow;
+    if (!flowId) {
+      throw new Error('DELETE_ACCOUNT_FLOW_NOT_CONFIGURED');
+    }
+
+    const url = `${runtimeConfig.directusUrl}/flows/trigger/${flowId}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`Account deletion failed (${response.status}): ${body}`);
+    }
+
+    await this.logout(false);
   }
 
   // ======================================================
