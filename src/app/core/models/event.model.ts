@@ -79,4 +79,6 @@ export interface ProviderEventStats {
   published: number;
   draft: number;
   archived: number;
+  active: number;
+  past: number;
 }

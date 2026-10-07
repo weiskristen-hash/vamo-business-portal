@@ -8,6 +8,8 @@ import { CustomerErrorService } from '../../../core/services/customer-error.serv
 import { VamoEvent, Area, EVENT_CATEGORIES, EventCategory } from '../../../core/models/event.model';
 import { I18nService } from '../../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../../core/i18n/translate.pipe';
+import { isEventPast, parseLocalDate, validateEventForPublish, validateEventSchedule, scheduleErrorMessageKey } from '../../../core/utils/event-display.util';
+import { getDrCurrentDateTime } from '../../../core/utils/date-validation.util';
 
 export interface ExistingImage {
   junctionId: number | string;
@@ -42,14 +44,22 @@ export interface ExistingImage {
           <button type="button" class="btn btn-secondary" (click)="onCancel()" [disabled]="submitting">
             {{ 'PORTAL.COMMON.CANCEL' | translate }}
           </button>
-          <button type="button" class="btn btn-secondary" (click)="saveDraft()" [disabled]="submitting">
-            <span *ngIf="submitting && saveTargetStatus === 'draft'" class="spinner-inline"></span>
-            <span>{{ 'PORTAL.EVENT_EDITOR.SAVE_DRAFT_BTN' | translate }}</span>
-          </button>
-          <button type="button" class="btn btn-primary" (click)="publishListing()" [disabled]="submitting">
-            <span *ngIf="submitting && saveTargetStatus === 'published'" class="spinner-inline"></span>
-            <span>{{ (isEditMode && !isDraft ? 'PORTAL.EVENT_EDITOR.SAVE_UPDATE_BTN' : 'PORTAL.EVENT_EDITOR.PUBLISH_BTN') | translate }}</span>
-          </button>
+          <ng-container *ngIf="isPastEvent">
+            <button type="button" class="btn btn-primary" (click)="copyPastEvent()" [disabled]="submitting">
+              <span *ngIf="submitting" class="spinner-inline"></span>
+              <span>{{ 'PORTAL.EVENT_EDITOR.COPY_AS_NEW_BTN' | translate }}</span>
+            </button>
+          </ng-container>
+          <ng-container *ngIf="!isPastEvent">
+            <button type="button" class="btn btn-secondary" (click)="saveDraft()" [disabled]="submitting">
+              <span *ngIf="submitting && saveTargetStatus === 'draft'" class="spinner-inline"></span>
+              <span>{{ 'PORTAL.EVENT_EDITOR.SAVE_DRAFT_BTN' | translate }}</span>
+            </button>
+            <button type="button" class="btn btn-primary" (click)="publishListing()" [disabled]="submitting">
+              <span *ngIf="submitting && saveTargetStatus === 'published'" class="spinner-inline"></span>
+              <span>{{ (isEditMode && !isDraft ? 'PORTAL.EVENT_EDITOR.SAVE_UPDATE_BTN' : 'PORTAL.EVENT_EDITOR.PUBLISH_BTN') | translate }}</span>
+            </button>
+          </ng-container>
         </div>
       </header>
 
@@ -60,8 +70,20 @@ export interface ExistingImage {
         <button type="button" class="alert-close" (click)="errorMessage = null" [attr.aria-label]="'PORTAL.LISTINGS.DISMISS_ALERT' | translate">✕</button>
       </div>
 
+      <!-- Past Event Read-Only Notice -->
+      <div *ngIf="isPastEvent" class="alert alert-warning" role="alert">
+        <div class="alert-icon">🕒</div>
+        <div class="alert-message">
+          <strong>{{ 'PORTAL.EVENT_EDITOR.PAST_EVENT_LOCKED_TITLE' | translate }}</strong>
+          <span>{{ 'PORTAL.EVENT_EDITOR.PAST_EVENT_LOCKED_MSG' | translate }}</span>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="copyPastEvent()" [disabled]="submitting">
+          {{ 'PORTAL.EVENT_EDITOR.COPY_AS_NEW_BTN' | translate }}
+        </button>
+      </div>
+
       <!-- Date-Lock Warning for published events starting in <24 hours -->
-      <div *ngIf="datesLocked" class="alert alert-warning" role="alert">
+      <div *ngIf="datesLocked && !isPastEvent" class="alert alert-warning" role="alert">
         <div class="alert-icon">🔒</div>
         <div class="alert-message">
           <strong>{{ 'PORTAL.EVENT_EDITOR.SCHEDULE_LOCKED_TITLE' | translate }}</strong> {{ 'PORTAL.EVENT_EDITOR.SCHEDULE_LOCKED_MSG' | translate }}
@@ -144,7 +166,10 @@ export interface ExistingImage {
             <div class="section-header">
               <span class="section-step-num">2</span>
               <div>
-                <h2 class="section-title">{{ 'PORTAL.EVENT_EDITOR.STEP_2_TITLE' | translate }}</h2>
+                <div style="display: flex; align-items: baseline; gap: 4px;">
+                  <h2 class="section-title">{{ 'PORTAL.EVENT_EDITOR.STEP_2_TITLE' | translate }}</h2>
+                  <span class="required-star">*</span>
+                </div>
                 <p class="section-desc">{{ 'PORTAL.EVENT_EDITOR.STEP_2_DESC' | translate }}</p>
               </div>
             </div>
@@ -156,18 +181,18 @@ export interface ExistingImage {
                 <div *ngFor="let img of existingImages; let idx = index" class="photo-preview-card">
                   <img [src]="img.url" [alt]="'PORTAL.EVENT_EDITOR.ALT_EXISTING' | translate" class="preview-img" />
                   <span *ngIf="idx === 0 && selectedNewFiles.length === 0" class="cover-badge">{{ 'PORTAL.EVENT_EDITOR.COVER_BADGE' | translate }}</span>
-                  <button type="button" class="remove-photo-btn" (click)="removeExistingImage(img)" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
+                  <button type="button" class="remove-photo-btn" (click)="removeExistingImage(img)" [disabled]="isPastEvent" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
                 </div>
 
                 <!-- Newly Selected Local Files -->
                 <div *ngFor="let preview of newFilePreviews; let idx = index" class="photo-preview-card">
                   <img [src]="preview" [alt]="'PORTAL.EVENT_EDITOR.ALT_NEW' | translate" class="preview-img" />
                   <span *ngIf="existingImages.length === 0 && idx === 0" class="cover-badge">{{ 'PORTAL.EVENT_EDITOR.COVER_BADGE' | translate }}</span>
-                  <button type="button" class="remove-photo-btn" (click)="removeNewFile(idx)" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
+                  <button type="button" class="remove-photo-btn" (click)="removeNewFile(idx)" [disabled]="isPastEvent" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
                 </div>
 
                 <!-- Upload Dropzone Button -->
-                <label class="upload-dropzone-btn">
+                <label class="upload-dropzone-btn" *ngIf="!isPastEvent">
                   <input
                     type="file"
                     class="hidden-file-input"
@@ -181,7 +206,10 @@ export interface ExistingImage {
                       <circle cx="8.5" cy="8.5" r="1.5"></circle>
                       <polyline points="21 15 16 10 5 21"></polyline>
                     </svg>
-                    <span class="dropzone-label">{{ 'PORTAL.EVENT_EDITOR.ADD_PHOTOS' | translate }}</span>
+                    <div style="display: flex; align-items: baseline; gap: 4px;">
+                      <span class="dropzone-label">{{ 'PORTAL.EVENT_EDITOR.ADD_PHOTOS' | translate }}</span>
+                      <span class="required-star">*</span>
+                    </div>
                     <span class="dropzone-hint">{{ 'PORTAL.EVENT_EDITOR.PHOTO_FORMATS' | translate }}</span>
                   </div>
                 </label>
@@ -211,7 +239,7 @@ export interface ExistingImage {
                     type="button"
                     class="type-tab-btn"
                     [class.active]="draft.mode === 'single'"
-                    [disabled]="datesLocked"
+                    [disabled]="datesLocked || isPastEvent"
                     (click)="setMode('single')"
                   >
                     {{ 'PORTAL.EVENT_EDITOR.MODE_SINGLE_TAB' | translate }}
@@ -220,7 +248,7 @@ export interface ExistingImage {
                     type="button"
                     class="type-tab-btn"
                     [class.active]="draft.mode === 'recurring'"
-                    [disabled]="datesLocked"
+                    [disabled]="datesLocked || isPastEvent"
                     (click)="setMode('recurring')"
                   >
                     {{ 'PORTAL.EVENT_EDITOR.MODE_RECURRING_TAB' | translate }}
@@ -237,11 +265,15 @@ export interface ExistingImage {
                       id="start-date"
                       type="date"
                       class="form-control"
+                      [min]="minStartDate"
                       [(ngModel)]="draft.startDate"
-                      [disabled]="datesLocked"
+                      [disabled]="datesLocked || isPastEvent"
                       (ngModelChange)="onStartDateChange()"
                       required
                     />
+                    <div *ngIf="scheduleErrors['startDate']" class="field-inline-error">
+                      {{ scheduleErrors['startDate'] | translate }}
+                    </div>
                   </div>
 
                   <div class="form-group flex-1" *ngIf="multiDay">
@@ -250,12 +282,15 @@ export interface ExistingImage {
                       id="end-date"
                       type="date"
                       class="form-control"
-                      [min]="draft.startDate || ''"
+                      [min]="draft.startDate || minStartDate"
                       [(ngModel)]="draft.endDate"
-                      [disabled]="datesLocked"
-                      (ngModelChange)="markDirty()"
+                      [disabled]="datesLocked || isPastEvent"
+                      (ngModelChange)="onEndDateChange()"
                       required
                     />
+                    <div *ngIf="scheduleErrors['endDate']" class="field-inline-error">
+                      {{ scheduleErrors['endDate'] | translate }}
+                    </div>
                   </div>
                 </div>
 
@@ -265,7 +300,7 @@ export interface ExistingImage {
                     <input
                       type="checkbox"
                       [checked]="multiDay"
-                      [disabled]="datesLocked"
+                      [disabled]="datesLocked || isPastEvent"
                       (change)="toggleMultiDay()"
                     />
                     <span class="toggle-switch"></span>
@@ -284,11 +319,14 @@ export interface ExistingImage {
                     *ngFor="let day of allWeekdays"
                     class="weekday-pill-btn"
                     [class.selected]="isDaySelected(day.key)"
-                    [disabled]="datesLocked"
+                    [disabled]="datesLocked || isPastEvent"
                     (click)="toggleDay(day.key)"
                   >
                     {{ 'EVENTS.RECURRING.DAYS.' + day.key | translate }}
                   </button>
+                </div>
+                <div *ngIf="scheduleErrors['recurring']" class="field-inline-error">
+                  {{ scheduleErrors['recurring'] | translate }}
                 </div>
               </div>
 
@@ -299,7 +337,7 @@ export interface ExistingImage {
                     <input
                       type="checkbox"
                       [checked]="draft.allDay"
-                      [disabled]="datesLocked"
+                      [disabled]="datesLocked || isPastEvent"
                       (change)="toggleAllDay()"
                     />
                     <span class="toggle-switch"></span>
@@ -315,10 +353,13 @@ export interface ExistingImage {
                       type="time"
                       class="form-control"
                       [(ngModel)]="draft.from"
-                      [disabled]="datesLocked"
-                      (ngModelChange)="markDirty()"
+                      [disabled]="datesLocked || isPastEvent"
+                      (ngModelChange)="onTimeChange()"
                       required
                     />
+                    <div *ngIf="scheduleErrors['from']" class="field-inline-error">
+                      {{ scheduleErrors['from'] | translate }}
+                    </div>
                   </div>
 
                   <div class="form-group flex-1" *ngIf="!draft.openEnd">
@@ -328,10 +369,13 @@ export interface ExistingImage {
                       type="time"
                       class="form-control"
                       [(ngModel)]="draft.to"
-                      [disabled]="datesLocked"
-                      (ngModelChange)="markDirty()"
+                      [disabled]="datesLocked || isPastEvent"
+                      (ngModelChange)="onTimeChange()"
                       required
                     />
+                    <div *ngIf="scheduleErrors['to']" class="field-inline-error">
+                      {{ scheduleErrors['to'] | translate }}
+                    </div>
                   </div>
                 </div>
 
@@ -340,7 +384,7 @@ export interface ExistingImage {
                     <input
                       type="checkbox"
                       [checked]="draft.openEnd"
-                      [disabled]="datesLocked"
+                      [disabled]="datesLocked || isPastEvent"
                       (change)="toggleOpenEnd()"
                     />
                     <span class="toggle-switch"></span>
@@ -646,14 +690,22 @@ export interface ExistingImage {
               <button type="button" class="btn btn-secondary" (click)="onCancel()" [disabled]="submitting">
                 {{ 'PORTAL.COMMON.CANCEL' | translate }}
               </button>
-              <button type="button" class="btn btn-secondary" (click)="saveDraft()" [disabled]="submitting">
-                <span *ngIf="submitting && saveTargetStatus === 'draft'" class="spinner-inline"></span>
-                <span>{{ 'PORTAL.EVENT_EDITOR.SAVE_DRAFT_BTN' | translate }}</span>
-              </button>
-              <button type="button" class="btn btn-primary" (click)="publishListing()" [disabled]="submitting">
-                <span *ngIf="submitting && saveTargetStatus === 'published'" class="spinner-inline"></span>
-                <span>{{ (isEditMode && !isDraft ? 'PORTAL.EVENT_EDITOR.SAVE_UPDATE_BTN' : 'PORTAL.EVENT_EDITOR.PUBLISH_BTN') | translate }}</span>
-              </button>
+              <ng-container *ngIf="isPastEvent">
+                <button type="button" class="btn btn-primary" (click)="copyPastEvent()" [disabled]="submitting">
+                  <span *ngIf="submitting" class="spinner-inline"></span>
+                  <span>{{ 'PORTAL.EVENT_EDITOR.COPY_AS_NEW_BTN' | translate }}</span>
+                </button>
+              </ng-container>
+              <ng-container *ngIf="!isPastEvent">
+                <button type="button" class="btn btn-secondary" (click)="saveDraft()" [disabled]="submitting">
+                  <span *ngIf="submitting && saveTargetStatus === 'draft'" class="spinner-inline"></span>
+                  <span>{{ 'PORTAL.EVENT_EDITOR.SAVE_DRAFT_BTN' | translate }}</span>
+                </button>
+                <button type="button" class="btn btn-primary" (click)="publishListing()" [disabled]="submitting">
+                  <span *ngIf="submitting && saveTargetStatus === 'published'" class="spinner-inline"></span>
+                  <span>{{ (isEditMode && !isDraft ? 'PORTAL.EVENT_EDITOR.SAVE_UPDATE_BTN' : 'PORTAL.EVENT_EDITOR.PUBLISH_BTN') | translate }}</span>
+                </button>
+              </ng-container>
             </div>
           </div>
         </main>
@@ -922,6 +974,19 @@ export interface ExistingImage {
     .form-label.required::after {
       content: ' *';
       color: var(--vamo-danger);
+    }
+
+    .required-star {
+      color: var(--vamo-danger);
+      font-weight: 700;
+      margin-left: 2px;
+    }
+
+    .field-inline-error {
+      font-size: 0.8rem;
+      color: var(--vamo-danger);
+      margin-top: 4px;
+      line-height: 1.3;
     }
 
     .form-control, .form-select, .form-textarea {
@@ -1805,9 +1870,22 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   isDirty = false;
   showCancelConfirmModal = false;
 
-  // Published event schedule lock
+  // Past event and schedule locks
+  originalEvent: VamoEvent | null = null;
+  isPastEvent = false;
   datesLocked = false;
   originalStartDate: string | null = null;
+  scheduleErrors: Record<string, string | undefined> = {};
+
+  get minStartDate(): string {
+    const drToday = this.businessService.drTodayStr();
+    if (this.isEditMode && this.originalEvent?.startDate) {
+      if (this.originalEvent.startDate < drToday) {
+        return this.originalEvent.startDate;
+      }
+    }
+    return drToday;
+  }
 
   availableAreas: Area[] = [];
   selectedAreaId = '';
@@ -1935,11 +2013,16 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
     try {
       const event = await this.businessService.getEventById(id);
+      this.originalEvent = event;
       this.isDraft = event.status === 'draft';
       this.originalStartDate = event.startDate || null;
 
-      // Check 24h schedule lock for published events
-      if (event.status === 'published' && event.startDate) {
+      // Check if event is past (canonical rule: endDate || startDate < drToday or archived)
+      this.isPastEvent = isEventPast(event, this.businessService);
+      if (this.isPastEvent) {
+        this.datesLocked = true;
+      } else if (event.status === 'published' && event.startDate) {
+        // Check 24h schedule lock for published events
         const start = new Date(event.startDate).getTime();
         this.datesLocked = start - Date.now() <= 24 * 60 * 60 * 1000;
       }
@@ -2011,43 +2094,89 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     this.markDirty();
   }
 
+  validateCurrentSchedule(isPublish = false): boolean {
+    const res = validateEventSchedule({
+      ...this.draft,
+      endDate: this.multiDay ? this.draft.endDate : undefined,
+    }, isPublish, {
+      originalEvent: this.isEditMode ? this.originalEvent : undefined,
+      todayStr: this.businessService.drTodayStr(),
+    });
+    // A checked multi-day form must also require its end date when publishing.
+    if (isPublish && this.draft.mode !== 'recurring' && this.multiDay && !this.draft.endDate && res.valid) {
+      res.valid = false;
+      res.field = 'endDate';
+      res.errorCode = 'END_DATE_REQUIRED';
+    }
+    this.scheduleErrors = {};
+    if (!res.valid && res.field && res.errorCode) {
+      this.scheduleErrors[res.field] = scheduleErrorMessageKey(res.errorCode);
+    }
+    return res.valid;
+  }
+
+  async copyPastEvent(): Promise<void> {
+    if (!this.originalEvent) return;
+    this.submitting = true;
+    this.cdr.markForCheck();
+    try {
+      const newId = await this.businessService.duplicateEventAsDraft(this.originalEvent);
+      this.router.navigate(['/app/listings/edit', newId]);
+    } catch (err: any) {
+      this.errorMessage = this.customerErrorService.toCustomerMessage(err, 'save');
+    } finally {
+      this.submitting = false;
+      this.cdr.markForCheck();
+    }
+  }
+
   setMode(mode: 'single' | 'recurring'): void {
-    if (this.datesLocked) return;
+    if (this.datesLocked || this.isPastEvent) return;
     this.draft.mode = mode;
     this.markDirty();
+    this.validateCurrentSchedule(false);
   }
 
   onStartDateChange(): void {
     this.markDirty();
-    if (this.multiDay && this.draft.startDate && this.draft.endDate) {
-      if (this.draft.endDate <= this.draft.startDate) {
-        this.draft.endDate = null;
-      }
-    }
+    this.validateCurrentSchedule(false);
+  }
+
+  onEndDateChange(): void {
+    this.markDirty();
+    this.validateCurrentSchedule(false);
+  }
+
+  onTimeChange(): void {
+    this.markDirty();
+    this.validateCurrentSchedule(false);
   }
 
   toggleMultiDay(): void {
-    if (this.datesLocked) return;
+    if (this.datesLocked || this.isPastEvent) return;
     this.multiDay = !this.multiDay;
     if (!this.multiDay) {
       this.draft.endDate = null;
     }
     this.markDirty();
+    this.validateCurrentSchedule(false);
   }
 
   toggleAllDay(): void {
-    if (this.datesLocked) return;
+    if (this.datesLocked || this.isPastEvent) return;
     this.draft.allDay = !this.draft.allDay;
     this.markDirty();
+    this.validateCurrentSchedule(false);
   }
 
   toggleOpenEnd(): void {
-    if (this.datesLocked) return;
+    if (this.datesLocked || this.isPastEvent) return;
     this.draft.openEnd = !this.draft.openEnd;
     if (this.draft.openEnd) {
       this.draft.to = null;
     }
     this.markDirty();
+    this.validateCurrentSchedule(false);
   }
 
   isDaySelected(dayKey: string): boolean {
@@ -2056,7 +2185,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   toggleDay(dayKey: string): void {
-    if (this.datesLocked) return;
+    if (this.datesLocked || this.isPastEvent) return;
     if (!this.draft.recurring || typeof this.draft.recurring !== 'object') {
       this.draft.recurring = { days: [] };
     }
@@ -2069,6 +2198,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     }
     this.draft.recurring = { days };
     this.markDirty();
+    this.validateCurrentSchedule(false);
   }
 
   async initMap(): Promise<void> {
@@ -2318,6 +2448,11 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   validateForm(forPublish: boolean): boolean {
     this.errorMessage = null;
 
+    if (this.isPastEvent) {
+      this.errorMessage = this.i18n.t('PORTAL.LISTINGS.ERRORS.PAST_EVENT_NO_EDIT');
+      return false;
+    }
+
     if (!this.draft.name?.trim()) {
       this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.NAME_REQUIRED');
       return false;
@@ -2333,58 +2468,23 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       return false;
     }
 
+    if (!this.validateCurrentSchedule(forPublish)) {
+      const key = Object.values(this.scheduleErrors).find(Boolean);
+      if (key) this.errorMessage = this.i18n.t(key);
+      return false;
+    }
     if (forPublish) {
-      const hasImages = this.existingImages.length > 0 || this.selectedNewFiles.length > 0;
-      if (!hasImages) {
-        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.PHOTO_REQUIRED');
-        return false;
-      }
-
-      if (!this.draft.address?.trim()) {
-        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.ADDRESS_REQUIRED');
-        return false;
-      }
-
-      if (!this.selectedAreaId) {
-        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.AREA_REQUIRED');
-        return false;
-      }
-
-      if (this.draft.mode === 'single') {
-        if (!this.draft.startDate) {
-          this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.START_DATE_REQUIRED');
-          return false;
-        }
-        if (this.multiDay && !this.draft.endDate) {
-          this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.END_DATE_REQUIRED');
-          return false;
-        }
-      } else {
-        const days = (this.draft.recurring as any)?.days;
-        if (!Array.isArray(days) || days.length === 0) {
-          this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.WEEKDAYS_REQUIRED');
-          return false;
-        }
-      }
-
-      if (!this.draft.allDay) {
-        if (!this.draft.from) {
-          this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.START_TIME_REQUIRED');
-          return false;
-        }
-        if (!this.draft.openEnd && !this.draft.to) {
-          this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.END_TIME_REQUIRED');
-          return false;
-        }
-      }
-
-      if (!this.draft.isFree && !this.draft.contactForPrice && (!this.draft.price || Number(this.draft.price) <= 0)) {
-        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.PRICE_INVALID');
-        return false;
-      }
-
-      if (this.draft.hasPromotion && !this.draft.promoText?.trim()) {
-        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.PROMO_TEXT_REQUIRED');
+      const validation = validateEventForPublish({
+        ...this.draft,
+        endDate: this.multiDay ? this.draft.endDate : undefined,
+      }, {
+        originalEvent: this.isEditMode ? this.originalEvent : undefined,
+        hasImages: this.existingImages.length > 0 || this.selectedNewFiles.length > 0,
+        areaIds: this.selectedAreaId ? [this.selectedAreaId] : [],
+        todayStr: this.businessService.drTodayStr(),
+      });
+      if (!validation.valid) {
+        this.errorMessage = this.i18n.t(validation.messageKey);
         return false;
       }
     }
@@ -2403,6 +2503,11 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   private async executeSave(status: 'draft' | 'published'): Promise<void> {
+    if (this.isPastEvent) {
+      this.errorMessage = this.i18n.t('PORTAL.LISTINGS.ERRORS.PAST_EVENT_NO_EDIT');
+      return;
+    }
+
     const user = this.authService.currentUser;
     const providerId = user?.provider_link?.id;
     if (!providerId) {
@@ -2415,6 +2520,26 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     this.cdr.markForCheck();
 
     try {
+      if (this.isEditMode && this.eventId) {
+        // Guard direct editor route: re-check before update so expiring events cannot be modified
+        const fresh = await this.businessService.getEventById(this.eventId);
+        if (isEventPast(fresh, this.businessService)) {
+          this.isPastEvent = true;
+          this.datesLocked = true;
+          this.errorMessage = this.i18n.t('PORTAL.LISTINGS.ERRORS.PAST_EVENT_NO_EDIT');
+          this.submitting = false;
+          this.cdr.markForCheck();
+          return;
+        }
+      }
+
+      // Revalidate all fields against the current DR clock right before write.
+      if (!this.validateForm(status === 'published')) {
+        this.submitting = false;
+        this.cdr.markForCheck();
+        return;
+      }
+
       const payload: Partial<VamoEvent> = {
         name: this.draft.name ?? undefined,
         category: this.draft.category ?? undefined,
@@ -2424,6 +2549,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         startDate: this.draft.startDate || undefined,
         endDate: this.multiDay ? (this.draft.endDate || undefined) : undefined,
         allDay: this.draft.allDay,
+        openEnd: this.draft.openEnd,
         from: this.draft.allDay ? undefined : (this.draft.from || undefined),
         to: this.draft.openEnd ? undefined : (this.draft.to || undefined),
         recurring: this.draft.mode === 'recurring' ? this.draft.recurring : { days: [] },
@@ -2451,7 +2577,8 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
           this.selectedNewFiles,
           this.removedImageJunctionIds,
           areaIds,
-          this.existingAreaJunctionIds
+          this.existingAreaJunctionIds,
+          this.originalEvent || undefined
         );
       } else {
         await this.businessService.createEvent(
@@ -2541,13 +2668,13 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     if (!this.draft.startDate) return this.i18n.t('PORTAL.LISTINGS.DATE_TBA');
     const locale = this.i18n.dateLocale();
     try {
-      const start = new Date(this.draft.startDate).toLocaleDateString(locale, {
+      const start = parseLocalDate(this.draft.startDate).toLocaleDateString(locale, {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
       });
       if (this.multiDay && this.draft.endDate) {
-        const end = new Date(this.draft.endDate).toLocaleDateString(locale, {
+        const end = parseLocalDate(this.draft.endDate).toLocaleDateString(locale, {
           month: 'short',
           day: 'numeric',
           year: 'numeric',

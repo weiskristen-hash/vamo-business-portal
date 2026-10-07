@@ -5,6 +5,16 @@ import { runtimeConfig } from '../config/runtime-config';
 import { Provider } from '../models/provider.model';
 import { VamoEvent, ProviderEventStats, Area } from '../models/event.model';
 import { AuthService } from './auth.service';
+import {
+  calculateSharedEventStats,
+  isEventPast,
+  isEventActive,
+  isEventEnded,
+  isEventOngoing,
+  isEventUpcoming,
+  validateEventForPublish,
+  ScheduleClassificationOptions,
+} from '../utils/event-display.util';
 
 @Injectable({
   providedIn: 'root',
@@ -364,12 +374,43 @@ export class BusinessService {
 
   /**
    * Checks whether a single or multi-day event is upcoming or ongoing in the DR timezone.
+   * Portal-side helper considering end time, overnight schedules, all-day, and open-ended.
    */
-  isEventUpcomingOrOngoing(event: { startDate?: Date | string | null; endDate?: Date | string | null }): boolean {
-    const last = event.endDate || event.startDate;
-    if (!last) return false;
-    const str = typeof last === 'string' ? last.split('T')[0] : last.toISOString().split('T')[0];
-    return str >= this.drTodayStr();
+  isEventUpcomingOrOngoing(
+    event: Partial<VamoEvent> | { startDate?: Date | string | null; endDate?: Date | string | null },
+    options?: ScheduleClassificationOptions
+  ): boolean {
+    return isEventActive(event as any, options);
+  }
+
+  /**
+   * Checks whether an event has ended/past in DR timezone.
+   */
+  isEventPast(
+    event: Partial<VamoEvent> | { startDate?: Date | string | null; endDate?: Date | string | null },
+    options?: ScheduleClassificationOptions
+  ): boolean {
+    return isEventEnded(event as any, options);
+  }
+
+  /**
+   * Checks whether an event is ongoing in DR timezone.
+   */
+  isEventOngoing(
+    event: Partial<VamoEvent> | { startDate?: Date | string | null; endDate?: Date | string | null },
+    options?: ScheduleClassificationOptions
+  ): boolean {
+    return isEventOngoing(event as any, options);
+  }
+
+  /**
+   * Checks whether an event is upcoming in DR timezone.
+   */
+  isEventUpcoming(
+    event: Partial<VamoEvent> | { startDate?: Date | string | null; endDate?: Date | string | null },
+    options?: ScheduleClassificationOptions
+  ): boolean {
+    return isEventUpcoming(event as any, options);
   }
 
   /**
@@ -523,6 +564,10 @@ export class BusinessService {
     areaIds: string[] = []
   ): Promise<VamoEvent> {
     return this.authService.safeRequest(async () => {
+      if (data.status === 'published') {
+        const validation = validateEventForPublish(data, { hasImages: files.length > 0, areaIds });
+        if (!validation.valid) throw new Error(validation.errorCode || 'INCOMPLETE_EVENT_DRAFT');
+      }
       // 1. Build canonical payload matching create-event.page.ts buildPayload()
       const payload: Record<string, any> = {
         name: data.name ?? undefined,
@@ -607,11 +652,39 @@ export class BusinessService {
     files: File[] = [],
     removedImageJunctionIds: (number | string)[] = [],
     areaIds?: string[],
-    existingAreaJunctionIds: (number | string)[] = []
+    existingAreaJunctionIds: (number | string)[] = [],
+    _deprecatedExistingEvent?: VamoEvent
   ): Promise<VamoEvent> {
     if (!eventId) throw new Error('Event ID is required');
 
+    if (_deprecatedExistingEvent && (this.isEventPast(_deprecatedExistingEvent) || _deprecatedExistingEvent.status === 'archived')) {
+      throw new Error('PAST_EVENT_READ_ONLY');
+    }
+
     return this.authService.safeRequest(async () => {
+      // Portal-side guard: do not rely on cached/client-provided event argument.
+      // Fetch and re-verify fresh persisted record from Directus.
+      const persisted = await this.getEventById(eventId);
+      if (this.isEventPast(persisted) || persisted.status === 'archived') {
+        throw new Error('PAST_EVENT_READ_ONLY');
+      }
+
+      const targetStatus = data.status || persisted.status;
+      if (targetStatus === 'published') {
+        const retainedImages = persisted.images?.filter(image =>
+          !removedImageJunctionIds.some(id => String(id) === String(image.id))
+        ) || [];
+        const validation = validateEventForPublish({ ...persisted, ...data, images: retainedImages }, {
+          originalEvent: persisted,
+          hasImages: files.length > 0 || retainedImages.some(image => {
+            const file = image.directus_files_id;
+            return typeof file === 'string' ? !!file : !!file?.id;
+          }),
+          areaIds,
+        });
+        if (!validation.valid) throw new Error(validation.errorCode || 'INCOMPLETE_EVENT_DRAFT');
+      }
+
       const payload: Record<string, any> = {};
 
       if (data.name !== undefined) payload['name'] = data.name ?? undefined;
@@ -705,22 +778,35 @@ export class BusinessService {
 
   /**
    * Pauses an active event (sets status to 'draft').
+   * Portal-side guard: verifies that past events cannot be paused into editable drafts.
    */
   async pauseEvent(eventId: string): Promise<void> {
     if (!eventId) throw new Error('Event ID is required');
 
     return this.authService.safeRequest(async () => {
+      const event = await this.getEventById(eventId);
+      if (this.isEventPast(event) || event.status === 'archived') {
+        throw new Error('PAST_EVENT_CANNOT_BE_PAUSED');
+      }
+
       await directusClient.request(updateItem('events', eventId, { status: 'draft' } as any));
     });
   }
 
   /**
    * Publishes a draft event (sets status to 'published').
+   * Portal-side guard: validates completeness of draft (name, category, description, images, schedule).
    */
   async publishEvent(eventId: string): Promise<void> {
     if (!eventId) throw new Error('Event ID is required');
 
     return this.authService.safeRequest(async () => {
+      const event = await this.getEventById(eventId);
+      const validation = validateEventForPublish(event);
+      if (!validation.valid) {
+        throw new Error(validation.errorCode || 'INCOMPLETE_EVENT_DRAFT');
+      }
+
       await directusClient.request(updateItem('events', eventId, { status: 'published' } as any));
     });
   }
@@ -738,6 +824,8 @@ export class BusinessService {
         address: event.address ?? null,
         category: event.category,
         mode: event.mode,
+        startDate: null,
+        endDate: null,
         from: event.from,
         to: event.to,
         allDay: event.allDay,
@@ -830,16 +918,7 @@ export class BusinessService {
    * Computes stats summary for the provider's events.
    */
   calculateStats(events: VamoEvent[]): ProviderEventStats {
-    const published = events.filter((e) => e.status === 'published').length;
-    const draft = events.filter((e) => e.status === 'draft').length;
-    const archived = events.filter((e) => e.status === 'archived').length;
-
-    return {
-      total: events.length,
-      published,
-      draft,
-      archived,
-    };
+    return calculateSharedEventStats(events, this);
   }
 
   /**

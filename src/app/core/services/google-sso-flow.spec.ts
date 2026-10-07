@@ -370,6 +370,7 @@ describe('Google SSO Flow — Phase 3B Parity Specifications', () => {
 
   // 19. Existing guards remain unchanged
   it('19. Existing guards (authGuard, noAuthGuard, businessGuard) function properly', async () => {
+    vi.spyOn(authService, 'waitForInitialAuth').mockResolvedValue();
     vi.spyOn(authService, 'restoreSession').mockResolvedValue(null);
     const canActivateAuth = await TestBed.runInInjectionContext(() => (authGuard as any)({} as any, { url: '/app/overview' } as any));
     expect(canActivateAuth).toBeInstanceOf(Object); // UrlTree redirect to /login

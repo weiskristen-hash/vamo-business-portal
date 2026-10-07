@@ -938,6 +938,7 @@ export const enTranslations: Record<string, any> = {
       "PHONE_INVALID": "Please enter a valid phone number.",
       "WHATSAPP_LABEL": "WhatsApp Number",
       "WHATSAPP_BADGE": "Customer Preferred",
+      "WA_SAME_AS_PHONE": "Same as phone number",
       "WHATSAPP_PLACEHOLDER": "+1 (809) 555-0123",
       "WHATSAPP_INVALID": "Please enter a valid WhatsApp number.",
       "WHATSAPP_TEST": "Test wa.me chat ↗",
@@ -1080,7 +1081,23 @@ export const enTranslations: Record<string, any> = {
       "DELETE_CONFIRM_BTN": "Delete Listing",
       "TOAST_PAUSED": "\"{{name}}\" was paused and moved to Drafts.",
       "TOAST_PUBLISHED": "\"{{name}}\" is now live and published!",
-      "TOAST_DELETED": "\"{{name}}\" was permanently deleted."
+      "TOAST_DELETED": "\"{{name}}\" was permanently deleted.",
+      "ACTIONS": {
+        "EDIT": "Edit",
+        "COPY": "Copy",
+        "PAST_EVENT_TOOLTIP": "Past events cannot be edited. Copy this listing to create a new post."
+      },
+      "ERRORS": {
+        "START_DATE_PAST": "Start date cannot be in the past.",
+        "START_DATE_REQUIRED": "Please select a start date.",
+        "END_DATE_BEFORE_START": "End date cannot be before start date.",
+        "START_TIME_PAST": "Start time cannot be earlier than current time today.",
+        "START_TIME_REQUIRED": "Please specify a start time.",
+        "END_TIME_BEFORE_START": "End time cannot be earlier than start time on the same date.",
+        "END_TIME_REQUIRED": "Please specify an end time.",
+        "RECURRING_DAYS_REQUIRED": "Please select at least one day of the week.",
+        "PAST_EVENT_NO_EDIT": "Past events cannot be edited. Please copy as a new listing instead."
+      }
     },
     "EVENT_EDITOR": {
       "BACK_TO_LISTINGS": "Back to Listings",
@@ -1094,6 +1111,9 @@ export const enTranslations: Record<string, any> = {
       "PUBLISH_BTN": "Publish Listing",
       "SCHEDULE_LOCKED_TITLE": "Schedule Locked:",
       "SCHEDULE_LOCKED_MSG": "This event starts in less than 24 hours. To prevent attendee confusion, dates and times can no longer be edited.",
+      "PAST_EVENT_LOCKED_TITLE": "Past Event (Read Only):",
+      "PAST_EVENT_LOCKED_MSG": "This event has already ended and cannot be modified. You can duplicate it to create a new listing with fresh dates.",
+      "COPY_AS_NEW_BTN": "Copy as New Listing",
       "STEP_1_TITLE": "Basics",
       "STEP_1_DESC": "Define the title, category, and a compelling description for your listing.",
       "NAME_LABEL": "Listing Title",

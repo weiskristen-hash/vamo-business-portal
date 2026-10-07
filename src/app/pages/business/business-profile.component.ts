@@ -8,6 +8,8 @@ import { CustomerErrorService } from '../../core/services/customer-error.service
 import { I18nService, BUSINESS_TYPES } from '../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { Provider, OpeningHour } from '../../core/models/provider.model';
+import { PhoneInputComponent } from '../../shared/components/phone-input/phone-input.component';
+import { isValidPhone, getWhatsAppUrl } from '../../core/utils/phone';
 
 export interface BusinessTypeOption {
   value: string;
@@ -23,7 +25,7 @@ export interface OfferingOption {
 @Component({
   selector: 'app-business-profile',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, TranslatePipe],
+  imports: [CommonModule, FormsModule, RouterModule, TranslatePipe, PhoneInputComponent],
   template: `
     <div class="profile-container">
       <!-- ── Loading State ─────────────────────────────────────────────── -->
@@ -476,41 +478,56 @@ export interface OfferingOption {
                 <!-- Phone -->
                 <div class="form-group">
                   <label class="form-label" for="field-phone">{{ 'PORTAL.PROFILE.PHONE_LABEL' | translate }}</label>
-                  <input
+                  <app-phone-input
                     id="field-phone"
-                    type="tel"
-                    class="form-control"
-                    [class.is-invalid]="touched.phone && !isPhoneValid(form().phone)"
-                    [(ngModel)]="form().phone"
-                    (blur)="touched.phone = true; markDirty()"
-                    [placeholder]="'PORTAL.PROFILE.PHONE_PLACEHOLDER' | translate"
-                  />
-                  <p *ngIf="touched.phone && !isPhoneValid(form().phone)" class="form-error">
+                    name="phone"
+                    [ngModel]="form().phone"
+                    (ngModelChange)="onPhoneChange($event)"
+                    (blurred)="touched.phone = true; markDirty()"
+                    [isInvalid]="touched.phone && !isPhoneValid(form().phone, provider()?.phone ?? undefined)"
+                  ></app-phone-input>
+                  <p *ngIf="touched.phone && !isPhoneValid(form().phone, provider()?.phone ?? undefined)" class="form-error">
                     {{ 'PORTAL.PROFILE.PHONE_INVALID' | translate }}
                   </p>
+                  <div class="phone-link-wrap" *ngIf="form().phone && isPhoneValid(form().phone, provider()?.phone ?? undefined)">
+                    <a [href]="'tel:' + form().phone" class="phone-test-link">
+                      📞 {{ form().phone }}
+                    </a>
+                  </div>
                 </div>
 
                 <!-- WhatsApp -->
                 <div class="form-group">
-                  <label class="form-label" for="field-wa">
-                    <span>{{ 'PORTAL.PROFILE.WHATSAPP_LABEL' | translate }}</span>
-                    <span class="wa-badge">{{ 'PORTAL.PROFILE.WHATSAPP_BADGE' | translate }}</span>
-                  </label>
-                  <input
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <label class="form-label" for="field-wa" style="margin-bottom: 0;">
+                      <span>{{ 'PORTAL.PROFILE.WHATSAPP_LABEL' | translate }}</span>
+                      <span class="wa-badge">{{ 'PORTAL.PROFILE.WHATSAPP_BADGE' | translate }}</span>
+                    </label>
+                    <label class="wa-same-toggle" style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.84rem; cursor: pointer; color: var(--vamo-text-muted, #64748b);">
+                      <input
+                        type="checkbox"
+                        [checked]="waNumberSameAsPhone"
+                        (change)="toggleWaSameAsPhone($event)"
+                        style="cursor: pointer; accent-color: var(--vamo-pink, #ec4899);"
+                      />
+                      <span>{{ 'PORTAL.PROFILE.WA_SAME_AS_PHONE' | translate }}</span>
+                    </label>
+                  </div>
+                  <app-phone-input
                     id="field-wa"
-                    type="tel"
-                    class="form-control"
-                    [class.is-invalid]="touched.waNumber && !isPhoneValid(form().wa_number)"
-                    [(ngModel)]="form().wa_number"
-                    (blur)="touched.waNumber = true; markDirty()"
-                    [placeholder]="'PORTAL.PROFILE.WHATSAPP_PLACEHOLDER' | translate"
-                  />
+                    name="wa_number"
+                    [disabled]="waNumberSameAsPhone"
+                    [ngModel]="form().wa_number"
+                    (ngModelChange)="onWaChange($event)"
+                    (blurred)="touched.waNumber = true; markDirty()"
+                    [isInvalid]="touched.waNumber && !isPhoneValid(form().wa_number, provider()?.wa_number ?? undefined)"
+                  ></app-phone-input>
                   <div class="wa-footer">
-                    <p *ngIf="touched.waNumber && !isPhoneValid(form().wa_number)" class="form-error">
+                    <p *ngIf="touched.waNumber && !isPhoneValid(form().wa_number, provider()?.wa_number ?? undefined)" class="form-error">
                       {{ 'PORTAL.PROFILE.WHATSAPP_INVALID' | translate }}
                     </p>
                     <a
-                      *ngIf="form().wa_number && isPhoneValid(form().wa_number)"
+                      *ngIf="form().wa_number && isPhoneValid(form().wa_number, provider()?.wa_number ?? undefined)"
                       [href]="getWhatsAppUrl(form().wa_number)"
                       target="_blank"
                       rel="noopener noreferrer"
@@ -1931,6 +1948,8 @@ export class BusinessProfileComponent implements OnInit {
     email: false,
   };
 
+  waNumberSameAsPhone = false;
+
   readonly businessTypes: BusinessTypeOption[] = BUSINESS_TYPES;
 
   private readonly offeringMap: Record<string, OfferingOption[]> = {
@@ -2096,6 +2115,13 @@ export class BusinessProfileComponent implements OnInit {
       subscription_tier: p.subscription_tier || null,
     });
 
+    this.waNumberSameAsPhone = !!(
+      p.phone &&
+      p.wa_number &&
+      p.phone.trim() !== '' &&
+      p.phone.trim() === p.wa_number.trim()
+    );
+
     this.isDirty.set(false);
   }
 
@@ -2103,6 +2129,29 @@ export class BusinessProfileComponent implements OnInit {
     this.isDirty.set(true);
     this.saveSuccess.set(false);
     this.saveError.set(null);
+  }
+
+  onPhoneChange(newPhone: string): void {
+    this.form.update((f) => ({
+      ...f,
+      phone: newPhone,
+      wa_number: this.waNumberSameAsPhone ? newPhone : f.wa_number,
+    }));
+    this.markDirty();
+  }
+
+  onWaChange(newWa: string): void {
+    this.form.update((f) => ({ ...f, wa_number: newWa }));
+    this.markDirty();
+  }
+
+  toggleWaSameAsPhone(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.waNumberSameAsPhone = checked;
+    if (checked) {
+      this.form.update((f) => ({ ...f, wa_number: f.phone }));
+    }
+    this.markDirty();
   }
 
   resetForm(): void {
@@ -2315,22 +2364,23 @@ export class BusinessProfileComponent implements OnInit {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   }
 
-  isPhoneValid(phone: string | null | undefined): boolean {
+  isPhoneValid(phone: string | null | undefined, initialValue?: string): boolean {
     if (!phone || !phone.trim()) return true;
-    const cleaned = phone.replace(/[\s\-\(\)\.]/g, '');
-    return /^\+?[0-9]{7,15}$/.test(cleaned);
+    if (initialValue !== undefined && phone === initialValue) return true;
+    return isValidPhone(phone);
   }
 
   isFormValid(): boolean {
     const f = this.form();
+    const p = this.provider();
     return !!(
       f.name?.trim() &&
       f.business_type &&
       f.description?.trim() &&
       f.address?.trim() &&
       this.isEmailValid(f.email) &&
-      this.isPhoneValid(f.phone) &&
-      this.isPhoneValid(f.wa_number)
+      this.isPhoneValid(f.phone, p?.phone ?? undefined) &&
+      this.isPhoneValid(f.wa_number, p?.wa_number ?? undefined)
     );
   }
 
@@ -2355,6 +2405,12 @@ export class BusinessProfileComponent implements OnInit {
 
     try {
       const f = this.form();
+      const p = this.provider();
+      const finalPhone = (this.touched.phone || f.phone !== p?.phone) ? f.phone : (p?.phone ?? f.phone);
+      const finalWa = this.waNumberSameAsPhone
+        ? finalPhone
+        : ((this.touched.waNumber || f.wa_number !== p?.wa_number) ? f.wa_number : (p?.wa_number ?? f.wa_number));
+
       const updated = await this.businessService.updateProvider(
         f.id,
         {
@@ -2362,8 +2418,8 @@ export class BusinessProfileComponent implements OnInit {
           description: f.description,
           address: f.address,
           city: f.city,
-          phone: f.phone,
-          wa_number: f.wa_number,
+          phone: finalPhone,
+          wa_number: finalWa,
           email: f.email,
           facebook: f.facebook,
           instagram: f.instagram,

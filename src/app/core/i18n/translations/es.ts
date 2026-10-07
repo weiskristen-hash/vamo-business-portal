@@ -938,6 +938,7 @@ export const esTranslations: Record<string, any> = {
       "PHONE_INVALID": "Por favor ingresa un número de teléfono válido.",
       "WHATSAPP_LABEL": "Número de WhatsApp",
       "WHATSAPP_BADGE": "Preferido por clientes",
+      "WA_SAME_AS_PHONE": "Mismo número que el teléfono",
       "WHATSAPP_PLACEHOLDER": "+1 (809) 555-0123",
       "WHATSAPP_INVALID": "Por favor ingresa un número de WhatsApp válido.",
       "WHATSAPP_TEST": "Probar chat wa.me ↗",
@@ -1080,7 +1081,23 @@ export const esTranslations: Record<string, any> = {
       "DELETE_CONFIRM_BTN": "Eliminar Publicación",
       "TOAST_PAUSED": "\"{{name}}\" fue pausado y movido a Borradores.",
       "TOAST_PUBLISHED": "¡\"{{name}}\" ya está activo y publicado!",
-      "TOAST_DELETED": "\"{{name}}\" fue eliminado permanentemente."
+      "TOAST_DELETED": "\"{{name}}\" fue eliminado permanentemente.",
+      "ACTIONS": {
+        "EDIT": "Editar",
+        "COPY": "Copiar",
+        "PAST_EVENT_TOOLTIP": "Los eventos pasados no se pueden editar. Copia esta publicación para crear una nueva."
+      },
+      "ERRORS": {
+        "START_DATE_PAST": "La fecha de inicio no puede ser anterior a hoy.",
+        "START_DATE_REQUIRED": "Por favor selecciona una fecha de inicio.",
+        "END_DATE_BEFORE_START": "La fecha de fin no puede ser anterior a la fecha de inicio.",
+        "START_TIME_PAST": "La hora de inicio no puede ser anterior a la hora actual de hoy.",
+        "START_TIME_REQUIRED": "Por favor especifica una hora de inicio.",
+        "END_TIME_BEFORE_START": "La hora de fin no puede ser anterior a la hora de inicio en el mismo día.",
+        "END_TIME_REQUIRED": "Por favor especifica una hora de fin.",
+        "RECURRING_DAYS_REQUIRED": "Por favor selecciona al menos un día de la semana.",
+        "PAST_EVENT_NO_EDIT": "Los eventos pasados no se pueden editar. Puedes duplicarlo como una nueva publicación."
+      }
     },
     "EVENT_EDITOR": {
       "BACK_TO_LISTINGS": "Volver a publicaciones",
@@ -1094,6 +1111,9 @@ export const esTranslations: Record<string, any> = {
       "PUBLISH_BTN": "Publicar publicación",
       "SCHEDULE_LOCKED_TITLE": "Horario bloqueado:",
       "SCHEDULE_LOCKED_MSG": "Este evento comienza en menos de 24 horas. Para evitar confusiones a los asistentes, las fechas y horas ya no se pueden editar.",
+      "PAST_EVENT_LOCKED_TITLE": "Evento Pasado (Solo Lectura):",
+      "PAST_EVENT_LOCKED_MSG": "Este evento ya ha finalizado y no puede modificarse. Puedes duplicarlo para crear una nueva publicación con nuevas fechas.",
+      "COPY_AS_NEW_BTN": "Copiar como Nueva Publicación",
       "STEP_1_TITLE": "Información básica",
       "STEP_1_DESC": "Define el título, la categoría y una descripción atractiva para tu publicación.",
       "NAME_LABEL": "Título de la publicación",

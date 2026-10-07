@@ -3,7 +3,7 @@ import { OverviewComponent } from './overview.component';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
 import { I18nService } from '../../core/i18n/i18n.service';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 
 describe('OverviewComponent', () => {
   let component: OverviewComponent;
@@ -55,10 +55,14 @@ describe('OverviewComponent', () => {
       calculateStats: vi.fn().mockReturnValue({
         total: 2,
         published: 1,
+        active: 1,
         draft: 1,
+        past: 0,
         archived: 0,
       }),
       getRecentEvents: vi.fn().mockReturnValue(mockEvents),
+      isEventUpcomingOrOngoing: vi.fn((ev: any) => ev.startDate ? ev.startDate >= '2026-10-01' : false),
+      duplicateEventAsDraft: vi.fn().mockResolvedValue('ev-new-copy'),
     };
 
     await TestBed.configureTestingModule({
@@ -290,6 +294,112 @@ describe('OverviewComponent', () => {
       expect(esFormatted).toContain('oct');
 
       i18n.setLang('en');
+    });
+  });
+
+  describe('Overview and Listings Agreement & Past Event Handling', () => {
+    it('should normalize cover image URLs whether directus_files_id is string, object, or missing', () => {
+      fixture = TestBed.createComponent(OverviewComponent);
+      component = fixture.componentInstance;
+
+      const eventWithStringImg: any = { id: 'e1', images: [{ directus_files_id: 'str-file-123' }] };
+      const eventWithObjImg: any = { id: 'e2', images: [{ directus_files_id: { id: 'obj-file-456' } }] };
+      const eventWithNoImg: any = { id: 'e3', images: [] };
+
+      expect(component.getEventThumbUrl(eventWithStringImg)).toContain('str-file-123');
+      expect(component.getEventThumbUrl(eventWithObjImg)).toContain('obj-file-456');
+      expect(component.getEventThumbUrl(eventWithNoImg)).toBe('/assets/placeholder.png');
+    });
+
+    it('should agree with Listings on active stats in summary cards', async () => {
+      fixture = TestBed.createComponent(OverviewComponent);
+      component = fixture.componentInstance;
+      await component.loadData();
+      fixture.detectChanges();
+
+      const liveCardValue = fixture.nativeElement.querySelector('.summary-card:first-child .summary-value');
+      expect(liveCardValue.textContent.trim()).toBe('1');
+    });
+
+    it('should route to edit page when editing an active or draft event', async () => {
+      const router = TestBed.inject(Router);
+      const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+      fixture = TestBed.createComponent(OverviewComponent);
+      component = fixture.componentInstance;
+      await component.loadData();
+      fixture.detectChanges();
+
+      // Active event routes to /app/listings/edit/:id
+      component.onEdit(mockEvents[0]);
+      expect(navigateSpy).toHaveBeenCalledWith(['/app/listings/edit', 'ev-1']);
+
+      // Draft event routes to /app/listings/create?eventId=:id
+      component.onEdit(mockEvents[1]);
+      expect(navigateSpy).toHaveBeenCalledWith(['/app/listings/create'], { queryParams: { eventId: 'ev-2' } });
+    });
+
+    it('should disable edit for past events and preserve copy capability', async () => {
+      const router = TestBed.inject(Router);
+      const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+      const pastEvent: any = {
+        id: 'past-1',
+        name: 'Past Beach Party',
+        status: 'published',
+        startDate: '2026-05-01',
+      };
+
+      businessServiceSpy.isEventUpcomingOrOngoing.mockImplementation((ev: any) => {
+        return ev.startDate ? ev.startDate >= '2026-10-01' : false;
+      });
+
+      fixture = TestBed.createComponent(OverviewComponent);
+      component = fixture.componentInstance;
+
+      expect(component.canEdit(pastEvent)).toBe(false);
+
+      // Attempting to edit past event should block navigation and set error
+      component.onEdit(pastEvent);
+      expect(navigateSpy).not.toHaveBeenCalled();
+      expect(component.error).toBe('Past events cannot be edited. Please copy as a new listing instead.');
+
+      // Copying past event should create draft and route to editor
+      await component.onDuplicate(pastEvent);
+      expect(businessServiceSpy.duplicateEventAsDraft).toHaveBeenCalledWith(pastEvent);
+      expect(navigateSpy).toHaveBeenCalledWith(['/app/listings/create'], { queryParams: { eventId: 'ev-new-copy' } });
+    });
+
+    it('should format schedule and time windows matching shared conventions', () => {
+      fixture = TestBed.createComponent(OverviewComponent);
+      component = fixture.componentInstance;
+
+      const singleEvent: any = {
+        id: 's1',
+        mode: 'single',
+        startDate: '2026-10-15',
+        from: '18:00',
+        to: '22:00',
+      };
+      const recurringEvent: any = {
+        id: 'r1',
+        mode: 'recurring',
+        recurring: { days: ['fri', 'sat'] },
+        allDay: true,
+      };
+
+      const schedSingle = component.formatSchedule(singleEvent);
+      expect(schedSingle).toContain('2026');
+      expect(schedSingle.toLowerCase()).toContain('oct');
+
+      const timeSingle = component.formatTimeWindow(singleEvent);
+      expect(timeSingle).toBe('18:00 – 22:00');
+
+      const schedRec = component.formatSchedule(recurringEvent);
+      expect(schedRec).toContain('Fri, Sat');
+
+      const timeRec = component.formatTimeWindow(recurringEvent);
+      expect(timeRec).toBe('All Day');
     });
   });
 });

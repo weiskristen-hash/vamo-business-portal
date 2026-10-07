@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { BusinessService } from './business.service';
 import { AuthService } from './auth.service';
+import { directusClient } from '../directus/directus-client';
 import { VamoEvent } from '../models/event.model';
 
 describe('BusinessService', () => {
@@ -257,4 +258,123 @@ describe('BusinessService', () => {
       expect(payload['website']).toBeUndefined();
     });
   });
+
+  describe('Event Lifecycle & Scheduling Hardening', () => {
+    it('should include active and past counts in calculateStats', () => {
+      const stats = service.calculateStats(mockEvents);
+      expect(stats.active).toBe(2);
+      expect(stats.past).toBe(1); // event-4 is archived
+      expect(stats.total).toBe(4);
+    });
+
+    it('should throw PAST_EVENT_READ_ONLY error when updateEvent is called on a past event', async () => {
+      const pastEvent: VamoEvent = {
+        id: 'past-event-1',
+        name: 'Past Party',
+        status: 'published',
+        startDate: '2020-01-01',
+        endDate: '2020-01-02',
+      };
+
+      await expect(
+        service.updateEvent('past-event-1', { name: 'Attempted Change' }, [], [], undefined, [], pastEvent)
+      ).rejects.toThrow('PAST_EVENT_READ_ONLY');
+    });
+
+    it('should fetch fresh persisted record in updateEvent and reject past event even if caller provides no existing event', async () => {
+      const persistedPast: VamoEvent = {
+        id: 'past-directus-1',
+        name: 'Past In Directus',
+        status: 'published',
+        startDate: '2020-01-01',
+        endDate: '2020-01-02',
+      };
+      const getEventByIdSpy = vi.spyOn(service, 'getEventById').mockResolvedValueOnce(persistedPast);
+
+      await expect(
+        service.updateEvent('past-directus-1', { name: 'Attempted Change' })
+      ).rejects.toThrow('PAST_EVENT_READ_ONLY');
+
+      expect(getEventByIdSpy).toHaveBeenCalledWith('past-directus-1');
+    });
+
+    it('should reject pauseEvent on past or archived event with customer-safe error', async () => {
+      const pastEvent: VamoEvent = {
+        id: 'past-to-pause',
+        name: 'Past Event Cannot Pause',
+        status: 'published',
+        startDate: '2020-01-01',
+      };
+      vi.spyOn(service, 'getEventById').mockResolvedValueOnce(pastEvent);
+
+      await expect(service.pauseEvent('past-to-pause')).rejects.toThrow('PAST_EVENT_CANNOT_BE_PAUSED');
+    });
+
+    it('should reject publishEvent on incomplete draft or past schedule', async () => {
+      const incompleteDraft: VamoEvent = {
+        id: 'incomplete-draft-1',
+        name: 'Incomplete Draft',
+        status: 'draft',
+        category: 'music',
+        description: 'Short', // under 10 chars
+        images: [],
+      };
+      vi.spyOn(service, 'getEventById').mockResolvedValueOnce(incompleteDraft);
+
+      await expect(service.publishEvent('incomplete-draft-1')).rejects.toThrow('DESC_MIN');
+    });
+  });  describe('publish write validation', () => {
+    const valid: VamoEvent = {
+      id: 'valid-draft', status: 'draft', name: 'Complete draft event', category: 'music',
+      description: 'Full description for this event', address: 'Calle Principal 12',
+      areas: [{ areas_id: 'area-lt' }], images: [{ id: 42, directus_files_id: 'file-123' }],
+      mode: 'single', startDate: '2026-10-08', from: '19:00', to: '22:00', isFree: true,
+    };
+    beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-07T22:00:00Z')); });
+    afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+    it.each([
+      [{ startDate: '2026-10-07', from: '09:00', to: '20:00' }, 'START_TIME_PAST_ERROR'],
+      [{ from: '22:00', to: '02:00' }, 'END_TIME_BEFORE_START_ERROR'],
+      [{ address: null }, 'ADDRESS_REQUIRED'],
+      [{ areas: [] }, 'AREA_REQUIRED'],
+      [{ isFree: false, price: null }, 'PRICE_INVALID'],
+      [{ hasPromotion: true, promoText: '' }, 'PROMO_TEXT_REQUIRED'],
+    ])('blocks stale/incomplete quick publish before any write %j', async (changes, error) => {
+      vi.spyOn(service, 'getEventById').mockResolvedValue({ ...valid, ...changes } as VamoEvent);
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({} as any);
+      await expect(service.publishEvent(valid.id)).rejects.toThrow(error);
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid editor publish updates at the fresh write boundary', async () => {
+      vi.spyOn(service, 'getEventById').mockResolvedValue(valid);
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({} as any);
+      await expect(service.updateEvent(valid.id, { status: 'published', from: '22:00', to: '02:00' })).rejects.toThrow('END_TIME_BEFORE_START_ERROR');
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('rejects publication after the last image is removed', async () => {
+      vi.spyOn(service, 'getEventById').mockResolvedValue(valid);
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({} as any);
+      await expect(service.updateEvent(valid.id, { status: 'published' }, [], [42])).rejects.toThrow('PHOTO_REQUIRED');
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('rejects new published events with a past start even when the end is future', async () => {
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({} as any);
+      await expect(service.createEvent({ ...valid, status: 'published', startDate: '2026-10-06', endDate: '2026-10-09' }, [new File(['poster'], 'poster.png')], ['area-lt'])).rejects.toThrow('START_DATE_PAST_ERROR');
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('publishes a complete future draft with a status-only payload', async () => {
+      vi.spyOn(service, 'getEventById').mockResolvedValue(valid);
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({} as any);
+      await service.publishEvent(valid.id);
+      const command = request.mock.calls[0][0] as () => { body: string };
+      expect(JSON.parse(command().body)).toEqual({ status: 'published' });
+    });
+  });
+
+
 });

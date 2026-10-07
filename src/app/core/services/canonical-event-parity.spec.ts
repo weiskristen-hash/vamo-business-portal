@@ -299,6 +299,7 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
   });
 
   it('15. edit/update parity properly formats extractTime and omits openEnd/currency when free', async () => {
+    clientRequestMock.mockResolvedValueOnce({ id: 'ev-edit-1', status: 'draft' }); // persisted getEventById
     clientRequestMock.mockResolvedValueOnce({ id: 'ev-edit-1' }); // updateItem
     clientRequestMock.mockResolvedValueOnce({ id: 'ev-edit-1', name: 'Updated Name' }); // read back
 
@@ -312,7 +313,7 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
       currency: 'USD',
     });
 
-    const updatePayload = extractPayload(clientRequestMock.mock.calls[0][0]);
+    const updatePayload = extractPayload(clientRequestMock.mock.calls[1][0]);
     expect(updatePayload.name).toBe('Updated Name');
     expect(updatePayload.from).toBe('18:00:00');
     expect(updatePayload.to).toBeUndefined();
@@ -335,6 +336,8 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
       clientRequestMock.mockResolvedValueOnce({ id: 'ev-16' });
       clientRequestMock.mockResolvedValueOnce({ id: 'ev-16', name: 'Jazz Night' });
 
+      vi.spyOn(service, 'uploadEventImages').mockResolvedValueOnce(['file-123']);
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-uploaded' });
       await service.createEvent(
         {
           name: 'Jazz Night',
@@ -357,7 +360,7 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
           location_point: { type: 'Point', coordinates: [-69.54, 19.31] },
           status: 'published',
         },
-        [],
+        [new File(['poster'], 'poster.png')],
         ['area-lt']
       );
 
@@ -395,11 +398,14 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
       clientRequestMock.mockResolvedValueOnce({ id: 'ev-17' });
       clientRequestMock.mockResolvedValueOnce({ id: 'ev-17', name: 'Beach Clean Up' });
 
+      vi.spyOn(service, 'uploadEventImages').mockResolvedValueOnce(['file-123']);
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-uploaded' });
       await service.createEvent(
         {
           name: 'Beach Clean Up',
           category: 'community',
           description: 'Join us to clean the beach',
+          address: 'Playa Bonita',
           startDate: '2026-11-20',
           allDay: true,
           mode: 'single',
@@ -409,7 +415,7 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
           currency: 'USD',
           status: 'published',
         },
-        [],
+        [new File(['poster'], 'poster.png')],
         ['area-samana']
       );
 
@@ -419,7 +425,7 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
         category: 'community',
         description: 'Join us to clean the beach',
         location_point: null,
-        address: null,
+        address: 'Playa Bonita',
         startDate: '2026-11-20',
         endDate: undefined,
         allDay: true,
@@ -503,6 +509,12 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
 
   describe('Translation Trigger & Event Update Parity (Phase 2A)', () => {
     const fixedIso = '2026-10-04T12:00:00.000Z';
+    const publishFields = {
+      category: 'music', description: 'Complete valid event description',
+      address: 'Calle Principal 12', areas: [{ areas_id: 'area-lt' }],
+      images: [{ id: 1, directus_files_id: 'file-123' }],
+      mode: 'single', from: '19:00', to: '22:00', isFree: true,
+    };
 
     beforeEach(() => {
       vi.useFakeTimers();
@@ -514,6 +526,7 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
     });
 
     it('19. updateEvent full-object parity: sends complete canonical payload matching edit-event buildPayload()', async () => {
+      clientRequestMock.mockResolvedValueOnce({ ...publishFields, id: 'ev-full-update', status: 'published', startDate: '2026-11-20', endDate: '2026-11-22' }); // persisted getEventById
       clientRequestMock.mockResolvedValueOnce({ id: 'ev-full-update' }); // updateItem
       clientRequestMock.mockResolvedValueOnce({ id: 'ev-full-update', name: 'Updated Festival' }); // read back
 
@@ -547,11 +560,11 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
         [101]
       );
 
-      // Exactly 2 calls: updateItem (PATCH) then readItem (GET). No secondary image call.
-      expect(clientRequestMock).toHaveBeenCalledTimes(2);
-      expect(extractMethod(clientRequestMock.mock.calls[0][0])).toBe('PATCH');
+      // Exactly 3 calls: persisted readItem (GET), updateItem (PATCH) then post-update readItem (GET). No secondary image call.
+      expect(clientRequestMock).toHaveBeenCalledTimes(3);
+      expect(extractMethod(clientRequestMock.mock.calls[1][0])).toBe('PATCH');
 
-      const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      const payload = extractPayload(clientRequestMock.mock.calls[1][0]);
       expect(payload).toEqual({
         name: 'Updated Festival',
         category: 'festivals',
@@ -586,6 +599,7 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
     });
 
     it('20. updateEvent canonical image attachment: performs primary metadata update first, then secondary image junction update', async () => {
+      clientRequestMock.mockResolvedValueOnce({ ...publishFields, id: 'ev-img-update', status: 'published', startDate: '2026-11-20' }); // persisted getEventById
       clientRequestMock.mockResolvedValueOnce({ id: 'ev-img-update' }); // primary updateItem
       vi.spyOn(service, 'uploadEventImages').mockResolvedValueOnce(['new-img-file-id']);
       clientRequestMock.mockResolvedValueOnce({ id: 'ev-img-update' }); // secondary updateItem for images
@@ -602,16 +616,16 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
         [42]
       );
 
-      // Call 0: primary updateItem for metadata
-      expect(extractMethod(clientRequestMock.mock.calls[0][0])).toBe('PATCH');
-      const primaryPayload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      // Call 1: primary updateItem for metadata
+      expect(extractMethod(clientRequestMock.mock.calls[1][0])).toBe('PATCH');
+      const primaryPayload = extractPayload(clientRequestMock.mock.calls[1][0]);
       expect(primaryPayload.name).toBe('Event with Images');
       expect(primaryPayload.status).toBe('published');
       expect(primaryPayload.images).toBeUndefined();
 
-      // Call 1: secondary updateItem for images junction
-      expect(extractMethod(clientRequestMock.mock.calls[1][0])).toBe('PATCH');
-      const imagePayload = extractPayload(clientRequestMock.mock.calls[1][0]);
+      // Call 2: secondary updateItem for images junction
+      expect(extractMethod(clientRequestMock.mock.calls[2][0])).toBe('PATCH');
+      const imagePayload = extractPayload(clientRequestMock.mock.calls[2][0]);
       expect(imagePayload.images).toEqual({
         create: [{ directus_files_id: 'new-img-file-id', events_id: 'ev-img-update' }],
         update: [],
@@ -628,45 +642,52 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
 
       // Simulate caller passing cached or contaminated event record
       const contaminatedData: any = {
+        ...publishFields,
         name: 'Contaminated Event',
         status: 'published',
+        startDate: '2026-11-20',
         translations: [{ id: 1, languages_code: 'es-ES', name: 'Evento Contaminado' }],
         translation_status: 'completed',
       };
 
-      await service.createEvent(contaminatedData);
+      vi.spyOn(service, 'uploadEventImages').mockResolvedValueOnce(['file-123']);
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-uploaded' });
+      await service.createEvent(contaminatedData, [new File(['poster'], 'poster.png')], ['area-lt']);
       const createPayload = extractPayload(clientRequestMock.mock.calls[0][0]);
       expect(createPayload.translations).toBeUndefined();
       expect(createPayload.translation_status).toBeUndefined();
 
       clientRequestMock.mockReset();
-      clientRequestMock.mockResolvedValueOnce({ id: 'ev-strip-update' });
-      clientRequestMock.mockResolvedValueOnce({ id: 'ev-strip-update' });
+      clientRequestMock.mockResolvedValueOnce({ ...publishFields, id: 'ev-strip-update', status: 'published', startDate: '2026-11-20' }); // persisted getEventById
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-strip-update' }); // updateItem
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-strip-update' }); // read back
 
       await service.updateEvent('ev-strip-update', contaminatedData);
-      const updatePayload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      const updatePayload = extractPayload(clientRequestMock.mock.calls[1][0]);
       expect(updatePayload.translations).toBeUndefined();
       expect(updatePayload.translation_status).toBeUndefined();
       expect(updatePayload.status).toBe('published');
     });
 
     it('22. updateEvent preserves status draft when saving draft edit', async () => {
-      clientRequestMock.mockResolvedValueOnce({ id: 'ev-draft-update' });
-      clientRequestMock.mockResolvedValueOnce({ id: 'ev-draft-update', status: 'draft' });
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-draft-update', status: 'draft' }); // persisted getEventById
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-draft-update' }); // updateItem
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-draft-update', status: 'draft' }); // read back
 
       await service.updateEvent('ev-draft-update', {
         name: 'Draft Edit',
         status: 'draft',
       });
 
-      const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      const payload = extractPayload(clientRequestMock.mock.calls[1][0]);
       expect(payload.status).toBe('draft');
       expect(payload.name).toBe('Draft Edit');
     });
 
     it('23. updateEvent strict edge case canonical parity: preserves whitespace, empty descriptions, false booleans, nulls, and currency rules without invention', async () => {
-      clientRequestMock.mockResolvedValueOnce({ id: 'ev-edge' });
-      clientRequestMock.mockResolvedValueOnce({ id: 'ev-edge' });
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-edge', status: 'draft', startDate: '2026-11-01' }); // persisted getEventById
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-edge' }); // updateItem
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-edge' }); // read back
 
       await service.updateEvent('ev-edge', {
         name: '  Whitespace Title  ',
@@ -688,10 +709,10 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
         contactForPrice: false,
         price: 0,
         currency: 'DOP',
-        status: 'published',
+        status: 'draft',
       });
 
-      const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      const payload = extractPayload(clientRequestMock.mock.calls[1][0]);
       expect(payload).toEqual({
         name: '  Whitespace Title  ', // NOT trimmed
         category: 'art',
@@ -711,14 +732,15 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
         contactForPrice: false, // strictly false
         price: 0,
         currency: undefined, // free event omits currency
-        status: 'published',
+        status: 'draft',
       });
       expect(payload.promotionStart).toBeUndefined(); // omitted
     });
 
     it('24. updateEvent strictly omits promotionStart even if caller supplies it, preserving all other canonical fields', async () => {
-      clientRequestMock.mockResolvedValueOnce({ id: 'ev-omit-promo' });
-      clientRequestMock.mockResolvedValueOnce({ id: 'ev-omit-promo' });
+      clientRequestMock.mockResolvedValueOnce({ ...publishFields, id: 'ev-omit-promo', status: 'published', startDate: '2026-11-20' }); // persisted getEventById
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-omit-promo' }); // updateItem
+      clientRequestMock.mockResolvedValueOnce({ id: 'ev-omit-promo' }); // read back
 
       await service.updateEvent('ev-omit-promo', {
         name: 'Paid DOP Event',
@@ -730,7 +752,7 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
         status: 'published',
       });
 
-      const payload = extractPayload(clientRequestMock.mock.calls[0][0]);
+      const payload = extractPayload(clientRequestMock.mock.calls[1][0]);
       expect(payload.promotionStart).toBeUndefined();
       expect(payload.name).toBe('Paid DOP Event');
       expect(payload.mode).toBe('single');
