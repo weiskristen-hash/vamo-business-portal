@@ -548,4 +548,84 @@ describe('AuthService', () => {
       expect(sessionStorage.getItem('vamo_expired_return_url')).toBeNull();
     });
   });
+
+  describe('Account Management', () => {
+    it('updateProfile calls updateMe, reloads current user, and emits new state', async () => {
+      const { directusClient } = await import('../directus/directus-client');
+      const updatedUser = {
+        id: 'u-1',
+        first_name: 'Kristen',
+        last_name: 'Weis',
+        email: 'kristen@example.com',
+      };
+
+      const requestSpy = vi.spyOn(directusClient, 'request').mockImplementation(async (action: any) => {
+        return updatedUser;
+      });
+
+      const res = await service.updateProfile({
+        first_name: '  Kristen  ',
+        last_name: '  Weis  ',
+        email: '  KRISTEN@example.com  ',
+      });
+
+      expect(res).toEqual(updatedUser);
+      expect(service.currentUser).toEqual(updatedUser);
+      expect(requestSpy).toHaveBeenCalled();
+    });
+
+    it('deleteAccount throws if unauthenticated', async () => {
+      const { directusClient } = await import('../directus/directus-client');
+      vi.spyOn(directusClient, 'getToken').mockResolvedValue(null);
+
+      await expect(service.deleteAccount()).rejects.toThrow('Not authenticated');
+    });
+
+    it('deleteAccount throws if deleteAccountFlow is not configured', async () => {
+      const { directusClient } = await import('../directus/directus-client');
+      const { runtimeConfig } = await import('../config/runtime-config');
+      vi.spyOn(directusClient, 'getToken').mockResolvedValue('test-token');
+      vi.spyOn(runtimeConfig, 'deleteAccountFlow', 'get').mockReturnValue('');
+
+      await expect(service.deleteAccount()).rejects.toThrow('DELETE_ACCOUNT_FLOW_NOT_CONFIGURED');
+    });
+
+    it('deleteAccount triggers canonical flow with Bearer token and clears session on success', async () => {
+      const { directusClient } = await import('../directus/directus-client');
+      const { runtimeConfig } = await import('../config/runtime-config');
+      vi.spyOn(directusClient, 'getToken').mockResolvedValue('valid-token');
+      vi.spyOn(runtimeConfig, 'deleteAccountFlow', 'get').mockReturnValue('flow-delete-123');
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 200 }));
+      const logoutSpy = vi.spyOn(service, 'logout').mockResolvedValue();
+
+      await service.deleteAccount();
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        expect.stringContaining('/flows/trigger/flow-delete-123'),
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer valid-token',
+            'Content-Type': 'application/json',
+          }),
+          body: '{}',
+        })
+      );
+      expect(logoutSpy).toHaveBeenCalledWith(false);
+    });
+
+    it('deleteAccount preserves session if flow fails', async () => {
+      const { directusClient } = await import('../directus/directus-client');
+      const { runtimeConfig } = await import('../config/runtime-config');
+      vi.spyOn(directusClient, 'getToken').mockResolvedValue('valid-token');
+      vi.spyOn(runtimeConfig, 'deleteAccountFlow', 'get').mockReturnValue('flow-delete-123');
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Error', { status: 500 }));
+      const logoutSpy = vi.spyOn(service, 'logout');
+
+      await expect(service.deleteAccount()).rejects.toThrow('Account deletion failed (500)');
+      expect(logoutSpy).not.toHaveBeenCalled();
+    });
+  });
 });
