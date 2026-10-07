@@ -417,7 +417,7 @@ textarea:focus-visible {
   border-color: rgba(245, 158, 11, 0.25);
 }
 
-.badge-archived {
+.badge-archived, .badge-neutral {
   background: var(--vamo-status-archived-bg);
   color: var(--vamo-status-archived);
   border-color: rgba(156, 163, 175, 0.25);

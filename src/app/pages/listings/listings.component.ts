@@ -8,6 +8,16 @@ import { CustomerErrorService } from '../../core/services/customer-error.service
 import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/event.model';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
+import {
+  getEventCoverImageUrl,
+  isEventActive,
+  isEventPast,
+  getEventStatusBadge,
+  formatEventSchedule,
+  formatEventTimeWindow,
+  calculateSharedEventStats,
+  canEditEvent,
+} from '../../core/utils/event-display.util';
 
 @Component({
   selector: 'app-listings',
@@ -305,10 +315,25 @@ import { TranslatePipe } from '../../core/i18n/translate.pipe';
             <div class="action-buttons">
               <!-- Edit Action -->
               <button
+                *ngIf="canEdit(event)"
                 type="button"
                 class="btn btn-secondary btn-sm action-btn edit-btn"
                 (click)="onEdit(event)"
                 [disabled]="actionInProgressId === event.id"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                <span>{{ 'PORTAL.LISTINGS.EDIT_BTN' | translate }}</span>
+              </button>
+
+              <button
+                *ngIf="!canEdit(event)"
+                type="button"
+                class="btn btn-secondary btn-sm action-btn edit-btn disabled"
+                disabled
+                [title]="'PORTAL.LISTINGS.ACTIONS.PAST_EVENT_TOOLTIP' | translate"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -1148,24 +1173,11 @@ export class ListingsComponent implements OnInit {
   }
 
   updateStats(): void {
-    let active = 0;
-    let draft = 0;
-    let past = 0;
-
-    for (const ev of this.events) {
-      if (ev.status === 'draft') {
-        draft++;
-      } else if (ev.status === 'published' && (ev.mode === 'recurring' || this.businessService.isEventUpcomingOrOngoing(ev))) {
-        active++;
-      } else {
-        past++;
-      }
-    }
-
+    const shared = calculateSharedEventStats(this.events, this.businessService);
     this.stats = {
-      active,
-      draft,
-      past,
+      active: shared.active,
+      draft: shared.draft,
+      past: shared.past,
     };
   }
 
@@ -1178,12 +1190,10 @@ export class ListingsComponent implements OnInit {
         return false;
       }
       if (this.statusFilter === 'active') {
-        const isActive = ev.status === 'published' && (ev.mode === 'recurring' || this.businessService.isEventUpcomingOrOngoing(ev));
-        if (!isActive) return false;
+        if (!isEventActive(ev, this.businessService)) return false;
       }
       if (this.statusFilter === 'past') {
-        const isPast = ev.status === 'archived' || (ev.status === 'published' && ev.mode !== 'recurring' && !this.businessService.isEventUpcomingOrOngoing(ev));
-        if (!isPast) return false;
+        if (!isEventPast(ev, this.businessService)) return false;
       }
 
       // 2. Category Filter
@@ -1247,97 +1257,20 @@ export class ListingsComponent implements OnInit {
   }
 
   getEventImageUrl(event: VamoEvent): string {
-    if (event.images && event.images.length > 0) {
-      const fileId = typeof event.images[0].directus_files_id === 'string'
-        ? event.images[0].directus_files_id
-        : (event.images[0].directus_files_id as any)?.id;
-      if (fileId) {
-        return this.businessService.getAssetUrl(fileId, 'width=600&height=400&fit=cover');
-      }
-    }
-    return '/assets/placeholder.png';
+    return getEventCoverImageUrl(event, this.businessService);
   }
 
   getStatusBadge(event: VamoEvent): { text: string; class: string } {
-    if (event.status === 'draft') {
-      return { text: this.i18n.t('PORTAL.LISTINGS.STATUS_DRAFT'), class: 'badge-warning' };
-    }
-    if (event.status === 'archived') {
-      return { text: this.i18n.t('PORTAL.LISTINGS.STATUS_ARCHIVED'), class: 'badge-neutral' };
-    }
-    const isOngoing = event.mode === 'recurring' || this.businessService.isEventUpcomingOrOngoing(event);
-    if (isOngoing) {
-      return { text: this.i18n.t('PORTAL.LISTINGS.STATUS_ACTIVE'), class: 'badge-success' };
-    }
-    return { text: this.i18n.t('PORTAL.LISTINGS.STATUS_PAST'), class: 'badge-neutral' };
+    const badge = getEventStatusBadge(event, this.businessService, this.i18n);
+    return { text: badge.text, class: badge.cssClass };
   }
 
   formatSchedule(event: VamoEvent): string {
-    if (event.mode === 'recurring') {
-      const days = (event.recurring as any)?.days;
-      if (Array.isArray(days) && days.length > 0) {
-        const localizedDays = days.map((d: string) => {
-          const shortKey = 'EVENTS.RECURRING.DAYS.' + d.toLowerCase();
-          const translatedShort = this.i18n.t(shortKey);
-          if (translatedShort && !translatedShort.startsWith('EVENTS.')) {
-            return translatedShort;
-          }
-          const fullKey = 'DAYS.' + this.normalizeDayToFull(d);
-          const translatedFull = this.i18n.t(fullKey);
-          if (translatedFull && !translatedFull.startsWith('DAYS.')) {
-            return translatedFull;
-          }
-          return d.charAt(0).toUpperCase() + d.slice(1);
-        }).join(', ');
-        const everyPrefix = this.i18n.t('EVENTS.RECURRING.EVERY');
-        return `${everyPrefix || 'Every'} ${localizedDays}`;
-      }
-      return this.i18n.t('PORTAL.LISTINGS.MODE_RECURRING');
-    }
-
-    if (!event.startDate) return this.i18n.t('PORTAL.LISTINGS.DATE_TBA');
-
-    const locale = this.i18n.dateLocale();
-    const start = new Date(event.startDate).toLocaleDateString(locale, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-
-    if (event.endDate) {
-      const end = new Date(event.endDate).toLocaleDateString(locale, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
-      return `${start} – ${end}`;
-    }
-
-    return start;
-  }
-
-  private normalizeDayToFull(d: string): string {
-    const map: Record<string, string> = {
-      mon: 'monday',
-      tue: 'tuesday',
-      wed: 'wednesday',
-      thu: 'thursday',
-      fri: 'friday',
-      sat: 'saturday',
-      sun: 'sunday',
-    };
-    return map[d.toLowerCase()] || d.toLowerCase();
+    return formatEventSchedule(event, this.i18n);
   }
 
   formatTimeWindow(event: VamoEvent): string {
-    if (event.allDay) return this.i18n.t('PORTAL.LISTINGS.ALL_DAY');
-    if (!event.from) return '';
-
-    const start = event.from.substring(0, 5);
-    if (event.openEnd || !event.to) return `${start} · ${this.i18n.t('PORTAL.LISTINGS.OPEN_END')}`;
-
-    const end = event.to.substring(0, 5);
-    return `${start} – ${end}`;
+    return formatEventTimeWindow(event, this.i18n);
   }
 
   formatPrice(event: VamoEvent): string {
@@ -1354,6 +1287,10 @@ export class ListingsComponent implements OnInit {
     return !!(event.is_main_banner || event.is_whats_hot);
   }
 
+  canEdit(event: VamoEvent): boolean {
+    return canEditEvent(event, this.businessService);
+  }
+
   onBoost(event: VamoEvent): void {
     this.router.navigate(['/app/promotions'], {
       queryParams: { eventId: event.id },
@@ -1361,6 +1298,10 @@ export class ListingsComponent implements OnInit {
   }
 
   onEdit(event: VamoEvent): void {
+    if (!this.canEdit(event)) {
+      this.error = this.i18n.t('PORTAL.LISTINGS.ERRORS.PAST_EVENT_NO_EDIT');
+      return;
+    }
     if (event.status === 'draft') {
       this.router.navigate(['/app/listings/create'], { queryParams: { eventId: event.id } });
     } else {

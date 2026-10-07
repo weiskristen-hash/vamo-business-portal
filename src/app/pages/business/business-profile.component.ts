@@ -8,6 +8,8 @@ import { CustomerErrorService } from '../../core/services/customer-error.service
 import { I18nService, BUSINESS_TYPES } from '../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { Provider, OpeningHour } from '../../core/models/provider.model';
+import { PhoneInputComponent } from '../../shared/components/phone-input/phone-input.component';
+import { isValidPhone, getWhatsAppUrl } from '../../core/utils/phone';
 
 export interface BusinessTypeOption {
   value: string;
@@ -23,7 +25,7 @@ export interface OfferingOption {
 @Component({
   selector: 'app-business-profile',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, TranslatePipe],
+  imports: [CommonModule, FormsModule, RouterModule, TranslatePipe, PhoneInputComponent],
   template: `
     <div class="profile-container">
       <!-- ── Loading State ─────────────────────────────────────────────── -->
@@ -476,18 +478,21 @@ export interface OfferingOption {
                 <!-- Phone -->
                 <div class="form-group">
                   <label class="form-label" for="field-phone">{{ 'PORTAL.PROFILE.PHONE_LABEL' | translate }}</label>
-                  <input
+                  <app-phone-input
                     id="field-phone"
-                    type="tel"
-                    class="form-control"
-                    [class.is-invalid]="touched.phone && !isPhoneValid(form().phone)"
+                    name="phone"
                     [(ngModel)]="form().phone"
-                    (blur)="touched.phone = true; markDirty()"
-                    [placeholder]="'PORTAL.PROFILE.PHONE_PLACEHOLDER' | translate"
-                  />
+                    (blurred)="touched.phone = true; markDirty()"
+                    [isInvalid]="touched.phone && !isPhoneValid(form().phone)"
+                  ></app-phone-input>
                   <p *ngIf="touched.phone && !isPhoneValid(form().phone)" class="form-error">
                     {{ 'PORTAL.PROFILE.PHONE_INVALID' | translate }}
                   </p>
+                  <div class="phone-link-wrap" *ngIf="form().phone && isPhoneValid(form().phone)">
+                    <a [href]="'tel:' + form().phone" class="phone-test-link">
+                      📞 {{ form().phone }}
+                    </a>
+                  </div>
                 </div>
 
                 <!-- WhatsApp -->
@@ -496,15 +501,13 @@ export interface OfferingOption {
                     <span>{{ 'PORTAL.PROFILE.WHATSAPP_LABEL' | translate }}</span>
                     <span class="wa-badge">{{ 'PORTAL.PROFILE.WHATSAPP_BADGE' | translate }}</span>
                   </label>
-                  <input
+                  <app-phone-input
                     id="field-wa"
-                    type="tel"
-                    class="form-control"
-                    [class.is-invalid]="touched.waNumber && !isPhoneValid(form().wa_number)"
+                    name="wa_number"
                     [(ngModel)]="form().wa_number"
-                    (blur)="touched.waNumber = true; markDirty()"
-                    [placeholder]="'PORTAL.PROFILE.WHATSAPP_PLACEHOLDER' | translate"
-                  />
+                    (blurred)="touched.waNumber = true; markDirty()"
+                    [isInvalid]="touched.waNumber && !isPhoneValid(form().wa_number)"
+                  ></app-phone-input>
                   <div class="wa-footer">
                     <p *ngIf="touched.waNumber && !isPhoneValid(form().wa_number)" class="form-error">
                       {{ 'PORTAL.PROFILE.WHATSAPP_INVALID' | translate }}
@@ -2317,8 +2320,7 @@ export class BusinessProfileComponent implements OnInit {
 
   isPhoneValid(phone: string | null | undefined): boolean {
     if (!phone || !phone.trim()) return true;
-    const cleaned = phone.replace(/[\s\-\(\)\.]/g, '');
-    return /^\+?[0-9]{7,15}$/.test(cleaned);
+    return isValidPhone(phone);
   }
 
   isFormValid(): boolean {

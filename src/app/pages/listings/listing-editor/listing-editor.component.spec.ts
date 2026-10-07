@@ -79,11 +79,17 @@ describe('ListingEditorComponent', () => {
 
     businessServiceSpy = {
       drTodayStr: vi.fn().mockReturnValue('2026-10-01'),
+      isEventUpcomingOrOngoing: vi.fn((ev: any) => {
+        const last = ev.endDate || ev.startDate;
+        const lastStr = typeof last === 'string' ? last.split('T')[0] : last?.toISOString()?.split('T')[0];
+        return !!lastStr && lastStr >= '2026-10-01';
+      }),
       getAreas: vi.fn().mockResolvedValue([...mockAreas]),
       getEventById: vi.fn().mockResolvedValue({ ...mockExistingEvent }),
       getAssetUrl: vi.fn((id: string) => `https://api.vamo-app.com/assets/${id}`),
       createEvent: vi.fn().mockResolvedValue({ id: 'ev-new-created', ...mockExistingEvent }),
       updateEvent: vi.fn().mockResolvedValue({ ...mockExistingEvent }),
+      duplicateEventAsDraft: vi.fn().mockResolvedValue('ev-dup-new'),
     };
 
     await TestBed.configureTestingModule({
@@ -843,6 +849,135 @@ describe('ListingEditorComponent', () => {
       expect(component.locationError).toBe(i18nService.t('PORTAL.EVENT_EDITOR.VALIDATION.GEO_FAILED'));
       expect(component.locationError).not.toContain('User denied');
       expect(component.locationError).not.toMatch(/:\s*$/);
+    });
+  });
+
+  describe('Scheduling, Past Events, and Image Requirement', () => {
+    it('should calculate minStartDate from drTodayStr() on new listing', () => {
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-15');
+
+      expect(component.minStartDate).toBe('2026-10-15');
+    });
+
+    it('should reject start date in the past with inline error and error message', () => {
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-15');
+
+      component.draft.name = 'Test Event';
+      component.draft.category = 'sports';
+      component.draft.description = 'Valid Description of 10+ characters';
+      component.draft.startDate = '2026-10-10'; // In the past
+      component.onStartDateChange();
+
+      expect(component.scheduleErrors['startDate']).toBe('PORTAL.LISTINGS.ERRORS.START_DATE_PAST');
+      expect(component.validateForm(false)).toBe(false);
+      expect(component.errorMessage).toBe('Start date cannot be in the past.');
+    });
+
+    it('should validate end date and time together (same-day end time cannot precede start time)', () => {
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-15');
+
+      component.draft.startDate = '2026-10-20';
+      component.draft.allDay = false;
+      component.draft.openEnd = false;
+      component.draft.from = '22:00';
+      component.draft.to = '02:00';
+      component.multiDay = false;
+
+      component.onTimeChange();
+
+      expect(component.scheduleErrors['to']).toBe('PORTAL.LISTINGS.ERRORS.END_TIME_BEFORE_START');
+      expect(component.validateCurrentSchedule(false)).toBe(false);
+    });
+
+    it('should allow earlier end clock time when end date is greater than start date', () => {
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-15');
+
+      component.draft.startDate = '2026-10-20';
+      component.multiDay = true;
+      component.draft.endDate = '2026-10-21';
+      component.draft.allDay = false;
+      component.draft.openEnd = false;
+      component.draft.from = '22:00';
+      component.draft.to = '02:00'; // Overnight to next day
+
+      component.onTimeChange();
+
+      expect(component.scheduleErrors['to']).toBeUndefined();
+      expect(component.validateCurrentSchedule(false)).toBe(true);
+    });
+
+    it('should display required star beside media section title and dropzone button', async () => {
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      const stars = fixture.nativeElement.querySelectorAll('.required-star');
+      expect(stars.length).toBeGreaterThanOrEqual(2);
+
+      const sectionTitle = fixture.nativeElement.querySelector('.section-header .section-title');
+      expect(sectionTitle).toBeTruthy();
+    });
+
+    it('should detect past event, lock dates, show read-only banner, and block edits', async () => {
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-15');
+      const pastEvent: VamoEvent = {
+        id: 'past-123',
+        name: 'Old Beach Party',
+        status: 'published',
+        startDate: '2026-09-01',
+        endDate: '2026-09-02',
+      };
+      businessServiceSpy.getEventById.mockResolvedValue(pastEvent);
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      component.eventId = 'past-123';
+      component.isEditMode = true;
+
+      await component.loadExistingEvent('past-123');
+      fixture.detectChanges();
+
+      expect(component.isPastEvent).toBe(true);
+      expect(component.datesLocked).toBe(true);
+
+      const pastAlert = fixture.nativeElement.querySelector('.alert-warning');
+      expect(pastAlert).toBeTruthy();
+      expect(pastAlert.textContent).toContain('Past Event');
+
+      expect(component.validateForm(false)).toBe(false);
+      expect(component.errorMessage).toBe('Past events cannot be edited. Please copy as a new listing instead.');
+    });
+
+    it('should copy past event as new draft and navigate to editor', async () => {
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-15');
+      const pastEvent: VamoEvent = {
+        id: 'past-123',
+        name: 'Old Beach Party',
+        status: 'published',
+        startDate: '2026-09-01',
+      };
+      businessServiceSpy.getEventById.mockResolvedValue(pastEvent);
+      businessServiceSpy.duplicateEventAsDraft.mockResolvedValue('new-copy-id');
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      component.eventId = 'past-123';
+      component.isEditMode = true;
+
+      await component.loadExistingEvent('past-123');
+      await component.copyPastEvent();
+
+      expect(businessServiceSpy.duplicateEventAsDraft).toHaveBeenCalledWith(pastEvent);
+      expect(router.navigate).toHaveBeenCalledWith(['/app/listings/edit', 'new-copy-id']);
     });
   });
 

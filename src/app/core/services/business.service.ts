@@ -5,6 +5,7 @@ import { runtimeConfig } from '../config/runtime-config';
 import { Provider } from '../models/provider.model';
 import { VamoEvent, ProviderEventStats, Area } from '../models/event.model';
 import { AuthService } from './auth.service';
+import { calculateSharedEventStats, isEventPast } from '../utils/event-display.util';
 
 @Injectable({
   providedIn: 'root',
@@ -607,9 +608,14 @@ export class BusinessService {
     files: File[] = [],
     removedImageJunctionIds: (number | string)[] = [],
     areaIds?: string[],
-    existingAreaJunctionIds: (number | string)[] = []
+    existingAreaJunctionIds: (number | string)[] = [],
+    existingEvent?: VamoEvent
   ): Promise<VamoEvent> {
     if (!eventId) throw new Error('Event ID is required');
+
+    if (existingEvent && isEventPast(existingEvent, this)) {
+      throw new Error('PAST_EVENT_READ_ONLY');
+    }
 
     return this.authService.safeRequest(async () => {
       const payload: Record<string, any> = {};
@@ -738,6 +744,8 @@ export class BusinessService {
         address: event.address ?? null,
         category: event.category,
         mode: event.mode,
+        startDate: null,
+        endDate: null,
         from: event.from,
         to: event.to,
         allDay: event.allDay,
@@ -830,16 +838,7 @@ export class BusinessService {
    * Computes stats summary for the provider's events.
    */
   calculateStats(events: VamoEvent[]): ProviderEventStats {
-    const published = events.filter((e) => e.status === 'published').length;
-    const draft = events.filter((e) => e.status === 'draft').length;
-    const archived = events.filter((e) => e.status === 'archived').length;
-
-    return {
-      total: events.length,
-      published,
-      draft,
-      archived,
-    };
+    return calculateSharedEventStats(events, this);
   }
 
   /**

@@ -185,6 +185,23 @@ describe('ListingsComponent', () => {
     expect(router.navigate).toHaveBeenCalledWith(['/app/listings/edit', 'ev-1']);
   });
 
+  it('prevents editing past events, displaying error and keeping Copy enabled', async () => {
+    (router.navigate as any).mockClear();
+    const pastEvent = mockEvents[3]; // archived
+    expect(component.canEdit(pastEvent)).toBe(false);
+
+    component.onEdit(pastEvent);
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(component.error).toBe('Past events cannot be edited. Please copy as a new listing instead.');
+
+    // Duplicating past event is allowed
+    await component.onDuplicate(pastEvent);
+    expect(businessServiceSpy.duplicateEventAsDraft).toHaveBeenCalledWith(pastEvent);
+    expect(router.navigate).toHaveBeenCalledWith(['/app/listings/create'], {
+      queryParams: { eventId: 'ev-new-copy' },
+    });
+  });
+
   it('should duplicate an event as draft and route to edit wizard', async () => {
     await component.onDuplicate(mockEvents[0]);
     expect(businessServiceSpy.duplicateEventAsDraft).toHaveBeenCalledWith(mockEvents[0]);

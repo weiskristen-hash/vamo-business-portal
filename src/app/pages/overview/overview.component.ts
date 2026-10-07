@@ -1,6 +1,6 @@
 import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { RouterModule, Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
 import { CustomerErrorService } from '../../core/services/customer-error.service';
@@ -9,6 +9,15 @@ import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { VamoUser } from '../../core/models/user.model';
 import { Provider } from '../../core/models/provider.model';
 import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
+import {
+  getEventCoverImageUrl,
+  isEventPast,
+  getEventStatusBadge,
+  EventStatusBadge,
+  formatEventSchedule,
+  formatEventTimeWindow,
+  canEditEvent,
+} from '../../core/utils/event-display.util';
 
 @Component({
   selector: 'app-overview',
@@ -77,7 +86,7 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
               <span class="summary-label">{{ 'PORTAL.OVERVIEW.STAT_LIVE_POSTS' | translate }}</span>
               <span class="summary-icon icon-live">●</span>
             </div>
-            <div class="summary-value">{{ stats.published }}</div>
+            <div class="summary-value">{{ stats.active !== undefined ? stats.active : stats.published }}</div>
             <div class="summary-footer">
               <span class="badge badge-published">{{ 'PORTAL.OVERVIEW.STAT_LIVE_BADGE' | translate }}</span>
             </div>
@@ -220,15 +229,10 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
               <div *ngFor="let ev of recentEvents" class="post-row">
                 <div class="post-thumb">
                   <img
-                    *ngIf="getEventThumbUrl(ev) as thumb; else noThumb"
-                    [src]="thumb"
+                    [src]="getEventThumbUrl(ev)"
                     [alt]="ev.name"
+                    loading="lazy"
                   />
-                  <ng-template #noThumb>
-                    <div class="post-thumb-fallback">
-                      <span>VAMO</span>
-                    </div>
-                  </ng-template>
                 </div>
 
                 <div class="post-details">
@@ -241,21 +245,70 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
                         <line x1="8" y1="2" x2="8" y2="6"></line>
                         <line x1="3" y1="10" x2="21" y2="10"></line>
                       </svg>
-                      {{ formatDate(ev.startDate) }}
+                      {{ formatSchedule(ev) }}
                     </span>
-                    <span *ngIf="ev.from" class="post-time">{{ 'PORTAL.OVERVIEW.AT_TIME' | translate: { time: ev.from } }}</span>
-                    <span *ngIf="ev.mode === 'recurring'" class="recurring-pill">{{ 'PORTAL.OVERVIEW.RECURRING_PILL' | translate }}</span>
+                    <span *ngIf="formatTimeWindow(ev)" class="post-time">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                      </svg>
+                      {{ formatTimeWindow(ev) }}
+                    </span>
                   </div>
                 </div>
 
                 <div class="post-status">
-                  <span class="badge" [ngClass]="'badge-' + ev.status">
-                    {{ getStatusLabel(ev.status) }}
+                  <span class="badge" [ngClass]="getStatusBadge(ev).cssClass">
+                    {{ getStatusBadge(ev).text }}
                   </span>
                 </div>
 
-                <div class="post-action">
-                  <span class="post-action-hint">{{ 'PORTAL.OVERVIEW.READ_ONLY_HINT' | translate }}</span>
+                <div class="post-actions">
+                  <!-- Edit Action -->
+                  <button
+                    *ngIf="canEdit(ev)"
+                    type="button"
+                    class="btn btn-secondary btn-sm action-btn edit-btn"
+                    (click)="onEdit(ev)"
+                    [disabled]="actionInProgressId === ev.id"
+                    [title]="'PORTAL.LISTINGS.ACTIONS.EDIT' | translate"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    <span>{{ 'PORTAL.LISTINGS.ACTIONS.EDIT' | translate }}</span>
+                  </button>
+
+                  <button
+                    *ngIf="!canEdit(ev)"
+                    type="button"
+                    class="btn btn-secondary btn-sm action-btn edit-btn disabled"
+                    disabled
+                    [title]="'PORTAL.LISTINGS.ACTIONS.PAST_EVENT_TOOLTIP' | translate"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    <span>{{ 'PORTAL.LISTINGS.ACTIONS.EDIT' | translate }}</span>
+                  </button>
+
+                  <!-- Duplicate / Copy Action -->
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm action-btn duplicate-btn"
+                    (click)="onDuplicate(ev)"
+                    [disabled]="actionInProgressId === ev.id"
+                    [title]="'PORTAL.LISTINGS.ACTIONS.COPY' | translate"
+                  >
+                    <svg *ngIf="actionInProgressId !== ev.id" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <span *ngIf="actionInProgressId === ev.id" class="spinner-inline"></span>
+                    <span>{{ 'PORTAL.LISTINGS.ACTIONS.COPY' | translate }}</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -713,9 +766,37 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
       flex-shrink: 0;
     }
 
-    .post-action-hint {
-      font-size: 0.75rem;
-      color: var(--vamo-text-dim);
+    .post-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .action-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.8rem;
+      padding: 6px 10px;
+      font-weight: 500;
+    }
+
+    .action-btn.disabled,
+    .action-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .spinner-inline {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
     }
 
     /* Responsive Breakpoints */
@@ -750,9 +831,12 @@ import { VamoEvent, ProviderEventStats } from '../../core/models/event.model';
       .post-row {
         padding: 14px 16px;
         gap: 12px;
+        flex-wrap: wrap;
       }
-      .post-action-hint {
-        display: none;
+      .post-actions {
+        width: 100%;
+        justify-content: flex-end;
+        margin-top: 4px;
       }
     }
   `],
@@ -762,6 +846,7 @@ export class OverviewComponent implements OnInit {
   businessService = inject(BusinessService);
   customerErrorService = inject(CustomerErrorService);
   i18n = inject(I18nService);
+  router = inject(Router);
   cdr = inject(ChangeDetectorRef);
 
   user: VamoUser | null = null;
@@ -770,11 +855,14 @@ export class OverviewComponent implements OnInit {
   loading = true;
   error = '';
   hasInitialized = false;
+  actionInProgressId: string | null = null;
 
   stats: ProviderEventStats = {
     total: 0,
     published: 0,
+    active: 0,
     draft: 0,
+    past: 0,
     archived: 0,
   };
 
@@ -851,10 +939,55 @@ export class OverviewComponent implements OnInit {
     return name.slice(0, 2).toUpperCase();
   }
 
-  getEventThumbUrl(event: VamoEvent): string | null {
-    const firstImg = event.images?.[0]?.directus_files_id;
-    if (!firstImg) return null;
-    return this.businessService.getAssetUrl(firstImg, 'width=100&height=100&fit=cover');
+  getEventThumbUrl(event: VamoEvent): string {
+    return getEventCoverImageUrl(event, this.businessService, 'width=100&height=100&fit=cover');
+  }
+
+  getStatusBadge(event: VamoEvent): EventStatusBadge {
+    return getEventStatusBadge(event, this.businessService, this.i18n);
+  }
+
+  formatSchedule(event: VamoEvent): string {
+    return formatEventSchedule(event, this.i18n);
+  }
+
+  formatTimeWindow(event: VamoEvent): string {
+    return formatEventTimeWindow(event, this.i18n);
+  }
+
+  canEdit(event: VamoEvent): boolean {
+    return canEditEvent(event, this.businessService);
+  }
+
+  onEdit(event: VamoEvent): void {
+    if (!this.canEdit(event)) {
+      this.error = this.i18n.t('PORTAL.LISTINGS.ERRORS.PAST_EVENT_NO_EDIT');
+      return;
+    }
+    if (event.status === 'draft') {
+      this.router.navigate(['/app/listings/create'], { queryParams: { eventId: event.id } });
+    } else {
+      this.router.navigate(['/app/listings/edit', event.id]);
+    }
+  }
+
+  async onDuplicate(event: VamoEvent): Promise<void> {
+    const user = this.authService.currentUser;
+    const providerId = user?.provider_link?.id;
+    if (!providerId) return;
+
+    this.actionInProgressId = event.id;
+    this.cdr.markForCheck();
+
+    try {
+      const newId = await this.businessService.duplicateEventAsDraft(event);
+      this.router.navigate(['/app/listings/create'], { queryParams: { eventId: newId } });
+    } catch (err: any) {
+      this.error = this.customerErrorService.toCustomerMessage(err, 'save');
+    } finally {
+      this.actionInProgressId = null;
+      this.cdr.markForCheck();
+    }
   }
 
   formatDate(dateStr?: string | null): string {

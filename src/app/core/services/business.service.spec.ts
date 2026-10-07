@@ -257,4 +257,27 @@ describe('BusinessService', () => {
       expect(payload['website']).toBeUndefined();
     });
   });
+
+  describe('Event Lifecycle & Scheduling Hardening', () => {
+    it('should include active and past counts in calculateStats', () => {
+      const stats = service.calculateStats(mockEvents);
+      expect(stats.active).toBe(2);
+      expect(stats.past).toBe(1); // event-4 is archived
+      expect(stats.total).toBe(4);
+    });
+
+    it('should throw PAST_EVENT_READ_ONLY error when updateEvent is called on a past event', async () => {
+      const pastEvent: VamoEvent = {
+        id: 'past-event-1',
+        name: 'Past Party',
+        status: 'published',
+        startDate: '2020-01-01',
+        endDate: '2020-01-02',
+      };
+
+      await expect(
+        service.updateEvent('past-event-1', { name: 'Attempted Change' }, [], [], undefined, [], pastEvent)
+      ).rejects.toThrow('PAST_EVENT_READ_ONLY');
+    });
+  });
 });
