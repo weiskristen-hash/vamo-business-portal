@@ -8,6 +8,12 @@ import {
   DEFAULT_COUNTRY,
 } from './phone';
 
+it.each(['+1 416 555 0199', '0016045550199', '19425550199'])('detects Canadian NANP number %s', value => {
+  const parsed = parsePhone(value);
+  expect(parsed.country.iso2).toBe('CA');
+  expect(formatE164(parsed.country, parsed.nationalNumber)).toBe('+' + value.replace(/\D/g, '').replace(/^00/, ''));
+});
+
 describe('Phone Utilities', () => {
   it('defaults to Dominican Republic (+1) for empty or undefined input', () => {
     const resEmpty = parsePhone('');

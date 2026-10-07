@@ -32,6 +32,13 @@ export const COUNTRIES: CountryInfo[] = [
     nameEs: 'Canadá',
     dialCode: '1',
     flag: '🇨🇦',
+    // Canadian Numbering Administrator, https://www.cnac.ca/co_codes/co_code_status.htm
+    areaCodes: ['204', '226', '236', '249', '250', '257', '263', '273', '289', '306',
+      '343', '354', '365', '367', '368', '382', '403', '416', '418', '428', '431',
+      '437', '438', '450', '468', '474', '506', '514', '519', '548', '579', '581',
+      '584', '587', '604', '613', '639', '647', '672', '683', '705', '709', '742',
+      '753', '778', '780', '782', '807', '819', '825', '867', '873', '879', '902',
+      '905', '942'],
     placeholder: '(416) 555-0199',
   },
   {
@@ -227,25 +234,9 @@ export function parsePhone(value: string | null | undefined): {
     // Check if starts with +1
     if (cleaned.startsWith('+1')) {
       const rest = digitsOnly.substring(1); // digits after +1
-      // Check DO area codes: 809, 829, 849
-      if (rest.startsWith('809') || rest.startsWith('829') || rest.startsWith('849')) {
-        return { country: COUNTRIES.find((c) => c.iso2 === 'DO') || DEFAULT_COUNTRY, nationalNumber: rest, originalValue };
-      }
-      // Check PR area codes
-      if (rest.startsWith('787') || rest.startsWith('939')) {
-        return { country: COUNTRIES.find((c) => c.iso2 === 'PR') || DEFAULT_COUNTRY, nationalNumber: rest, originalValue };
-      }
-      // Check JM area codes
-      if (rest.startsWith('876') || rest.startsWith('658')) {
-        return { country: COUNTRIES.find((c) => c.iso2 === 'JM') || DEFAULT_COUNTRY, nationalNumber: rest, originalValue };
-      }
-      // Check BS area codes
-      if (rest.startsWith('242')) {
-        return { country: COUNTRIES.find((c) => c.iso2 === 'BS') || DEFAULT_COUNTRY, nationalNumber: rest, originalValue };
-      }
-      // Check CA common area codes or fallback to US / DO
-      const usCountry = COUNTRIES.find((c) => c.iso2 === 'US') || DEFAULT_COUNTRY;
-      return { country: usCountry, nationalNumber: rest, originalValue };
+      const country = COUNTRIES.find(c => c.dialCode === '1' && c.areaCodes?.includes(rest.substring(0, 3)))
+        || COUNTRIES.find(c => c.iso2 === 'US')!;
+      return { country, nationalNumber: rest, originalValue };
     }
 
     // Match longer dial codes first (e.g. 509, 506, 507, 34, 52, etc.)
@@ -268,11 +259,9 @@ export function parsePhone(value: string | null | undefined): {
   // Check if starts with 1 followed by 10 digits (e.g. 18095550123)
   if (digitsOnly.length === 11 && digitsOnly.startsWith('1')) {
     const rest = digitsOnly.substring(1);
-    if (rest.startsWith('809') || rest.startsWith('829') || rest.startsWith('849')) {
-      return { country: DEFAULT_COUNTRY, nationalNumber: rest, originalValue };
-    }
-    const usCountry = COUNTRIES.find((c) => c.iso2 === 'US') || DEFAULT_COUNTRY;
-    return { country: usCountry, nationalNumber: rest, originalValue };
+    const country = COUNTRIES.find(c => c.dialCode === '1' && c.areaCodes?.includes(rest.substring(0, 3)))
+      || COUNTRIES.find(c => c.iso2 === 'US')!;
+    return { country, nationalNumber: rest, originalValue };
   }
 
   // Check if 10 digits starting with 809, 829, 849 (Dominican local without country code)

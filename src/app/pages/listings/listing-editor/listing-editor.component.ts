@@ -8,8 +8,8 @@ import { CustomerErrorService } from '../../../core/services/customer-error.serv
 import { VamoEvent, Area, EVENT_CATEGORIES, EventCategory } from '../../../core/models/event.model';
 import { I18nService } from '../../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../../core/i18n/translate.pipe';
-import { isEventPast, parseLocalDate } from '../../../core/utils/event-display.util';
-import { validateSchedule, getDrCurrentDateTime } from '../../../core/utils/date-validation.util';
+import { isEventPast, parseLocalDate, validateEventForPublish, validateEventSchedule, scheduleErrorMessageKey } from '../../../core/utils/event-display.util';
+import { getDrCurrentDateTime } from '../../../core/utils/date-validation.util';
 
 export interface ExistingImage {
   junctionId: number | string;
@@ -2095,44 +2095,22 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   validateCurrentSchedule(isPublish = false): boolean {
-    const recurringDays = Array.isArray((this.draft.recurring as any)?.days)
-      ? (this.draft.recurring as any).days
-      : [];
-    const isOngoing = this.isEditMode && this.originalEvent
-      ? this.businessService.isEventUpcomingOrOngoing(this.originalEvent)
-      : false;
-
-    const res = validateSchedule({
-      mode: this.draft.mode || 'single',
-      startDate: this.draft.startDate,
+    const res = validateEventSchedule({
+      ...this.draft,
       endDate: this.multiDay ? this.draft.endDate : undefined,
-      multiDay: this.multiDay,
-      allDay: this.draft.allDay,
-      openEnd: this.draft.openEnd,
-      from: this.draft.from,
-      to: this.draft.to,
-      recurringDays,
-      forPublish: isPublish,
-      isEditMode: this.isEditMode,
-      originalStartDate: this.originalStartDate,
-      isOngoing,
+    }, isPublish, {
+      originalEvent: this.isEditMode ? this.originalEvent : undefined,
       todayStr: this.businessService.drTodayStr(),
     });
-
+    // A checked multi-day form must also require its end date when publishing.
+    if (isPublish && this.draft.mode !== 'recurring' && this.multiDay && !this.draft.endDate && res.valid) {
+      res.valid = false;
+      res.field = 'endDate';
+      res.errorCode = 'END_DATE_REQUIRED';
+    }
     this.scheduleErrors = {};
     if (!res.valid && res.field && res.errorCode) {
-      const codeMap: Record<string, string> = {
-        START_DATE_REQUIRED: 'PORTAL.EVENT_EDITOR.VALIDATION.START_DATE_REQUIRED',
-        START_DATE_PAST_ERROR: 'PORTAL.LISTINGS.ERRORS.START_DATE_PAST',
-        START_TIME_PAST_ERROR: 'PORTAL.LISTINGS.ERRORS.START_TIME_PAST',
-        END_DATE_REQUIRED: 'PORTAL.EVENT_EDITOR.VALIDATION.END_DATE_REQUIRED',
-        END_DATE_BEFORE_START_ERROR: 'PORTAL.LISTINGS.ERRORS.END_DATE_BEFORE_START',
-        START_TIME_REQUIRED: 'PORTAL.EVENT_EDITOR.VALIDATION.START_TIME_REQUIRED',
-        END_TIME_REQUIRED: 'PORTAL.EVENT_EDITOR.VALIDATION.END_TIME_REQUIRED',
-        END_TIME_BEFORE_START_ERROR: 'PORTAL.LISTINGS.ERRORS.END_TIME_BEFORE_START',
-        WEEKDAYS_REQUIRED: 'PORTAL.EVENT_EDITOR.VALIDATION.WEEKDAYS_REQUIRED',
-      };
-      this.scheduleErrors[res.field] = codeMap[res.errorCode] || res.errorCode;
+      this.scheduleErrors[res.field] = scheduleErrorMessageKey(res.errorCode);
     }
     return res.valid;
   }
@@ -2490,42 +2468,23 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       return false;
     }
 
-    if (forPublish) {
-      const hasImages = this.existingImages.length > 0 || this.selectedNewFiles.length > 0;
-      if (!hasImages) {
-        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.PHOTO_REQUIRED');
-        return false;
-      }
-
-      if (!this.draft.address?.trim()) {
-        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.ADDRESS_REQUIRED');
-        return false;
-      }
-
-      if (!this.selectedAreaId) {
-        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.AREA_REQUIRED');
-        return false;
-      }
+    if (!this.validateCurrentSchedule(forPublish)) {
+      const key = Object.values(this.scheduleErrors).find(Boolean);
+      if (key) this.errorMessage = this.i18n.t(key);
+      return false;
     }
-
-    // Comprehensive schedule validation (drafts allow incomplete entered valid scheduling, publish requires full valid)
-    const scheduleValid = this.validateCurrentSchedule(forPublish);
-    if (!scheduleValid) {
-      const firstErrorKey = Object.values(this.scheduleErrors).find(Boolean);
-      if (firstErrorKey) {
-        this.errorMessage = this.i18n.t(firstErrorKey);
-        return false;
-      }
-    }
-
     if (forPublish) {
-      if (!this.draft.isFree && !this.draft.contactForPrice && (!this.draft.price || Number(this.draft.price) <= 0)) {
-        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.PRICE_INVALID');
-        return false;
-      }
-
-      if (this.draft.hasPromotion && !this.draft.promoText?.trim()) {
-        this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.PROMO_TEXT_REQUIRED');
+      const validation = validateEventForPublish({
+        ...this.draft,
+        endDate: this.multiDay ? this.draft.endDate : undefined,
+      }, {
+        originalEvent: this.isEditMode ? this.originalEvent : undefined,
+        hasImages: this.existingImages.length > 0 || this.selectedNewFiles.length > 0,
+        areaIds: this.selectedAreaId ? [this.selectedAreaId] : [],
+        todayStr: this.businessService.drTodayStr(),
+      });
+      if (!validation.valid) {
+        this.errorMessage = this.i18n.t(validation.messageKey);
         return false;
       }
     }
@@ -2574,10 +2533,8 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         }
       }
 
-      // Revalidate schedule against current DR clock right before write
-      if (status === 'published' && !this.validateCurrentSchedule(true)) {
-        const firstErrorKey = Object.values(this.scheduleErrors).find(Boolean);
-        this.errorMessage = firstErrorKey ? this.i18n.t(firstErrorKey) : this.i18n.t('PORTAL.LISTINGS.ERRORS.START_DATE_PAST');
+      // Revalidate all fields against the current DR clock right before write.
+      if (!this.validateForm(status === 'published')) {
         this.submitting = false;
         this.cdr.markForCheck();
         return;
@@ -2592,6 +2549,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         startDate: this.draft.startDate || undefined,
         endDate: this.multiDay ? (this.draft.endDate || undefined) : undefined,
         allDay: this.draft.allDay,
+        openEnd: this.draft.openEnd,
         from: this.draft.allDay ? undefined : (this.draft.from || undefined),
         to: this.draft.openEnd ? undefined : (this.draft.to || undefined),
         recurring: this.draft.mode === 'recurring' ? this.draft.recurring : { days: [] },

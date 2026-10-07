@@ -19,6 +19,27 @@ describe('PhoneInputComponent', () => {
     fixture.detectChanges();
   });
 
+  it('detects Canadian numbers when loaded, pasted and echoed by the form', () => {
+    let emitted = '';
+    component.registerOnChange(value => { emitted = value; component.writeValue(value); });
+    component.writeValue('+1 416 555 0199');
+    expect(component.selectedCountry.iso2).toBe('CA');
+    component.onPaste({ preventDefault: vi.fn(), clipboardData: { getData: () => '+1 604 555 0199' } } as any);
+    expect(component.selectedCountry.iso2).toBe('CA');
+    expect(emitted).toBe('+16045550199');
+    expect(component.nationalNumber).toBe('6045550199');
+  });
+
+  it('keeps a manual country choice through empty and ambiguous shared-code form echoes', () => {
+    component.registerOnChange(value => component.writeValue(value));
+    component.onCountryChange('CA');
+    expect(component.selectedCountry.iso2).toBe('CA');
+    component.onNationalNumberChange('8005550199');
+    expect(component.selectedCountry.iso2).toBe('CA');
+    component.writeValue('+34612345678');
+    expect(component.selectedCountry.iso2).toBe('ES');
+  });
+
   it('creates the phone input component and defaults to Dominican Republic (+1)', () => {
     expect(component).toBeTruthy();
     expect(component.selectedCountry.iso2).toBe('DO');

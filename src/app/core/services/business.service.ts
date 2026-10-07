@@ -564,6 +564,10 @@ export class BusinessService {
     areaIds: string[] = []
   ): Promise<VamoEvent> {
     return this.authService.safeRequest(async () => {
+      if (data.status === 'published') {
+        const validation = validateEventForPublish(data, { hasImages: files.length > 0, areaIds });
+        if (!validation.valid) throw new Error(validation.errorCode || 'INCOMPLETE_EVENT_DRAFT');
+      }
       // 1. Build canonical payload matching create-event.page.ts buildPayload()
       const payload: Record<string, any> = {
         name: data.name ?? undefined,
@@ -665,16 +669,20 @@ export class BusinessService {
         throw new Error('PAST_EVENT_READ_ONLY');
       }
 
-      // Revalidate scheduling constraints at the write boundary if target status is published
       const targetStatus = data.status || persisted.status;
       if (targetStatus === 'published') {
-        const mergedForValidation: Partial<VamoEvent> = {
-          ...persisted,
-          ...data,
-        };
-        if (this.isEventPast(mergedForValidation)) {
-          throw new Error('SCHEDULE_PAST_ERROR');
-        }
+        const retainedImages = persisted.images?.filter(image =>
+          !removedImageJunctionIds.some(id => String(id) === String(image.id))
+        ) || [];
+        const validation = validateEventForPublish({ ...persisted, ...data, images: retainedImages }, {
+          originalEvent: persisted,
+          hasImages: files.length > 0 || retainedImages.some(image => {
+            const file = image.directus_files_id;
+            return typeof file === 'string' ? !!file : !!file?.id;
+          }),
+          areaIds,
+        });
+        if (!validation.valid) throw new Error(validation.errorCode || 'INCOMPLETE_EVENT_DRAFT');
       }
 
       const payload: Record<string, any> = {};

@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { BusinessService } from './business.service';
 import { AuthService } from './auth.service';
+import { directusClient } from '../directus/directus-client';
 import { VamoEvent } from '../models/event.model';
 
 describe('BusinessService', () => {
@@ -322,5 +323,58 @@ describe('BusinessService', () => {
 
       await expect(service.publishEvent('incomplete-draft-1')).rejects.toThrow('DESC_MIN');
     });
+  });  describe('publish write validation', () => {
+    const valid: VamoEvent = {
+      id: 'valid-draft', status: 'draft', name: 'Complete draft event', category: 'music',
+      description: 'Full description for this event', address: 'Calle Principal 12',
+      areas: [{ areas_id: 'area-lt' }], images: [{ id: 42, directus_files_id: 'file-123' }],
+      mode: 'single', startDate: '2026-10-08', from: '19:00', to: '22:00', isFree: true,
+    };
+    beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-07T22:00:00Z')); });
+    afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+    it.each([
+      [{ startDate: '2026-10-07', from: '09:00', to: '20:00' }, 'START_TIME_PAST_ERROR'],
+      [{ from: '22:00', to: '02:00' }, 'END_TIME_BEFORE_START_ERROR'],
+      [{ address: null }, 'ADDRESS_REQUIRED'],
+      [{ areas: [] }, 'AREA_REQUIRED'],
+      [{ isFree: false, price: null }, 'PRICE_INVALID'],
+      [{ hasPromotion: true, promoText: '' }, 'PROMO_TEXT_REQUIRED'],
+    ])('blocks stale/incomplete quick publish before any write %j', async (changes, error) => {
+      vi.spyOn(service, 'getEventById').mockResolvedValue({ ...valid, ...changes } as VamoEvent);
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({} as any);
+      await expect(service.publishEvent(valid.id)).rejects.toThrow(error);
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid editor publish updates at the fresh write boundary', async () => {
+      vi.spyOn(service, 'getEventById').mockResolvedValue(valid);
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({} as any);
+      await expect(service.updateEvent(valid.id, { status: 'published', from: '22:00', to: '02:00' })).rejects.toThrow('END_TIME_BEFORE_START_ERROR');
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('rejects publication after the last image is removed', async () => {
+      vi.spyOn(service, 'getEventById').mockResolvedValue(valid);
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({} as any);
+      await expect(service.updateEvent(valid.id, { status: 'published' }, [], [42])).rejects.toThrow('PHOTO_REQUIRED');
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('rejects new published events with a past start even when the end is future', async () => {
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({} as any);
+      await expect(service.createEvent({ ...valid, status: 'published', startDate: '2026-10-06', endDate: '2026-10-09' }, [new File(['poster'], 'poster.png')], ['area-lt'])).rejects.toThrow('START_DATE_PAST_ERROR');
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('publishes a complete future draft with a status-only payload', async () => {
+      vi.spyOn(service, 'getEventById').mockResolvedValue(valid);
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({} as any);
+      await service.publishEvent(valid.id);
+      const command = request.mock.calls[0][0] as () => { body: string };
+      expect(JSON.parse(command().body)).toEqual({ status: 'published' });
+    });
   });
+
+
 });

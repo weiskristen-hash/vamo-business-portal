@@ -373,7 +373,12 @@ describe('Event Display Utilities', () => {
   });
 
   describe('validateEventForPublish', () => {
+    beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-07T22:00:00Z')); });
+    afterEach(() => { vi.useRealTimers(); });
     const validDraft: Partial<VamoEvent> = {
+      address: 'Calle Principal 12',
+      areas: [{ areas_id: 'area-lt' }],
+      isFree: true,
       name: 'Valid Concert Event',
       category: 'music',
       description: 'A great live music concert featuring local bands.',
@@ -383,6 +388,43 @@ describe('Event Display Utilities', () => {
       from: '19:00:00',
       to: '22:00:00',
     };
+
+    const clock = { todayStr: '2026-10-07', currentTimeStr: '18:00' };
+
+    it.each([
+      [{ startDate: '2026-10-07', from: '09:00', to: '20:00' }, 'START_TIME_PAST_ERROR'],
+      [{ startDate: '2026-10-06', endDate: '2026-10-09' }, 'START_DATE_PAST_ERROR'],
+      [{ from: '22:00', to: '02:00' }, 'END_TIME_BEFORE_START_ERROR'],
+      [{ endDate: '2026-10-30' }, 'END_DATE_BEFORE_START_ERROR'],
+      [{ to: null, openEnd: false }, 'END_TIME_REQUIRED'],
+      [{ address: '   ' }, 'ADDRESS_REQUIRED'],
+      [{ areas: [] }, 'AREA_REQUIRED'],
+      [{ isFree: false, price: 'abc' }, 'PRICE_INVALID'],
+      [{ hasPromotion: true, promoText: '' }, 'PROMO_TEXT_REQUIRED'],
+      [{ mode: 'recurring', recurring: { days: ['fri'] }, from: '22:00', to: '02:00' }, 'END_TIME_BEFORE_START_ERROR'],
+    ])('rejects invalid quick-publish fields %j', (changes, code) => {
+      const result = validateEventForPublish({ ...validDraft, ...changes } as Partial<VamoEvent>, clock);
+      expect(result.errorCode).toBe(code);
+      expect(result.valid).toBe(false);
+    });
+
+    it('permits overnight only with an explicit later end date', () => {
+      expect(validateEventForPublish({ ...validDraft, endDate: '2026-11-02', from: '22:00', to: '02:00' }, clock).valid).toBe(true);
+    });
+
+    it('permits intentional open end and all-day schedules', () => {
+      expect(validateEventForPublish({ ...validDraft, openEnd: true, to: null }, clock).valid).toBe(true);
+      expect(validateEventForPublish({ ...validDraft, allDay: true, from: null, to: null }, clock).valid).toBe(true);
+    });
+
+    it('retains only the exact start of an already-published ongoing event', () => {
+      const original = { ...validDraft, status: 'published', startDate: '2026-10-06', endDate: '2026-10-09' } as Partial<VamoEvent>;
+      expect(validateEventForPublish(original, { ...clock, originalEvent: original }).valid).toBe(true);
+      expect(validateEventForPublish({ ...original, endDate: '2026-10-07', to: '17:00' }, { ...clock, originalEvent: original }).errorCode).toBe('SCHEDULE_PAST_ERROR');
+      expect(validateEventForPublish({ ...original, endDate: '2026-10-07', to: '20:00' }, { ...clock, currentTimeStr: '21:00', originalEvent: original }).errorCode).toBe('SCHEDULE_PAST_ERROR');
+      expect(validateEventForPublish({ ...original, from: '08:00' }, { ...clock, originalEvent: original }).errorCode).toBe('START_DATE_PAST_ERROR');
+      expect(validateEventForPublish(original, { ...clock, originalEvent: { ...original, status: 'draft' } }).errorCode).toBe('START_DATE_PAST_ERROR');
+    });
 
     it('passes for a complete, valid draft with future schedule', () => {
       const res = validateEventForPublish(validDraft);
@@ -429,7 +471,7 @@ describe('Event Display Utilities', () => {
         }
       );
       expect(res.valid).toBe(false);
-      expect(res.errorCode).toBe('SCHEDULE_PAST_ERROR');
+      expect(res.errorCode).toBe('START_TIME_PAST_ERROR');
     });
 
     it('rejects recurring event without weekdays', () => {

@@ -1,7 +1,7 @@
 import { VamoEvent } from '../models/event.model';
 import { BusinessService } from '../services/business.service';
 import { I18nService } from '../i18n/i18n.service';
-import { getDrCurrentDateTime, addDaysToDateStr } from './date-validation.util';
+import { getDrCurrentDateTime, addDaysToDateStr, validateSchedule, ScheduleValidationResult } from './date-validation.util';
 
 export interface EventStatusBadge {
   text: string;
@@ -218,80 +218,83 @@ export function isEventPast(
   return isEventEnded(event, opt);
 }
 
-/**
- * Validates whether an event draft has all required fields, images, and schedule to be safely published.
- */
+export interface EventValidationOptions extends ScheduleClassificationOptions {
+  originalEvent?: Partial<VamoEvent> | null;
+  hasImages?: boolean;
+  areaIds?: string[];
+}
+
+export function scheduleErrorMessageKey(code: string): string {
+  const keys: Record<string, string> = {
+    START_DATE_PAST_ERROR: 'PORTAL.LISTINGS.ERRORS.START_DATE_PAST',
+    START_TIME_PAST_ERROR: 'PORTAL.LISTINGS.ERRORS.START_TIME_PAST',
+    SCHEDULE_PAST_ERROR: 'PORTAL.LISTINGS.ERRORS.START_DATE_PAST',
+    END_DATE_BEFORE_START_ERROR: 'PORTAL.LISTINGS.ERRORS.END_DATE_BEFORE_START',
+    END_TIME_BEFORE_START_ERROR: 'PORTAL.LISTINGS.ERRORS.END_TIME_BEFORE_START',
+  };
+  return keys[code] || `PORTAL.EVENT_EDITOR.VALIDATION.${code}`;
+}
+
+/** Shared scheduling rules for the editor and every publish path. */
+export function validateEventSchedule(
+  event: Partial<VamoEvent>,
+  forPublish: boolean,
+  options: EventValidationOptions = {}
+): ScheduleValidationResult {
+  const dr = getDrCurrentDateTime(options.now ?? options.drNowMs);
+  const original = options.originalEvent;
+  let recurring = event.recurring;
+  if (typeof recurring === 'string') {
+    try { recurring = JSON.parse(recurring); } catch { recurring = null; }
+  }
+  const startDate = normalizeDateStr(event.startDate);
+  const endDate = normalizeDateStr(event.endDate);
+  // Only an already-published ongoing event may retain its exact original start.
+  const unchangedOngoingStart = original?.status === 'published'
+    && isEventOngoing(original, options)
+    && original.mode === event.mode
+    && normalizeDateStr(original.startDate) === startDate
+    && !!original.allDay === !!event.allDay
+    && normalizeTimeStr(original.from) === normalizeTimeStr(event.from);
+  return validateSchedule({
+    mode: event.mode || 'single', startDate, endDate, multiDay: !!endDate,
+    allDay: event.allDay, openEnd: event.openEnd,
+    from: normalizeTimeStr(event.from), to: normalizeTimeStr(event.to),
+    recurringDays: (recurring as { days?: string[] } | null)?.days,
+    forPublish, isEditMode: !!original, originalStartDate: normalizeDateStr(original?.startDate),
+    isOngoing: unchangedOngoingStart,
+    todayStr: options.todayStr || options.drTodayStr || dr.todayStr,
+    currentTimeStr: normalizeTimeStr(options.currentTimeStr || options.drTimeStr) || dr.currentTimeStr,
+  });
+}
+
+/** Shared required fields and scheduling rules for editor, quick publish and service writes. */
 export function validateEventForPublish(
   event: Partial<VamoEvent> | null | undefined,
-  options?: ScheduleClassificationOptions
+  options: EventValidationOptions = {}
 ): PublishValidationResult {
-  if (!event) {
-    return { valid: false, errorCode: 'EVENT_REQUIRED', messageKey: 'PORTAL.EVENT_EDITOR.VALIDATION.NAME_REQUIRED' };
-  }
-
-  // 1. Title / Name
-  if (!event.name?.trim()) {
-    return { valid: false, errorCode: 'NAME_REQUIRED', messageKey: 'PORTAL.EVENT_EDITOR.VALIDATION.NAME_REQUIRED' };
-  }
-
-  // 2. Category
-  if (!event.category?.trim()) {
-    return { valid: false, errorCode: 'CATEGORY_REQUIRED', messageKey: 'PORTAL.EVENT_EDITOR.VALIDATION.CATEGORY_REQUIRED' };
-  }
-
-  // 3. Description (min 10 characters)
-  if (!event.description?.trim() || event.description.trim().length < 10) {
-    return { valid: false, errorCode: 'DESC_MIN', messageKey: 'PORTAL.EVENT_EDITOR.VALIDATION.DESC_MIN' };
-  }
-
-  // 4. Images (at least 1 image junction or file attached)
-  const hasImages = Array.isArray(event.images) && event.images.length > 0;
-  if (!hasImages) {
-    return { valid: false, errorCode: 'PHOTO_REQUIRED', messageKey: 'PORTAL.EVENT_EDITOR.VALIDATION.PHOTO_REQUIRED' };
-  }
-
-  // 5. Schedule
-  const mode = event.mode || 'single';
-  if (mode === 'single') {
-    if (!event.startDate) {
-      return { valid: false, errorCode: 'START_DATE_REQUIRED', messageKey: 'PORTAL.EVENT_EDITOR.VALIDATION.START_DATE_REQUIRED' };
-    }
-
-    if (event.endDate && normalizeDateStr(event.endDate)! < normalizeDateStr(event.startDate)!) {
-      return { valid: false, errorCode: 'END_DATE_BEFORE_START', messageKey: 'PORTAL.LISTINGS.ERRORS.END_DATE_BEFORE_START' };
-    }
-
-    if (!event.allDay) {
-      if (!event.from) {
-        return { valid: false, errorCode: 'START_TIME_REQUIRED', messageKey: 'PORTAL.EVENT_EDITOR.VALIDATION.START_TIME_REQUIRED' };
-      }
-      const isOpenEnd = !!event.openEnd || !event.to;
-      if (!isOpenEnd && !event.to) {
-        return { valid: false, errorCode: 'END_TIME_REQUIRED', messageKey: 'PORTAL.EVENT_EDITOR.VALIDATION.END_TIME_REQUIRED' };
-      }
-    }
-
-    // Must not be already ended/past in DR timezone
-    if (isEventEnded(event, options)) {
-      return { valid: false, errorCode: 'SCHEDULE_PAST_ERROR', messageKey: 'PORTAL.LISTINGS.ERRORS.START_DATE_PAST' };
-    }
-  } else if (mode === 'recurring') {
-    const days = (event.recurring as any)?.days;
-    if (!Array.isArray(days) || days.length === 0) {
-      return { valid: false, errorCode: 'WEEKDAYS_REQUIRED', messageKey: 'PORTAL.EVENT_EDITOR.VALIDATION.WEEKDAYS_REQUIRED' };
-    }
-
-    if (!event.allDay) {
-      if (!event.from) {
-        return { valid: false, errorCode: 'START_TIME_REQUIRED', messageKey: 'PORTAL.EVENT_EDITOR.VALIDATION.START_TIME_REQUIRED' };
-      }
-      const isOpenEnd = !!event.openEnd || !event.to;
-      if (!isOpenEnd && !event.to) {
-        return { valid: false, errorCode: 'END_TIME_REQUIRED', messageKey: 'PORTAL.EVENT_EDITOR.VALIDATION.END_TIME_REQUIRED' };
-      }
-    }
-  }
-
+  const fail = (errorCode: string): PublishValidationResult => ({
+    valid: false, errorCode, messageKey: scheduleErrorMessageKey(errorCode),
+  });
+  if (!event || !event.name?.trim()) return fail('NAME_REQUIRED');
+  if (!event.category?.trim()) return fail('CATEGORY_REQUIRED');
+  if (!event.description?.trim() || event.description.trim().length < 10) return fail('DESC_MIN');
+  const hasImages = options.hasImages ?? event.images?.some(image => {
+    const file = image.directus_files_id;
+    return typeof file === 'string' ? !!file : !!file?.id;
+  });
+  if (!hasImages) return fail('PHOTO_REQUIRED');
+  if (!event.address?.trim()) return fail('ADDRESS_REQUIRED');
+  const hasArea = options.areaIds
+    ? options.areaIds.some(id => !!id)
+    : event.areas?.some(area => typeof area.areas_id === 'string' ? !!area.areas_id : !!area.areas_id?.id);
+  if (!hasArea) return fail('AREA_REQUIRED');
+  const schedule = validateEventSchedule(event, true, options);
+  if (!schedule.valid) return fail(schedule.errorCode!);
+  if (isEventEnded(event, options)) return fail('SCHEDULE_PAST_ERROR');
+  const price = Number(event.price);
+  if (!event.isFree && !event.contactForPrice && (!Number.isFinite(price) || price <= 0)) return fail('PRICE_INVALID');
+  if (event.hasPromotion && !event.promoText?.trim()) return fail('PROMO_TEXT_REQUIRED');
   return { valid: true, errorCode: null, messageKey: '' };
 }
 

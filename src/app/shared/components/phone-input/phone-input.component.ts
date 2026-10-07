@@ -212,9 +212,17 @@ export class PhoneInputComponent implements ControlValueAccessor, OnInit, OnChan
     }
   }
 
+  private lastEmittedValue: string | null = null;
+
   writeValue(value: string | null | undefined): void {
     this.rawValue = value ?? '';
     this.isUserEdited = false;
+    // A form echo must preserve a manually chosen country with a shared dial code.
+    if (this.lastEmittedValue !== null && value === this.lastEmittedValue) {
+      this.cdr.markForCheck();
+      return;
+    }
+    this.lastEmittedValue = null;
 
     if (!value || !value.trim()) {
       this.selectedCountry = DEFAULT_COUNTRY;
@@ -295,12 +303,14 @@ export class PhoneInputComponent implements ControlValueAccessor, OnInit, OnChan
 
     const digits = this.nationalNumber.replace(/\D/g, '');
     if (!digits) {
+      this.lastEmittedValue = '';
       this.onChange('');
       this.valueChange.emit('');
       return;
     }
 
     const e164 = formatE164(this.selectedCountry, digits);
+    this.lastEmittedValue = e164;
     this.onChange(e164);
     this.valueChange.emit(e164);
   }

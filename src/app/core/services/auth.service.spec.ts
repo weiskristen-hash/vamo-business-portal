@@ -41,6 +41,8 @@ describe('AuthService', () => {
   });
 
   it('should clear session and navigate to /login on logout', async () => {
+    const { directusClient } = await import('../directus/directus-client');
+    vi.spyOn(directusClient, 'logout').mockResolvedValue(undefined as any);
     await service.logout(true);
 
     expect(service.currentUser).toBeNull();
