@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RegisterComponent } from './register.component';
 import { AuthService } from '../../../core/services/auth.service';
+import { GoogleAuthService } from '../../../core/services/google-auth.service';
 import { CustomerErrorService } from '../../../core/services/customer-error.service';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -17,6 +18,8 @@ describe('RegisterComponent (Canonical Source Parity)', () => {
       register: vi.fn(),
       login: vi.fn(),
       loginWithProvider: vi.fn(),
+      loginWithGoogle: vi.fn().mockResolvedValue({ id: 'google-user', first_name: 'Mateo', last_name: 'Peralta', email: 'mateo@google.com', provider_link: null }),
+      loginWithGoogleCredential: vi.fn().mockResolvedValue({ id: 'google-user', first_name: 'Mateo', last_name: 'Peralta', email: 'mateo@google.com', provider_link: null }),
     };
 
     routerSpy = {
@@ -28,6 +31,7 @@ describe('RegisterComponent (Canonical Source Parity)', () => {
       imports: [RegisterComponent, FormsModule],
       providers: [
         { provide: AuthService, useValue: authServiceSpy },
+        { provide: GoogleAuthService, useValue: { loadGoogleScript: vi.fn().mockRejectedValue(new Error('GOOGLE_SDK_UNAVAILABLE')), renderButton: vi.fn() } },
         { provide: Router, useValue: routerSpy },
         {
           provide: ActivatedRoute,
@@ -186,9 +190,29 @@ describe('RegisterComponent (Canonical Source Parity)', () => {
     expect(component.loading).toBe(false);
   });
 
-  it('10. should trigger Google sign-up flow via authService.loginWithProvider', () => {
-    component.onGoogleSignUp();
-    expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('google', '/app/overview');
+  it('10. Google fallback uses the canonical flow and routes an unlinked user to no-business', async () => {
+    await component.onGoogleSignUp();
+    expect(authServiceSpy.loginWithGoogle).toHaveBeenCalledOnce();
+    expect(authServiceSpy.loginWithProvider).not.toHaveBeenCalled();
+    expect(routerSpy.navigate).toHaveBeenCalledWith(['/no-business']);
+    expect(component.loading).toBe(false);
+  });
+
+  it('Google popup credential uses the canonical exchange and routes an existing business to overview', async () => {
+    authServiceSpy.loginWithGoogleCredential.mockResolvedValue({ id: 'owner', provider_link: { id: 'provider' } });
+    await component.onGoogleCredentialSuccess('mock-google-credential');
+    expect(authServiceSpy.loginWithGoogleCredential).toHaveBeenCalledWith('mock-google-credential');
+    expect(authServiceSpy.loginWithProvider).not.toHaveBeenCalled();
+    expect(routerSpy.navigateByUrl).toHaveBeenCalledWith('/app/overview');
+  });
+
+  it('Google cancellation restores the button and keeps the customer on registration', async () => {
+    authServiceSpy.loginWithGoogle.mockRejectedValue(new Error('GOOGLE_POPUP_CLOSED'));
+    await component.onGoogleSignUp();
+    expect(component.loading).toBe(false);
+    expect(component.errorMessage).toBeTruthy();
+    expect(component.errorMessage).not.toContain('GOOGLE_POPUP_CLOSED');
+    expect(routerSpy.navigate).not.toHaveBeenCalled();
   });
 
   it('11. should not render Apple action button while preserving component Apple sign-up method and Google action', () => {

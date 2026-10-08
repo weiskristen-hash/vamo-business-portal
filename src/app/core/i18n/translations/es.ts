@@ -753,6 +753,7 @@ export const esTranslations: Record<string, any> = {
       "BACK": "Atrás",
       "CANCEL": "Cancelar",
       "DETECTING_LOCATION": "Detectando ubicación…",
+      "FIND_NEAREST_AREA": "Buscar mi zona más cercana",
       "LOADING_REGIONS": "Cargando regiones…",
       "SELECT_MANUALLY": "Seleccionar ubicación manualmente",
       "EXPLORE_INTENT": "Explorar Eventos y Actividades",
