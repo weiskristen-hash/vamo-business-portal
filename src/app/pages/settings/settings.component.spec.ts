@@ -19,7 +19,7 @@ describe('SettingsComponent (Account Settings V1)', () => {
     first_name: 'Kristen',
     last_name: 'Weis',
     email: 'kristen@example.com',
-    role: { id: 'role-customer', name: 'customer' },
+    role: { id: 'role-customer', name: 'customer' } as any,
     provider_link: {
       id: 'prov-789',
       name: 'Cabarete Kite School',
@@ -312,8 +312,8 @@ describe('SettingsComponent (Account Settings V1)', () => {
       expect(routerSpy.navigate).toHaveBeenCalledWith(['/login'], { replaceUrl: true });
     });
 
-    it('preserves modal and session with friendly error notice if deletion fails', async () => {
-      authServiceSpy.deleteAccount.mockRejectedValueOnce(new Error('Network error'));
+    it('preserves modal and session with friendly error notice if deletion fails generically', async () => {
+      authServiceSpy.deleteAccount.mockRejectedValueOnce(new Error('Internal flow exception'));
 
       component.openDeleteModal();
       component.deleteConfirmText = 'DELETE';
@@ -326,6 +326,55 @@ describe('SettingsComponent (Account Settings V1)', () => {
       expect(component.showDeleteModal()).toBe(true);
       expect(component.deleteError()).toBe('Could not delete account. Please try again or contact support.');
       expect(routerSpy.navigate).not.toHaveBeenCalled();
+    });
+
+    it('shows unavailable notice when delete account flow is not configured', async () => {
+      authServiceSpy.deleteAccount.mockRejectedValueOnce(new Error('DELETE_ACCOUNT_FLOW_NOT_CONFIGURED'));
+
+      component.openDeleteModal();
+      component.deleteConfirmText = 'DELETE';
+      fixture.detectChanges();
+
+      await component.confirmDelete();
+      fixture.detectChanges();
+
+      expect(component.isDeletingAccount()).toBe(false);
+      expect(component.showDeleteModal()).toBe(true);
+      expect(component.deleteError()).toBe('Account deletion is currently unavailable. Please contact support at support@vamo-app.com.');
+    });
+
+    it('shows session expired notice when session expires during deletion', async () => {
+      const err = new Error('SESSION_EXPIRED');
+      (err as any).status = 401;
+      authServiceSpy.deleteAccount.mockRejectedValueOnce(err);
+
+      component.openDeleteModal();
+      component.deleteConfirmText = 'DELETE';
+      fixture.detectChanges();
+
+      await component.confirmDelete();
+      fixture.detectChanges();
+
+      expect(component.isDeletingAccount()).toBe(false);
+      expect(component.showDeleteModal()).toBe(true);
+      expect(component.deleteError()).toBe('Your session has expired. Please sign in again.');
+    });
+
+    it('shows network error notice when network fails during deletion', async () => {
+      const err = new Error('Failed to fetch');
+      (err as any).isNetworkError = true;
+      authServiceSpy.deleteAccount.mockRejectedValueOnce(err);
+
+      component.openDeleteModal();
+      component.deleteConfirmText = 'DELETE';
+      fixture.detectChanges();
+
+      await component.confirmDelete();
+      fixture.detectChanges();
+
+      expect(component.isDeletingAccount()).toBe(false);
+      expect(component.showDeleteModal()).toBe(true);
+      expect(component.deleteError()).toBe('Network error. Please check your connection and try again.');
     });
 
     it('prevents multiple delete submissions while processing', async () => {

@@ -1326,6 +1326,9 @@ export const enTranslations: Record<string, any> = {
       "DISMISS": "Dismiss",
       "LOADING": "Loading promotional options…",
 
+      "OVERVIEW_TITLE": "Promotion Placements",
+      "OVERVIEW_SUBTITLE": "Boost your visibility across the VAMO app and website with high-impact placements.",
+
       "ACTIVE_PLACEMENTS_TITLE": "Active Placements",
       "ACTIVE_PLACEMENTS_SUBTITLE": "Your listings currently featured across VAMO discovery sections.",
       "EMPTY_ACTIVE": "No active promotions right now. Promote a listing below to supercharge its reach.",
@@ -1488,6 +1491,9 @@ export const enTranslations: Record<string, any> = {
       "PROFILE_ERROR": "Could not update profile. Please try again.",
       "PASSWORD_ERROR": "Could not send password reset email. Please try again.",
       "DELETE_ERROR": "Could not delete account. Please try again or contact support.",
+      "DELETE_UNAVAILABLE": "Account deletion is currently unavailable. Please contact support at support@vamo-app.com.",
+      "DELETE_SESSION_EXPIRED": "Your session has expired. Please sign in again.",
+      "DELETE_NETWORK_ERROR": "Network error. Please check your connection and try again.",
       "VALIDATION_REQUIRED": "This field is required.",
       "VALIDATION_EMAIL": "Please enter a valid email address."
     },

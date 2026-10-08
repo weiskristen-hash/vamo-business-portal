@@ -639,26 +639,48 @@ export class AuthService {
    */
   async deleteAccount(): Promise<void> {
     const token = await directusClient.getToken();
-    if (!token) throw new Error('Not authenticated');
+    if (!token) {
+      const err = new Error('NOT_AUTHENTICATED');
+      (err as any).status = 401;
+      throw err;
+    }
 
     const flowId = runtimeConfig.deleteAccountFlow;
     if (!flowId) {
-      throw new Error('DELETE_ACCOUNT_FLOW_NOT_CONFIGURED');
+      const err = new Error('DELETE_ACCOUNT_FLOW_NOT_CONFIGURED');
+      (err as any).status = 503;
+      throw err;
     }
 
     const url = `${runtimeConfig.directusUrl}/flows/trigger/${flowId}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({}),
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+      });
+    } catch (fetchErr: any) {
+      const err = new Error(fetchErr?.message || 'NETWORK_ERROR');
+      err.name = fetchErr?.name || 'TypeError';
+      (err as any).isNetworkError = true;
+      throw err;
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      const err = new Error('SESSION_EXPIRED');
+      (err as any).status = response.status;
+      throw err;
+    }
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      throw new Error(`Account deletion failed (${response.status}): ${body}`);
+      const err = new Error(`Account deletion failed (${response.status}): ${body}`);
+      (err as any).status = response.status;
+      throw err;
     }
 
     await this.logout(false);

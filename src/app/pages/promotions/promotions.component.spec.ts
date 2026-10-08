@@ -230,6 +230,43 @@ describe('PromotionsComponent', () => {
       expect(component.publishedEvents().map((e) => e.id)).toEqual(['ev-1', 'ev-2', 'ev-no-area']);
       expect(component.publishedEvents().some((e) => e.status === 'draft')).toBe(false);
     });
+
+    it('should render informational overview cards with approved descriptions and prices on initial page load without event selection', () => {
+      const compiled = fixture.nativeElement as HTMLElement;
+      const overviewCard = compiled.querySelector('.promotions-overview-card');
+      expect(overviewCard).toBeTruthy();
+
+      expect(overviewCard?.textContent).toContain('Main Banner · $30');
+      expect(overviewCard?.textContent).toContain(
+        'Give your event premium visibility across VAMO’s app and website for a 7-day placement period. Additional social media promotion.'
+      );
+
+      expect(overviewCard?.textContent).toContain('What\'s Hot · $15');
+      expect(overviewCard?.textContent).toContain(
+        'Put your event in the spotlight as a featured discovery across VAMO’s app and website for up to 7 days. Additional social media promotion.'
+      );
+    });
+
+    it('should translate overview cards reactively when language changes to Spanish', () => {
+      i18nService.setLang('es');
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const overviewCard = compiled.querySelector('.promotions-overview-card');
+      expect(overviewCard).toBeTruthy();
+
+      expect(overviewCard?.textContent).toContain('Banner Principal ·');
+      expect(overviewCard?.textContent).toContain('30');
+      expect(overviewCard?.textContent).toContain(
+        'Dale a tu evento visibilidad premium en la app y el sitio web de VAMO durante un período de promoción de 7 días. Promoción adicional en redes sociales.'
+      );
+
+      expect(overviewCard?.textContent).toContain('Lo Más Caliente ·');
+      expect(overviewCard?.textContent).toContain('15');
+      expect(overviewCard?.textContent).toContain(
+        'Pon tu evento en el centro de atención como una recomendación destacada en la app y el sitio web de VAMO por hasta 7 días. Promoción adicional en redes sociales.'
+      );
+    });
   });
 
   describe('Event Preselection via Query Param (Phase 1C.2)', () => {
@@ -1212,14 +1249,14 @@ describe('PromotionsComponent', () => {
       fixture.detectChanges();
 
       const cards = fixture.nativeElement.querySelectorAll('.active-event-card');
-      // Should have 1 card for ev-2
-      const ev2Cards = Array.from(cards).filter((c: any) => c.textContent.includes('Punta Cana Zip Line'));
+      const ev2Cards = Array.from(cards).filter((c: any) => c.textContent?.includes('Punta Cana Zip Line')) as HTMLElement[];
       expect(ev2Cards.length).toBe(1);
 
-      const badges = ev2Cards[0].querySelectorAll('.badge');
+      const cardEl = ev2Cards[0];
+      const badges = cardEl.querySelectorAll('.badge');
       expect(badges.length).toBe(2);
-      expect(ev2Cards[0].querySelector('.badge-banner')).toBeTruthy();
-      expect(ev2Cards[0].querySelector('.badge-hot')).toBeTruthy();
+      expect(cardEl.querySelector('.badge-banner')).toBeTruthy();
+      expect(cardEl.querySelector('.badge-hot')).toBeTruthy();
     });
   });
 });
