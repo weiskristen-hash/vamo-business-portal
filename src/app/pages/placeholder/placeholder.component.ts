@@ -109,8 +109,8 @@ interface ModuleConfig {
       font-size: 0.8rem;
       font-weight: 600;
       color: var(--vamo-primary);
-      background: rgba(124, 58, 237, 0.1);
-      border: 1px solid rgba(124, 58, 237, 0.25);
+      background: rgba(128, 112, 192, 0.1);
+      border: 1px solid rgba(128, 112, 192, 0.25);
       padding: 4px 10px;
       border-radius: 6px;
     }

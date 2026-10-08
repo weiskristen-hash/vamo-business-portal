@@ -537,7 +537,7 @@ import {
 
     .metric-card.active-metric {
       border-color: var(--vamo-primary);
-      box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15);
+      box-shadow: 0 0 0 2px rgba(128, 112, 192, 0.15);
       background: var(--vamo-primary-light);
     }
 

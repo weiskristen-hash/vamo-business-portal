@@ -80,8 +80,8 @@ import { I18nService } from '../../../core/i18n/i18n.service';
       }
 
       .phone-input-container:focus-within {
-        border-color: var(--vamo-pink, #ec4899);
-        box-shadow: 0 0 0 3px rgba(236, 72, 153, 0.15);
+        border-color: var(--vamo-pink, #F93CAD);
+        box-shadow: 0 0 0 3px rgba(249, 60, 173, 0.15);
       }
 
       .phone-input-container.is-invalid {

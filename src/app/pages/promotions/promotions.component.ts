@@ -601,8 +601,8 @@ interface PartialSuccessState {
 }
 
 .overview-icon--banner {
-  background: rgba(254, 57, 127, 0.15);
-  color: #FE397F;
+  background: rgba(249, 60, 173, 0.15);
+  color: var(--vamo-pink, #F93CAD);
 }
 
 .overview-icon--hot {
@@ -687,7 +687,7 @@ interface PartialSuccessState {
   width: 2.5rem;
   height: 2.5rem;
   border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #FE397F;
+  border-top-color: var(--vamo-pink, #F93CAD);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -696,7 +696,7 @@ interface PartialSuccessState {
   width: 1rem;
   height: 1rem;
   border: 2px solid rgba(255, 255, 255, 0.2);
-  border-top-color: #FE397F;
+  border-top-color: var(--vamo-pink, #F93CAD);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   display: inline-block;
@@ -802,7 +802,7 @@ interface PartialSuccessState {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, rgba(254, 57, 127, 0.12), rgba(79, 70, 229, 0.12));
+  background: linear-gradient(135deg, rgba(249, 60, 173, 0.12), rgba(128, 112, 192, 0.12));
   border: 1px dashed rgba(255, 255, 255, 0.1);
   border-radius: 8px;
 }
@@ -891,9 +891,9 @@ interface PartialSuccessState {
 }
 
 .badge-banner {
-  background: rgba(254, 57, 127, 0.15);
-  color: #FE397F;
-  border: 1px solid rgba(254, 57, 127, 0.3);
+  background: rgba(249, 60, 173, 0.15);
+  color: var(--vamo-pink, #F93CAD);
+  border: 1px solid rgba(249, 60, 173, 0.3);
 }
 
 .badge-hot {
@@ -940,7 +940,7 @@ interface PartialSuccessState {
 }
 
 .step-number {
-  background: #FE397F;
+  background: var(--vamo-pink, #F93CAD);
   color: #ffffff;
   width: 24px;
   height: 24px;
@@ -983,7 +983,7 @@ interface PartialSuccessState {
 }
 
 .form-control:focus {
-  border-color: #FE397F;
+  border-color: var(--vamo-pink, #F93CAD);
 }
 
 .form-control:disabled {
@@ -1013,13 +1013,13 @@ interface PartialSuccessState {
 }
 
 .placement-option:hover:not(.placement-option--disabled) {
-  border-color: rgba(254, 57, 127, 0.4);
+  border-color: rgba(249, 60, 173, 0.4);
   background: rgba(255, 255, 255, 0.04);
 }
 
 .placement-option--selected {
-  border-color: #FE397F !important;
-  background: rgba(254, 57, 127, 0.06) !important;
+  border-color: var(--vamo-pink, #F93CAD) !important;
+  background: rgba(249, 60, 173, 0.06) !important;
 }
 
 .placement-option--disabled {
@@ -1038,8 +1038,8 @@ interface PartialSuccessState {
 }
 
 .placement-icon--banner {
-  background: rgba(254, 57, 127, 0.15);
-  color: #FE397F;
+  background: rgba(249, 60, 173, 0.15);
+  color: var(--vamo-pink, #F93CAD);
 }
 
 .placement-icon--hot {
@@ -1069,7 +1069,7 @@ interface PartialSuccessState {
 .placement-price {
   font-size: 0.9375rem;
   font-weight: 700;
-  color: #FE397F;
+  color: var(--vamo-pink, #F93CAD);
 }
 
 .placement-desc {
@@ -1117,7 +1117,7 @@ interface PartialSuccessState {
 }
 
 .placement-checkbox input[type="checkbox"] {
-  accent-color: #FE397F;
+  accent-color: var(--vamo-pink, #F93CAD);
   width: 18px;
   height: 18px;
   cursor: pointer;
@@ -1148,8 +1148,8 @@ interface PartialSuccessState {
 
 .summary-pill {
   display: inline-block;
-  background: rgba(254, 57, 127, 0.15);
-  color: #FE397F;
+  background: rgba(249, 60, 173, 0.15);
+  color: var(--vamo-pink, #F93CAD);
   padding: 0.2rem 0.5rem;
   border-radius: 6px;
   font-size: 0.8125rem;
@@ -1174,7 +1174,7 @@ interface PartialSuccessState {
 .total-val {
   font-size: 1.25rem;
   font-weight: 800;
-  color: #FE397F;
+  color: var(--vamo-pink, #F93CAD);
 }
 
 .separate-charges-note {
@@ -1221,12 +1221,12 @@ interface PartialSuccessState {
 }
 
 .saved-card-choice--selected {
-  border-color: #FE397F;
-  background: rgba(254, 57, 127, 0.05);
+  border-color: var(--vamo-pink, #F93CAD);
+  background: rgba(249, 60, 173, 0.05);
 }
 
 .saved-card-choice input[type="radio"] {
-  accent-color: #FE397F;
+  accent-color: var(--vamo-pink, #F93CAD);
 }
 
 .card-brand-badge {
@@ -1289,12 +1289,12 @@ interface PartialSuccessState {
 }
 
 .btn-primary {
-  background: #FE397F;
+  background: var(--vamo-pink, #F93CAD);
   color: #ffffff;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #e0286e;
+  background: var(--vamo-pink-hover, #e0289a);
 }
 
 .btn-secondary {

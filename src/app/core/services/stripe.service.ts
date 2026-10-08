@@ -397,7 +397,7 @@ export class StripeService {
       appearance: {
         theme: 'night',
         variables: {
-          colorPrimary: '#FE397F',
+          colorPrimary: '#F93CAD',
           colorBackground: '#1c1c2e',
           colorText: '#ffffff',
           colorTextSecondary: '#a0a0b8',

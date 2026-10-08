@@ -62,7 +62,7 @@ import { I18nService, SupportedLang } from './i18n.service';
 
     .lang-btn--active {
       background: #ffffff;
-      color: var(--vamo-pink, #ec4899);
+      color: var(--vamo-pink, #F93CAD);
       font-weight: 700;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }

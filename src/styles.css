@@ -6,13 +6,33 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-  /* ── VAMO Exact Brand Tokens ─────────────────────────────────────────── */
-  --vamo-primary: #7c3aed;          /* Vibrant Violet */
-  --vamo-primary-hover: #6d28d9;
-  --vamo-secondary: #ec4899;        /* Hot Pink */
-  --vamo-secondary-hover: #db2777;
-  --vamo-accent: #06b6d4;           /* Caribbean Cyan */
-  --vamo-accent-hover: #0891b2;
+  /* ── VAMO Official Brand Color Tokens (Source of Truth) ──────────────── */
+  --vamo-pink: #F93CAD;
+  --vamo-pink-rgb: 249, 60, 173;
+  --vamo-pink-hover: #e0289a;
+  --vamo-pink-active: #c51b83;
+  --vamo-pink-light: rgba(249, 60, 173, 0.12);
+  --vamo-pink-border: rgba(249, 60, 173, 0.35);
+
+  --vamo-purple: #8070C0;
+  --vamo-purple-rgb: 128, 112, 192;
+  --vamo-purple-hover: #6e5eb0;
+  --vamo-purple-active: #5f4fa1;
+  --vamo-purple-light: rgba(128, 112, 192, 0.12);
+
+  --vamo-cyan: #0AB2DC;
+  --vamo-cyan-rgb: 10, 178, 220;
+  --vamo-cyan-hover: #089ec4;
+  --vamo-cyan-active: #0789aa;
+  --vamo-cyan-light: rgba(10, 178, 220, 0.12);
+
+  /* ── Semantic Role Mappings ─────────────────────────────────────────── */
+  --vamo-primary: var(--vamo-purple);
+  --vamo-primary-hover: var(--vamo-purple-hover);
+  --vamo-secondary: var(--vamo-pink);
+  --vamo-secondary-hover: var(--vamo-pink-hover);
+  --vamo-accent: var(--vamo-cyan);
+  --vamo-accent-hover: var(--vamo-cyan-hover);
   --vamo-dark: #0f172a;             /* Deep Slate */
 
   /* ── Surfaces & Backgrounds ──────────────────────────────────────────── */
@@ -37,7 +57,7 @@
   /* ── Borders & Dividers ──────────────────────────────────────────────── */
   --vamo-border: #e2e8f0;           /* Subtle Outline */
   --vamo-border-hover: #cbd5e1;     /* Interactive Hover */
-  --vamo-border-focus: #7c3aed;     /* Primary Focus Outline */
+  --vamo-border-focus: var(--vamo-primary); /* Primary Focus Outline */
   --vamo-border-glass: #e2e8f0;
   --vamo-border-glass-strong: #cbd5e1;
 
@@ -48,8 +68,8 @@
   --vamo-warning-bg: rgba(245, 158, 11, 0.1);
   --vamo-error: #ef4444;
   --vamo-error-bg: rgba(239, 68, 68, 0.1);
-  --vamo-info: #06b6d4;
-  --vamo-info-bg: rgba(6, 182, 212, 0.1);
+  --vamo-info: #0AB2DC;
+  --vamo-info-bg: rgba(10, 178, 220, 0.1);
 
   /* Status Tokens */
   --vamo-status-published: #10b981;
@@ -62,9 +82,9 @@
   --vamo-status-error-bg: rgba(239, 68, 68, 0.12);
 
   /* ── Gradients ───────────────────────────────────────────────────────── */
-  --vamo-gradient-brand: linear-gradient(135deg, var(--vamo-secondary), var(--vamo-accent));
-  --vamo-gradient-cta: linear-gradient(135deg, var(--vamo-primary), var(--vamo-accent));
-  --vamo-gradient-violet: linear-gradient(135deg, var(--vamo-primary), #a855f7);
+  --vamo-gradient-brand: linear-gradient(135deg, #F93CAD 0%, #8070C0 50%, #0AB2DC 100%);
+  --vamo-gradient-cta: linear-gradient(135deg, #F93CAD 0%, #0AB2DC 100%);
+  --vamo-gradient-violet: linear-gradient(135deg, var(--vamo-purple), #9d8fd4);
   --vamo-gradient-dark: linear-gradient(180deg, rgba(15, 23, 42, 0.55) 0%, rgba(15, 23, 42, 0.75) 100%);
   --vamo-gradient-accent: var(--vamo-gradient-brand);
   --vamo-gradient-bg: var(--vamo-background);
@@ -72,8 +92,8 @@
   /* ── Shadows & Radii ─────────────────────────────────────────────────── */
   --vamo-shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
   --vamo-shadow-md: 0 12px 28px -5px rgba(15, 23, 42, 0.09);
-  --vamo-shadow-lg: 0 20px 35px -10px rgba(124, 58, 237, 0.18);
-  --vamo-shadow-brand: 0 4px 14px rgba(236, 72, 153, 0.3);
+  --vamo-shadow-lg: 0 20px 35px -10px rgba(128, 112, 192, 0.18);
+  --vamo-shadow-brand: 0 4px 14px rgba(249, 60, 173, 0.3);
 
   --vamo-radius-xs: 6px;
   --vamo-radius-sm: 8px;
@@ -95,11 +115,7 @@
   --vamo-bg-input: #ffffff;
   --vamo-bg-glass: rgba(15, 23, 42, 0.03);
   --vamo-bg-glass-strong: rgba(15, 23, 42, 0.06);
-  --vamo-pink: var(--vamo-secondary);
-  --vamo-pink-hover: var(--vamo-secondary-hover);
-  --vamo-pink-active: #be185d;
-  --vamo-pink-light: rgba(236, 72, 153, 0.12);
-  --vamo-pink-border: rgba(236, 72, 153, 0.35);
+  --vamo-primary-light: var(--vamo-purple-light);
 }
 
 /* ==========================================================================
@@ -193,20 +209,20 @@ textarea:focus-visible {
 
 .btn-brand:hover:not(:disabled), .btn-primary:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 10px 22px -4px rgba(236, 72, 153, 0.45);
+  box-shadow: 0 10px 22px -4px rgba(249, 60, 173, 0.45);
 }
 
 /* Violet CTA Button */
 .btn-violet {
   background: var(--vamo-primary);
   color: #ffffff;
-  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.3);
+  box-shadow: 0 4px 14px rgba(128, 112, 192, 0.3);
 }
 
 .btn-violet:hover:not(:disabled) {
   background: var(--vamo-primary-hover);
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px -3px rgba(124, 58, 237, 0.4);
+  box-shadow: 0 8px 20px -3px rgba(128, 112, 192, 0.4);
 }
 
 /* Secondary / Outline Button */
@@ -299,7 +315,7 @@ textarea:focus-visible {
 .form-control:focus, .form-input:focus, .form-select:focus, .form-textarea:focus {
   outline: none;
   border-color: var(--vamo-primary);
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+  box-shadow: 0 0 0 3px rgba(128, 112, 192, 0.15);
   background: #ffffff;
 }
 
@@ -396,13 +412,13 @@ textarea:focus-visible {
   background: var(--vamo-gradient-brand);
   color: #ffffff;
   border: none;
-  box-shadow: 0 2px 8px rgba(236, 72, 153, 0.25);
+  box-shadow: 0 2px 8px rgba(249, 60, 173, 0.25);
 }
 
 .badge-primary {
-  background: rgba(124, 58, 237, 0.1);
+  background: rgba(128, 112, 192, 0.1);
   color: var(--vamo-primary);
-  border-color: rgba(124, 58, 237, 0.25);
+  border-color: rgba(128, 112, 192, 0.25);
 }
 
 .badge-success, .badge-published {
@@ -471,9 +487,9 @@ textarea:focus-visible {
 }
 
 .alert-info {
-  background: rgba(6, 182, 212, 0.08);
-  border-color: rgba(6, 182, 212, 0.3);
-  color: #155e75;
+  background: rgba(10, 178, 220, 0.08);
+  border-color: rgba(10, 178, 220, 0.3);
+  color: #0c6a83;
 }
 
 /* ==========================================================================
@@ -490,7 +506,7 @@ textarea:focus-visible {
 }
 
 .spinner-primary {
-  border-color: rgba(124, 58, 237, 0.2);
+  border-color: rgba(128, 112, 192, 0.2);
   border-top-color: var(--vamo-primary);
 }
 

@@ -631,7 +631,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   .spinner {
     width: 36px;
     height: 36px;
-    border: 3px solid rgba(124, 58, 237, 0.2);
+    border: 3px solid rgba(128, 112, 192, 0.2);
     border-top-color: var(--vamo-primary);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
@@ -647,7 +647,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 .spinner-sm {
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(124, 58, 237, 0.2);
+  border: 2px solid rgba(128, 112, 192, 0.2);
   border-top-color: var(--vamo-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -759,7 +759,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
     }
 
     .tier-pill {
-      background: rgba(124, 58, 237, 0.1);
+      background: rgba(128, 112, 192, 0.1);
       color: var(--vamo-primary);
       padding: 0.25rem 0.75rem;
       border-radius: 9999px;
@@ -887,7 +887,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
   &:hover {
     border-color: var(--vamo-primary);
-    box-shadow: 0 6px 16px rgba(124, 58, 237, 0.08);
+    box-shadow: 0 6px 16px rgba(128, 112, 192, 0.08);
   }
 
   &.plan-card--selected {
@@ -1072,7 +1072,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    background: rgba(124, 58, 237, 0.1);
+    background: rgba(128, 112, 192, 0.1);
     color: var(--vamo-primary);
     padding: 0.4rem 0.75rem;
     border-radius: 8px;
@@ -1325,7 +1325,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
     border-color: var(--vamo-primary);
 
     &:hover:not(:disabled) {
-      background: rgba(124, 58, 237, 0.08);
+      background: rgba(128, 112, 192, 0.08);
     }
   }
 

@@ -358,8 +358,8 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
       left: -20%;
       width: 140%;
       height: 140%;
-      background: radial-gradient(circle at 30% 30%, rgba(236, 72, 153, 0.12) 0%, transparent 60%),
-                  radial-gradient(circle at 70% 70%, rgba(124, 58, 237, 0.08) 0%, transparent 60%);
+      background: radial-gradient(circle at 30% 30%, rgba(249, 60, 173, 0.12) 0%, transparent 60%),
+                  radial-gradient(circle at 70% 70%, rgba(128, 112, 192, 0.08) 0%, transparent 60%);
       pointer-events: none;
       z-index: 0;
     }
@@ -401,7 +401,7 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
       font-size: 0.68rem;
       font-weight: 700;
       letter-spacing: 0.14em;
-      color: var(--vamo-pink, #ec4899);
+      color: var(--vamo-pink, #F93CAD);
     }
 
     .hero-body {
@@ -443,9 +443,9 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
       width: 32px;
       height: 32px;
       border-radius: 8px;
-      background: rgba(236, 72, 153, 0.12);
-      border: 1px solid rgba(236, 72, 153, 0.25);
-      color: var(--vamo-pink, #ec4899);
+      background: rgba(249, 60, 173, 0.12);
+      border: 1px solid rgba(249, 60, 173, 0.25);
+      color: var(--vamo-pink, #F93CAD);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -560,7 +560,7 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
     }
 
     .warning-link {
-      color: var(--vamo-pink, #ec4899);
+      color: var(--vamo-pink, #F93CAD);
       font-weight: 600;
       text-decoration: underline;
     }
@@ -617,8 +617,8 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
     .form-input:focus {
       background: #ffffff;
       outline: none;
-      border-color: var(--vamo-pink, #ec4899);
-      box-shadow: 0 0 0 3px rgba(236, 72, 153, 0.15);
+      border-color: var(--vamo-pink, #F93CAD);
+      box-shadow: 0 0 0 3px rgba(249, 60, 173, 0.15);
     }
 
     .form-input::placeholder {
@@ -677,12 +677,12 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
       margin-top: 3px;
       width: 16px;
       height: 16px;
-      accent-color: var(--vamo-pink, #ec4899);
+      accent-color: var(--vamo-pink, #F93CAD);
       cursor: pointer;
     }
 
     .terms-text a {
-      color: var(--vamo-pink, #ec4899);
+      color: var(--vamo-pink, #F93CAD);
       text-decoration: underline;
       font-weight: 600;
     }
@@ -697,18 +697,18 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
     }
 
     .btn-primary {
-      background: linear-gradient(135deg, var(--vamo-pink, #ec4899), #db2777);
+      background: linear-gradient(135deg, var(--vamo-pink, #F93CAD), #e0289a);
       color: #ffffff;
       border: none;
       border-radius: 8px;
       cursor: pointer;
       transition: all 0.15s ease;
-      box-shadow: 0 2px 8px rgba(236, 72, 153, 0.25);
+      box-shadow: 0 2px 8px rgba(249, 60, 173, 0.25);
     }
 
     .btn-primary:hover:not(:disabled) {
       opacity: 0.95;
-      box-shadow: 0 4px 12px rgba(236, 72, 153, 0.35);
+      box-shadow: 0 4px 12px rgba(249, 60, 173, 0.35);
       transform: translateY(-1px);
     }
 
@@ -813,13 +813,13 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
     }
 
     .signup-link {
-      color: var(--vamo-pink, #ec4899);
+      color: var(--vamo-pink, #F93CAD);
       font-weight: 600;
       text-decoration: underline;
     }
 
     .signup-link:hover {
-      color: #be185d;
+      color: var(--vamo-pink-hover, #e0289a);
     }
 
     @media (max-width: 960px) {

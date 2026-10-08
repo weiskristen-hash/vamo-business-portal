@@ -92,9 +92,9 @@ import { LanguageSelectorComponent } from '../../core/i18n/language-selector.com
       width: 68px;
       height: 68px;
       border-radius: 50%;
-      background: rgba(236, 72, 153, 0.1);
-      border: 1px solid rgba(236, 72, 153, 0.25);
-      color: var(--vamo-pink, #ec4899);
+      background: rgba(249, 60, 173, 0.1);
+      border: 1px solid rgba(249, 60, 173, 0.25);
+      color: var(--vamo-pink, #F93CAD);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -159,7 +159,7 @@ import { LanguageSelectorComponent } from '../../core/i18n/language-selector.com
     }
 
     .btn-primary {
-      background: linear-gradient(135deg, var(--vamo-pink, #ec4899), #db2777);
+      background: linear-gradient(135deg, var(--vamo-pink, #F93CAD), #e0289a);
       color: #ffffff;
       padding: 10px 18px;
       border-radius: 8px;
@@ -170,12 +170,12 @@ import { LanguageSelectorComponent } from '../../core/i18n/language-selector.com
       align-items: center;
       justify-content: center;
       transition: all 0.15s ease;
-      box-shadow: 0 2px 8px rgba(236, 72, 153, 0.25);
+      box-shadow: 0 2px 8px rgba(249, 60, 173, 0.25);
     }
 
     .btn-primary:hover {
       opacity: 0.95;
-      box-shadow: 0 4px 12px rgba(236, 72, 153, 0.35);
+      box-shadow: 0 4px 12px rgba(249, 60, 173, 0.35);
       transform: translateY(-1px);
     }
 
