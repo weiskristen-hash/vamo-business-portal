@@ -753,6 +753,7 @@ export const enTranslations: Record<string, any> = {
       "BACK": "Back",
       "CANCEL": "Cancel",
       "DETECTING_LOCATION": "Detecting location…",
+      "FIND_NEAREST_AREA": "Find my nearest area",
       "LOADING_REGIONS": "Loading regions…",
       "SELECT_MANUALLY": "Select location manually",
       "EXPLORE_INTENT": "Explore Events & Activities",
