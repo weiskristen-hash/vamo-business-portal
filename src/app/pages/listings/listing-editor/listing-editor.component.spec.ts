@@ -259,6 +259,75 @@ describe('ListingEditorComponent', () => {
     expect(router.navigate).toHaveBeenCalledWith(['/app/listings']);
   });
 
+  describe('Promote Post Shortcut', () => {
+    it('should determine eligibility correctly via canPromotePost', () => {
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+
+      // In create mode (default): ineligible
+      expect(component.canPromotePost).toBe(false);
+
+      // Draft mode: ineligible
+      component.isEditMode = true;
+      component.isDraft = true;
+      component.eventId = 'event-123';
+      component.isPastEvent = false;
+      expect(component.canPromotePost).toBe(false);
+
+      // Past event: ineligible
+      component.isDraft = false;
+      component.isPastEvent = true;
+      expect(component.canPromotePost).toBe(false);
+
+      // Missing eventId: ineligible
+      component.isPastEvent = false;
+      component.eventId = null;
+      expect(component.canPromotePost).toBe(false);
+
+      // Eligible: published edit mode event with valid eventId and not past
+      component.eventId = 'event-123';
+      expect(component.canPromotePost).toBe(true);
+    });
+
+    it('should navigate directly to promotions when form is clean', () => {
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      component.isEditMode = true;
+      component.isDraft = false;
+      component.eventId = 'event-123';
+      component.isDirty = false;
+
+      component.onPromotePost();
+
+      expect(router.navigate).toHaveBeenCalledWith(['/app/promotions'], {
+        queryParams: { eventId: 'event-123' },
+      });
+      expect(component.showCancelConfirmModal).toBe(false);
+    });
+
+    it('should show discard modal with pendingExitTarget = promotions when form is dirty, then route to promotions on discard', () => {
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      component.isEditMode = true;
+      component.isDraft = false;
+      component.eventId = 'event-123';
+      component.markDirty();
+
+      component.onPromotePost();
+
+      expect(component.showCancelConfirmModal).toBe(true);
+      expect(component.pendingExitTarget).toBe('promotions');
+
+      component.confirmDiscardAndExit();
+
+      expect(component.isDirty).toBe(false);
+      expect(component.showCancelConfirmModal).toBe(false);
+      expect(router.navigate).toHaveBeenCalledWith(['/app/promotions'], {
+        queryParams: { eventId: 'event-123' },
+      });
+    });
+  });
+
   it('should copy business coordinates and address when useBusinessLocation is called', async () => {
     fixture = TestBed.createComponent(ListingEditorComponent);
     component = fixture.componentInstance;

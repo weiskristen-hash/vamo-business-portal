@@ -41,7 +41,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   <div *ngIf="successMessage()" class="alert alert-success" role="alert">
     <span class="alert-icon">✓</span>
     <span class="alert-text">{{ successMessage() }}</span>
-    <button type="button" class="alert-close" (click)="successMessage.set(null)" [attr.aria-label]="'PORTAL.BILLING.DISMISS' | translate">✕</button>
+    <button type="button" class="alert-close" (click)="successMessage.set(null); activeSuccessPayload.set(null)" [attr.aria-label]="'PORTAL.BILLING.DISMISS' | translate">✕</button>
   </div>
 
   <!-- Loading State -->
@@ -83,7 +83,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
           <span class="pending-icon">⏳</span>
           <div class="pending-text">
             <strong>{{ 'PORTAL.BILLING.SCHEDULED_CHANGE_TITLE' | translate }}</strong>
-            <span>{{ 'PORTAL.BILLING.PENDING_DOWNGRADE_DESC' | translate: { plan: sub.pendingPlanName, date: formatDate(sub.pendingPeriodEnd) } }}</span>
+            <span>{{ 'PORTAL.BILLING.PENDING_DOWNGRADE_DESC' | translate: { plan: (planTitleKey(sub.pendingPlanName) | translate), date: formatDate(sub.pendingPeriodEnd) } }}</span>
           </div>
         </div>
         <button
@@ -102,7 +102,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
         <div class="card current-plan-card">
           <div class="card-header">
             <span class="card-eyebrow">{{ 'PORTAL.BILLING.CURRENT_PLAN' | translate }}</span>
-            <span class="tier-pill">{{ sub.plan.productName }}</span>
+            <span class="tier-pill">{{ planTitleKey(sub.plan.productName) | translate }}</span>
           </div>
           <div class="card-body">
             <div class="plan-price-display">
@@ -200,7 +200,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
         >
           <div class="plan-card-header">
             <div class="plan-title-row">
-              <h3 class="plan-name">{{ plan.name }}</h3>
+              <h3 class="plan-name">{{ planTitleKey(plan.name) | translate }}</h3>
               <span *ngIf="isCurrentPlan(plan)" class="badge badge-current">{{ 'PORTAL.BILLING.BADGE_CURRENT' | translate }}</span>
               <span *ngIf="isPendingPlan(plan)" class="badge badge-scheduled">{{ 'PORTAL.BILLING.BADGE_SCHEDULED' | translate }}</span>
             </div>
@@ -280,7 +280,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             {{ (subscription() === null ? 'PORTAL.BILLING.CHECKOUT_TITLE_NEW' : 'PORTAL.BILLING.CHECKOUT_TITLE_CHANGE') | translate }}
           </h3>
           <p>
-            {{ 'PORTAL.BILLING.CHECKOUT_SUBTITLE' | translate: { name: selPlan.name, price: formatPrice(selPlan.amount, selPlan.currency), interval: ((selPlan.interval === 'year' ? 'PORTAL.BILLING.INTERVAL_YEAR' : 'PORTAL.BILLING.INTERVAL_MONTH') | translate) } }}
+            {{ 'PORTAL.BILLING.CHECKOUT_SUBTITLE' | translate: { name: (planTitleKey(selPlan.name) | translate), price: formatPrice(selPlan.amount, selPlan.currency), interval: ((selPlan.interval === 'year' ? 'PORTAL.BILLING.INTERVAL_YEAR' : 'PORTAL.BILLING.INTERVAL_MONTH') | translate) } }}
           </p>
         </div>
 
@@ -1532,11 +1532,23 @@ export class BillingComponent implements OnInit, OnDestroy {
   paymentActive = signal(false);
   paymentRequiresSetup = signal(false);
   isProcessingPayment = signal(false);
+  activeSuccessPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
 
   private stripeInstance: Stripe | null = null;
   private stripeElements: StripeElements | null = null;
 
   constructor() {
+    effect(() => {
+      this.i18n.lang();
+      const payload = this.activeSuccessPayload();
+      if (payload) {
+        const params = { ...payload.params };
+        if (params['planKey']) {
+          params['plan'] = this.i18n.t(params['planKey']);
+        }
+        this.successMessage.set(this.i18n.t(payload.key, params));
+      }
+    });
     effect(() => {
       const secret = this.clientSecret();
       const active = this.paymentActive();
@@ -1544,6 +1556,14 @@ export class BillingComponent implements OnInit, OnDestroy {
         setTimeout(() => this.mountPaymentElement(secret), 100);
       }
     });
+  }
+
+  planTitleKey(name: string | null | undefined): string {
+    return this.stripeService.planTitleKey(name);
+  }
+
+  getPlanTitle(name: string | null | undefined): string {
+    return this.stripeService.getPlanTitle(name);
   }
 
   async ngOnInit(): Promise<void> {
@@ -1777,7 +1797,10 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.selectedPlan.set(null);
     this.selectedSavedMethod.set(null);
     this.showChangePlanSection.set(false);
-    this.successMessage.set(this.i18n.t('PORTAL.BILLING.SUCCESS_ACTIVE', { plan: plan.name }));
+    const planKey = this.planTitleKey(plan.name);
+    const planTitle = this.getPlanTitle(plan.name);
+    this.activeSuccessPayload.set({ key: 'PORTAL.BILLING.SUCCESS_ACTIVE', params: { planKey, plan: planTitle } });
+    this.successMessage.set(this.i18n.t('PORTAL.BILLING.SUCCESS_ACTIVE', { plan: planTitle }));
 
     // Reload state
     const user = this.authService.currentUser;
@@ -1841,10 +1864,16 @@ export class BillingComponent implements OnInit, OnDestroy {
 
       this.showChangePlanSection.set(false);
       this.selectedPlan.set(null);
+      const planKey = this.planTitleKey(newPlan.name);
+      const planTitle = this.getPlanTitle(newPlan.name);
+      const msgKey = isUpgrade
+        ? 'PORTAL.BILLING.SUCCESS_UPGRADED'
+        : 'PORTAL.BILLING.SUCCESS_DOWNGRADE_SCHEDULED';
+      this.activeSuccessPayload.set({ key: msgKey, params: { planKey, plan: planTitle } });
       this.successMessage.set(
         isUpgrade
-          ? this.i18n.t('PORTAL.BILLING.SUCCESS_UPGRADED', { plan: newPlan.name })
-          : this.i18n.t('PORTAL.BILLING.SUCCESS_DOWNGRADE_SCHEDULED', { plan: newPlan.name })
+          ? this.i18n.t('PORTAL.BILLING.SUCCESS_UPGRADED', { plan: planTitle })
+          : this.i18n.t('PORTAL.BILLING.SUCCESS_DOWNGRADE_SCHEDULED', { plan: planTitle })
       );
 
       const user = this.authService.currentUser;

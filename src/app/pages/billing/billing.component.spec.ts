@@ -149,10 +149,32 @@ describe('BillingComponent', () => {
       detachPaymentMethod: vi.fn().mockResolvedValue({}),
       setProviderTier: vi.fn().mockResolvedValue({}),
       tierFromProductName: vi.fn((name: string) => {
-        if (name.includes('Basic')) return 'basic';
-        if (name.includes('Starter')) return 'starter';
-        if (name.includes('Advanced')) return 'advanced';
-        return 'starter';
+        if (!name) return null;
+        const n = name.toLowerCase();
+        if (n.includes('basic')) return 'basic';
+        if (n.includes('starter')) return 'starter';
+        if (n.includes('advanced')) return 'advanced';
+        return null;
+      }),
+      planTitleKey: vi.fn((name: string | null | undefined) => {
+        if (!name) return '';
+        const n = (name ?? '').toLowerCase();
+        if (n.includes('basic')) return 'PAYMENT.PLANS.BASIC.TITLE';
+        if (n.includes('starter')) return 'PAYMENT.PLANS.STARTER.TITLE';
+        if (n.includes('advanced')) return 'PAYMENT.PLANS.ADVANCED.TITLE';
+        return name;
+      }),
+      getPlanTitle: vi.fn((name: string | null | undefined) => {
+        if (!name) return '';
+        const n = (name ?? '').toLowerCase();
+        let key = name;
+        if (n.includes('basic')) key = 'PAYMENT.PLANS.BASIC.TITLE';
+        else if (n.includes('starter')) key = 'PAYMENT.PLANS.STARTER.TITLE';
+        else if (n.includes('advanced')) key = 'PAYMENT.PLANS.ADVANCED.TITLE';
+        else return name;
+        const i18n = TestBed.inject(I18nService);
+        const trans = i18n.t(key);
+        return trans && !trans.startsWith('PAYMENT.') ? trans : name;
       }),
       formatPrice: vi.fn((amount: number) => `$${amount / 100}`),
       cleanup: vi.fn(),

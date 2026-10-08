@@ -1259,4 +1259,37 @@ describe('PromotionsComponent', () => {
       expect(cardEl.querySelector('.badge-hot')).toBeTruthy();
     });
   });
+
+  describe('Return to Listings Navigation', () => {
+    it('should render back link to listings in page header', async () => {
+      await createComponent();
+      const backLink = fixture.nativeElement.querySelector('.page-header .header-back-wrap a');
+      expect(backLink).toBeTruthy();
+      expect(backLink.getAttribute('routerLink') || backLink.getAttribute('href')).toContain('/app/listings');
+      expect(backLink.textContent).toContain('View Listings');
+    });
+
+    it('should render return to listings button in checkout actions when payment is not active', async () => {
+      await createComponent();
+      component.selectedEventId.set('ev-1');
+      component.selectedPlacements.set(new Set(['main_banner']));
+      fixture.detectChanges();
+
+      const returnBtn = fixture.nativeElement.querySelector('.checkout-actions .return-to-listings-btn');
+      expect(returnBtn).toBeTruthy();
+      expect(returnBtn.getAttribute('routerLink') || returnBtn.getAttribute('href')).toContain('/app/listings');
+    });
+
+    it('should render return to listings button in success message alert', async () => {
+      await createComponent();
+      component.successDescriptor.set({ key: 'PORTAL.PROMOTIONS.SUCCESS_DESC' });
+      fixture.detectChanges();
+
+      const successAlert = fixture.nativeElement.querySelector('.alert-success');
+      expect(successAlert).toBeTruthy();
+      const returnBtn = successAlert.querySelector('.return-to-listings-btn');
+      expect(returnBtn).toBeTruthy();
+      expect(returnBtn.getAttribute('routerLink') || returnBtn.getAttribute('href')).toContain('/app/listings');
+    });
+  });
 });

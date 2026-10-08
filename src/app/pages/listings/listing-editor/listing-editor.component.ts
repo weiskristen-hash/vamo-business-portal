@@ -51,6 +51,19 @@ export interface ExistingImage {
             </button>
           </ng-container>
           <ng-container *ngIf="!isPastEvent">
+            <button
+              *ngIf="canPromotePost"
+              type="button"
+              class="btn btn-outline-primary promote-post-btn"
+              (click)="onPromotePost()"
+              [disabled]="submitting"
+              [title]="'PORTAL.EVENT_EDITOR.PROMOTE_POST_TITLE' | translate"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+              </svg>
+              <span>{{ 'PORTAL.EVENT_EDITOR.PROMOTE_POST_BTN' | translate }}</span>
+            </button>
             <button type="button" class="btn btn-secondary" (click)="saveDraft()" [disabled]="submitting">
               <span *ngIf="submitting && saveTargetStatus === 'draft'" class="spinner-inline"></span>
               <span>{{ 'PORTAL.EVENT_EDITOR.SAVE_DRAFT_BTN' | translate }}</span>
@@ -697,6 +710,19 @@ export interface ExistingImage {
                 </button>
               </ng-container>
               <ng-container *ngIf="!isPastEvent">
+                <button
+                  *ngIf="canPromotePost"
+                  type="button"
+                  class="btn btn-outline-primary promote-post-btn"
+                  (click)="onPromotePost()"
+                  [disabled]="submitting"
+                  [title]="'PORTAL.EVENT_EDITOR.PROMOTE_POST_TITLE' | translate"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                  </svg>
+                  <span>{{ 'PORTAL.EVENT_EDITOR.PROMOTE_POST_BTN' | translate }}</span>
+                </button>
                 <button type="button" class="btn btn-secondary" (click)="saveDraft()" [disabled]="submitting">
                   <span *ngIf="submitting && saveTargetStatus === 'draft'" class="spinner-inline"></span>
                   <span>{{ 'PORTAL.EVENT_EDITOR.SAVE_DRAFT_BTN' | translate }}</span>
@@ -895,6 +921,21 @@ export interface ExistingImage {
       display: flex;
       align-items: center;
       gap: 10px;
+    }
+
+    .promote-post-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--vamo-primary);
+      border-color: var(--vamo-primary);
+      background: transparent;
+    }
+
+    .promote-post-btn:hover:not(:disabled) {
+      background: var(--vamo-primary-light, rgba(99, 102, 241, 0.08));
+      border-color: var(--vamo-primary);
+      color: var(--vamo-primary);
     }
 
     /* 2-Column Grid Layout */
@@ -1869,6 +1910,11 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   errorMessage: string | null = null;
   isDirty = false;
   showCancelConfirmModal = false;
+  pendingExitTarget: 'listings' | 'promotions' = 'listings';
+
+  get canPromotePost(): boolean {
+    return this.isEditMode && !this.isDraft && !this.isPastEvent && !!this.eventId;
+  }
 
   // Past event and schedule locks
   originalEvent: VamoEvent | null = null;
@@ -2598,8 +2644,19 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     }
   }
 
+  onPromotePost(): void {
+    if (!this.canPromotePost) return;
+    if (this.isDirty) {
+      this.pendingExitTarget = 'promotions';
+      this.showCancelConfirmModal = true;
+    } else {
+      this.router.navigate(['/app/promotions'], { queryParams: { eventId: this.eventId } });
+    }
+  }
+
   onCancel(): void {
     if (this.isDirty) {
+      this.pendingExitTarget = 'listings';
       this.showCancelConfirmModal = true;
     } else {
       this.router.navigate(['/app/listings']);
@@ -2607,9 +2664,16 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   confirmDiscardAndExit(): void {
+    const target = this.pendingExitTarget;
+    const targetEventId = this.eventId;
     this.showCancelConfirmModal = false;
+    this.pendingExitTarget = 'listings';
     this.isDirty = false;
-    this.router.navigate(['/app/listings']);
+    if (target === 'promotions' && targetEventId) {
+      this.router.navigate(['/app/promotions'], { queryParams: { eventId: targetEventId } });
+    } else {
+      this.router.navigate(['/app/listings']);
+    }
   }
 
   // Preview formatting helpers
