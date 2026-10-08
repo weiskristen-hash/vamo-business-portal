@@ -37,6 +37,15 @@ interface PartialSuccessState {
 <div class="promotions-page">
   <!-- Header -->
   <header class="page-header">
+    <div class="header-back-wrap" style="margin-bottom: 12px;">
+      <a routerLink="/app/listings" class="back-link" style="display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: var(--vamo-primary); font-size: 0.875rem; font-weight: 500;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        <span>{{ 'PORTAL.PROMOTIONS.VIEW_LISTINGS_BTN' | translate }}</span>
+      </a>
+    </div>
     <div class="header-titles">
       <h1 class="page-title">{{ 'PORTAL.PROMOTIONS.TITLE' | translate }}</h1>
       <p class="page-subtitle">{{ 'PORTAL.PROMOTIONS.SUBTITLE' | translate }}</p>
@@ -73,6 +82,11 @@ interface PartialSuccessState {
     <div class="alert-content">
       <strong>{{ 'PORTAL.PROMOTIONS.SUCCESS_TITLE' | translate }}</strong>
       <p>{{ successMessage() }}</p>
+      <div class="alert-actions" style="margin-top: 8px;">
+        <a routerLink="/app/listings" class="btn btn-sm btn-primary return-to-listings-btn" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+          <span>{{ 'PORTAL.PROMOTIONS.VIEW_LISTINGS_BTN' | translate }}</span>
+        </a>
+      </div>
     </div>
     <button type="button" class="alert-close" (click)="successDescriptor.set(null)" [attr.aria-label]="'PORTAL.PROMOTIONS.DISMISS' | translate">✕</button>
   </div>
@@ -479,6 +493,13 @@ interface PartialSuccessState {
                 >
                   {{ 'PORTAL.PROMOTIONS.CANCEL_PAYMENT' | translate }}
                 </button>
+                <a
+                  routerLink="/app/listings"
+                  class="btn btn-secondary return-to-listings-btn"
+                  *ngIf="!paymentActive()"
+                >
+                  {{ 'PORTAL.PROMOTIONS.VIEW_LISTINGS_BTN' | translate }}
+                </a>
               </div>
 
             </div>

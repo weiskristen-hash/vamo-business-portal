@@ -560,12 +560,40 @@ export class StripeService {
     }
   }
 
-  tierFromProductName(productName: string): 'starter' | 'basic' | 'advanced' | null {
+  tierFromProductName(productName: string | null | undefined): 'starter' | 'basic' | 'advanced' | null {
     const n = (productName ?? '').toLowerCase();
     if (n.includes('advanced')) return 'advanced';
     if (n.includes('basic')) return 'basic';
     if (n.includes('starter')) return 'starter';
     return null;
+  }
+
+  /**
+   * Returns translation key for a Stripe product name.
+   * Starter/Basic/Advanced map to existing EN/ES plan keys ('PAYMENT.PLANS.*.TITLE').
+   * Unknown names pass through unchanged.
+   * Null/undefined or empty string produce an empty string.
+   * Never defaults an unknown name to Starter.
+   */
+  planTitleKey(productName: string | null | undefined): string {
+    if (!productName || !productName.trim()) return '';
+    const tier = this.tierFromProductName(productName);
+    if (tier === 'starter') return 'PAYMENT.PLANS.STARTER.TITLE';
+    if (tier === 'basic') return 'PAYMENT.PLANS.BASIC.TITLE';
+    if (tier === 'advanced') return 'PAYMENT.PLANS.ADVANCED.TITLE';
+    return productName;
+  }
+
+  /**
+   * Returns localized plan display title.
+   * Tracks reactive language signal so language changes update displayed names.
+   * Unknown names pass through unchanged; null/undefined produce an empty string.
+   */
+  getPlanTitle(productName: string | null | undefined): string {
+    this.i18n.lang();
+    if (!productName || !productName.trim()) return '';
+    const key = this.planTitleKey(productName);
+    return this.i18n.t(key);
   }
 
   formatPrice(amount: number, currency: string): string {

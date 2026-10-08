@@ -477,19 +477,24 @@ export interface OfferingOption {
               <div class="form-grid">
                 <!-- Phone -->
                 <div class="form-group">
-                  <label class="form-label" for="field-phone">{{ 'PORTAL.PROFILE.PHONE_LABEL' | translate }}</label>
+                  <label class="form-label" for="field-phone">
+                    {{ 'PORTAL.PROFILE.PHONE_LABEL' | translate }} <span class="required-star">*</span>
+                  </label>
                   <app-phone-input
                     id="field-phone"
                     name="phone"
                     [ngModel]="form().phone"
                     (ngModelChange)="onPhoneChange($event)"
                     (blurred)="touched.phone = true; markDirty()"
-                    [isInvalid]="touched.phone && !isPhoneValid(form().phone, provider()?.phone ?? undefined)"
+                    [isInvalid]="touched.phone && (!form().phone.trim() || !isPhoneValid(form().phone))"
                   ></app-phone-input>
-                  <p *ngIf="touched.phone && !isPhoneValid(form().phone, provider()?.phone ?? undefined)" class="form-error">
+                  <p *ngIf="touched.phone && !form().phone.trim()" class="form-error">
+                    {{ 'PORTAL.PROFILE.PHONE_REQUIRED' | translate }}
+                  </p>
+                  <p *ngIf="touched.phone && form().phone.trim() && !isPhoneValid(form().phone)" class="form-error">
                     {{ 'PORTAL.PROFILE.PHONE_INVALID' | translate }}
                   </p>
-                  <div class="phone-link-wrap" *ngIf="form().phone && isPhoneValid(form().phone, provider()?.phone ?? undefined)">
+                  <div class="phone-link-wrap" *ngIf="form().phone && isPhoneValid(form().phone)">
                     <a [href]="'tel:' + form().phone" class="phone-test-link">
                       📞 {{ form().phone }}
                     </a>
@@ -520,14 +525,14 @@ export interface OfferingOption {
                     [ngModel]="form().wa_number"
                     (ngModelChange)="onWaChange($event)"
                     (blurred)="touched.waNumber = true; markDirty()"
-                    [isInvalid]="touched.waNumber && !isPhoneValid(form().wa_number, provider()?.wa_number ?? undefined)"
+                    [isInvalid]="touched.waNumber && !!form().wa_number.trim() && !isPhoneValid(form().wa_number)"
                   ></app-phone-input>
                   <div class="wa-footer">
-                    <p *ngIf="touched.waNumber && !isPhoneValid(form().wa_number, provider()?.wa_number ?? undefined)" class="form-error">
+                    <p *ngIf="touched.waNumber && form().wa_number.trim() && !isPhoneValid(form().wa_number)" class="form-error">
                       {{ 'PORTAL.PROFILE.WHATSAPP_INVALID' | translate }}
                     </p>
                     <a
-                      *ngIf="form().wa_number && isPhoneValid(form().wa_number, provider()?.wa_number ?? undefined)"
+                      *ngIf="form().wa_number && isPhoneValid(form().wa_number)"
                       [href]="getWhatsAppUrl(form().wa_number)"
                       target="_blank"
                       rel="noopener noreferrer"
@@ -540,17 +545,22 @@ export interface OfferingOption {
 
                 <!-- Email -->
                 <div class="form-group">
-                  <label class="form-label" for="field-email">{{ 'PORTAL.PROFILE.EMAIL_LABEL' | translate }}</label>
+                  <label class="form-label" for="field-email">
+                    {{ 'PORTAL.PROFILE.EMAIL_LABEL' | translate }} <span class="required-star">*</span>
+                  </label>
                   <input
                     id="field-email"
                     type="email"
                     class="form-control"
-                    [class.is-invalid]="touched.email && !isEmailValid(form().email)"
+                    [class.is-invalid]="touched.email && (!form().email.trim() || !isEmailValid(form().email))"
                     [(ngModel)]="form().email"
                     (blur)="touched.email = true; markDirty()"
                     [placeholder]="'PORTAL.PROFILE.EMAIL_PLACEHOLDER' | translate"
                   />
-                  <p *ngIf="touched.email && !isEmailValid(form().email)" class="form-error">
+                  <p *ngIf="touched.email && !form().email.trim()" class="form-error">
+                    {{ 'PORTAL.PROFILE.EMAIL_REQUIRED' | translate }}
+                  </p>
+                  <p *ngIf="touched.email && form().email.trim() && !isEmailValid(form().email)" class="form-error">
                     {{ 'PORTAL.PROFILE.EMAIL_INVALID' | translate }}
                   </p>
                 </div>
@@ -2360,27 +2370,23 @@ export class BusinessProfileComponent implements OnInit {
 
   // ── Validation Helpers ──────────────────────────────────────────────
   isEmailValid(email: string | null | undefined): boolean {
-    if (!email || !email.trim()) return true;
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email ?? '').trim());
   }
 
-  isPhoneValid(phone: string | null | undefined, initialValue?: string): boolean {
-    if (!phone || !phone.trim()) return true;
-    if (initialValue !== undefined && phone === initialValue) return true;
+  isPhoneValid(phone: string | null | undefined): boolean {
     return isValidPhone(phone);
   }
 
   isFormValid(): boolean {
     const f = this.form();
-    const p = this.provider();
     return !!(
       f.name?.trim() &&
       f.business_type &&
       f.description?.trim() &&
       f.address?.trim() &&
       this.isEmailValid(f.email) &&
-      this.isPhoneValid(f.phone, p?.phone ?? undefined) &&
-      this.isPhoneValid(f.wa_number, p?.wa_number ?? undefined)
+      this.isPhoneValid(f.phone) &&
+      (!f.wa_number?.trim() || isValidPhone(f.wa_number))
     );
   }
 
@@ -2405,11 +2411,10 @@ export class BusinessProfileComponent implements OnInit {
 
     try {
       const f = this.form();
-      const p = this.provider();
-      const finalPhone = (this.touched.phone || f.phone !== p?.phone) ? f.phone : (p?.phone ?? f.phone);
+      const finalPhone = f.phone.trim();
       const finalWa = this.waNumberSameAsPhone
         ? finalPhone
-        : ((this.touched.waNumber || f.wa_number !== p?.wa_number) ? f.wa_number : (p?.wa_number ?? f.wa_number));
+        : (f.wa_number?.trim() || undefined);
 
       const updated = await this.businessService.updateProvider(
         f.id,
@@ -2420,7 +2425,7 @@ export class BusinessProfileComponent implements OnInit {
           city: f.city,
           phone: finalPhone,
           wa_number: finalWa,
-          email: f.email,
+          email: f.email.trim(),
           facebook: f.facebook,
           instagram: f.instagram,
           google_business_link: f.google_business_link,

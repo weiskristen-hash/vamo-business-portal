@@ -121,6 +121,60 @@ describe('BusinessProfileComponent', () => {
     expect(component.isFormValid()).toBe(false);
   });
 
+  it('should enforce required email and phone, rejecting empty or invalid values', async () => {
+    await fixture.whenStable();
+    expect(component.isFormValid()).toBe(true);
+
+    // Empty or whitespace email
+    component.form.update((f) => ({ ...f, email: '' }));
+    expect(component.isEmailValid(component.form().email)).toBe(false);
+    expect(component.isFormValid()).toBe(false);
+
+    component.form.update((f) => ({ ...f, email: '   ' }));
+    expect(component.isEmailValid(component.form().email)).toBe(false);
+    expect(component.isFormValid()).toBe(false);
+
+    // Restore email, test empty or whitespace phone
+    component.form.update((f) => ({ ...f, email: 'valid@example.com', phone: '' }));
+    expect(component.isPhoneValid(component.form().phone)).toBe(false);
+    expect(component.isFormValid()).toBe(false);
+
+    component.form.update((f) => ({ ...f, phone: '   ' }));
+    expect(component.isPhoneValid(component.form().phone)).toBe(false);
+    expect(component.isFormValid()).toBe(false);
+
+    // Invalid phone number format
+    component.form.update((f) => ({ ...f, phone: 'abc1234' }));
+    expect(component.isPhoneValid(component.form().phone)).toBe(false);
+    expect(component.isFormValid()).toBe(false);
+
+    // Optional WhatsApp: empty is valid, invalid string is invalid
+    component.form.update((f) => ({ ...f, phone: '+18095551234', wa_number: '' }));
+    expect(component.isFormValid()).toBe(true);
+
+    component.form.update((f) => ({ ...f, wa_number: 'not-a-number' }));
+    expect(component.isFormValid()).toBe(false);
+
+    component.form.update((f) => ({ ...f, wa_number: '+18095559999' }));
+    expect(component.isFormValid()).toBe(true);
+  });
+
+  it('should prevent save and never invoke updateProvider when email or phone is invalid', async () => {
+    await fixture.whenStable();
+    businessServiceSpy.updateProvider.mockClear();
+
+    // Set invalid phone
+    component.form.update((f) => ({ ...f, phone: '' }));
+    component.markDirty();
+
+    await component.saveProfile();
+
+    expect(businessServiceSpy.updateProvider).not.toHaveBeenCalled();
+    expect(component.isDirty()).toBe(true);
+    expect(component.saveError()).toBeTruthy();
+    expect(component.touched.phone).toBe(true);
+  });
+
   it('should toggle offerings for supported business types', async () => {
     await fixture.whenStable();
     component.form.update((f) => ({ ...f, business_type: 'restaurant' }));

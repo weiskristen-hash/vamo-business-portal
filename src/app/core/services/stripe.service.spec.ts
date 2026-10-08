@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { StripeService, StripePlan } from './stripe.service';
 import { AuthService } from './auth.service';
+import { I18nService } from '../i18n/i18n.service';
 import { runtimeConfig } from '../config/runtime-config';
 
 describe('StripeService', () => {
@@ -40,6 +41,49 @@ describe('StripeService', () => {
       expect(service.tierFromProductName('VAMO Basic')).toBe('basic');
       expect(service.tierFromProductName('Advanced Subscription')).toBe('advanced');
       expect(service.tierFromProductName('Custom Enterprise')).toBeNull();
+    });
+  });
+
+  describe('planTitleKey', () => {
+    it('should return matching i18n key for recognized tier names', () => {
+      expect(service.planTitleKey('Starter Plan')).toBe('PAYMENT.PLANS.STARTER.TITLE');
+      expect(service.planTitleKey('VAMO Basic')).toBe('PAYMENT.PLANS.BASIC.TITLE');
+      expect(service.planTitleKey('Advanced Subscription')).toBe('PAYMENT.PLANS.ADVANCED.TITLE');
+    });
+
+    it('should pass through unrecognized names unchanged and return empty string for null/undefined', () => {
+      expect(service.planTitleKey('Custom Enterprise')).toBe('Custom Enterprise');
+      expect(service.planTitleKey(null)).toBe('');
+      expect(service.planTitleKey(undefined)).toBe('');
+      expect(service.planTitleKey('')).toBe('');
+    });
+  });
+
+  describe('getPlanTitle', () => {
+    it('should return localized plan title in current language and update on language switch', () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('en');
+      expect(service.getPlanTitle('Starter Plan')).toBe('Starter Plan');
+      expect(service.getPlanTitle('Basic Plan')).toBe('Basic Plan');
+      expect(service.getPlanTitle('Advanced Plan')).toBe('Advanced Plan');
+
+      i18n.setLang('es');
+      expect(service.getPlanTitle('Starter Plan')).toBe('Plan Inicial');
+      expect(service.getPlanTitle('Basic Plan')).toBe('Plan Básico');
+      expect(service.getPlanTitle('Advanced Plan')).toBe('Plan Avanzado');
+
+      i18n.setLang('en');
+    });
+
+    it('should pass through unrecognized names without defaulting to Starter', () => {
+      expect(service.getPlanTitle('Custom Enterprise')).toBe('Custom Enterprise');
+      expect(service.getPlanTitle('VIP Platinum')).toBe('VIP Platinum');
+    });
+
+    it('should return empty string for null, undefined, or empty string', () => {
+      expect(service.getPlanTitle(null)).toBe('');
+      expect(service.getPlanTitle(undefined)).toBe('');
+      expect(service.getPlanTitle('')).toBe('');
     });
   });
 
