@@ -1087,7 +1087,7 @@ export interface ExistingImage {
     .category-card-btn.selected {
       border-color: var(--vamo-primary);
       background: var(--vamo-primary-light);
-      box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
+      box-shadow: 0 0 0 2px rgba(128, 112, 192, 0.2);
     }
 
     .cat-emoji {
@@ -1695,7 +1695,7 @@ export interface ExistingImage {
       position: absolute;
       bottom: 8px;
       left: 10px;
-      background: #ec4899;
+      background: var(--vamo-pink, #F93CAD);
       color: #ffffff;
       font-size: 0.68rem;
       font-weight: 600;
@@ -1720,8 +1720,8 @@ export interface ExistingImage {
     .phone-mode-tag {
       font-size: 0.68rem;
       font-weight: 600;
-      color: #7c3aed;
-      background: #f5f3ff;
+      color: var(--vamo-purple, #8070C0);
+      background: var(--vamo-purple-light, rgba(128, 112, 192, 0.12));
       padding: 2px 6px;
       border-radius: 4px;
     }

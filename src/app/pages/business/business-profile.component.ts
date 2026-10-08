@@ -513,7 +513,7 @@ export interface OfferingOption {
                         type="checkbox"
                         [checked]="waNumberSameAsPhone"
                         (change)="toggleWaSameAsPhone($event)"
-                        style="cursor: pointer; accent-color: var(--vamo-pink, #ec4899);"
+                        style="cursor: pointer; accent-color: var(--vamo-pink, #F93CAD);"
                       />
                       <span>{{ 'PORTAL.PROFILE.WA_SAME_AS_PHONE' | translate }}</span>
                     </label>
@@ -1063,7 +1063,7 @@ export interface OfferingOption {
     }
 
     .chip-btn.chip-active {
-      background: rgba(124, 58, 237, 0.1);
+      background: rgba(128, 112, 192, 0.1);
       border-color: var(--vamo-primary);
       color: var(--vamo-primary);
     }
@@ -1237,7 +1237,7 @@ export interface OfferingOption {
     .gallery-upload-tile:hover {
       border-color: var(--vamo-primary);
       color: var(--vamo-primary);
-      background: rgba(124, 58, 237, 0.04);
+      background: rgba(128, 112, 192, 0.04);
     }
 
     .tile-loading {
@@ -1780,7 +1780,7 @@ export interface OfferingOption {
     }
 
     .tier-badge {
-      background: rgba(124, 58, 237, 0.1);
+      background: rgba(128, 112, 192, 0.1);
       color: var(--vamo-primary);
       padding: 2px 8px;
       border-radius: 4px;

@@ -470,7 +470,7 @@ import { VamoUser } from '../../core/models/user.model';
     .form-control:focus {
       outline: none;
       border-color: var(--vamo-primary);
-      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+      box-shadow: 0 0 0 3px rgba(128, 112, 192, 0.15);
     }
 
     .form-control.is-invalid {

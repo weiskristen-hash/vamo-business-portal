@@ -284,8 +284,8 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       left: -20%;
       width: 140%;
       height: 140%;
-      background: radial-gradient(circle at 30% 30%, rgba(236, 72, 153, 0.12) 0%, transparent 60%),
-                  radial-gradient(circle at 70% 70%, rgba(124, 58, 237, 0.08) 0%, transparent 60%);
+      background: radial-gradient(circle at 30% 30%, rgba(249, 60, 173, 0.12) 0%, transparent 60%),
+                  radial-gradient(circle at 70% 70%, rgba(128, 112, 192, 0.08) 0%, transparent 60%);
       pointer-events: none;
       z-index: 0;
     }
@@ -327,7 +327,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       font-size: 0.68rem;
       font-weight: 700;
       letter-spacing: 0.14em;
-      color: var(--vamo-pink, #ec4899);
+      color: var(--vamo-pink, #F93CAD);
     }
 
     .hero-body {
@@ -474,7 +474,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
     .forgot-link {
       background: transparent;
       border: none;
-      color: var(--vamo-pink, #ec4899);
+      color: var(--vamo-pink, #F93CAD);
       font-size: 0.82rem;
       font-weight: 600;
       cursor: pointer;
@@ -484,12 +484,12 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
     }
 
     .forgot-link:hover:not(:disabled) {
-      color: #be185d;
+      color: var(--vamo-pink-hover, #e0289a);
       text-decoration: underline;
     }
 
     .forgot-link:focus-visible {
-      outline: 2px solid var(--vamo-pink, #ec4899);
+      outline: 2px solid var(--vamo-pink, #F93CAD);
       outline-offset: 2px;
       border-radius: 4px;
     }
@@ -511,8 +511,8 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
     .form-input:focus {
       background: #ffffff;
       outline: none;
-      border-color: var(--vamo-pink, #ec4899);
-      box-shadow: 0 0 0 3px rgba(236, 72, 153, 0.15);
+      border-color: var(--vamo-pink, #F93CAD);
+      box-shadow: 0 0 0 3px rgba(249, 60, 173, 0.15);
     }
 
     .form-input::placeholder {
@@ -555,7 +555,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
     }
 
     .password-toggle-btn:focus-visible {
-      outline: 2px solid var(--vamo-pink, #ec4899);
+      outline: 2px solid var(--vamo-pink, #F93CAD);
       outline-offset: 2px;
     }
 
@@ -570,18 +570,18 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
     }
 
     .btn-primary {
-      background: linear-gradient(135deg, var(--vamo-pink, #ec4899), #db2777);
+      background: linear-gradient(135deg, var(--vamo-pink, #F93CAD), #e0289a);
       color: #ffffff;
       border: none;
       border-radius: 8px;
       cursor: pointer;
       transition: all 0.15s ease;
-      box-shadow: 0 2px 8px rgba(236, 72, 153, 0.25);
+      box-shadow: 0 2px 8px rgba(249, 60, 173, 0.25);
     }
 
     .btn-primary:hover:not(:disabled) {
       opacity: 0.95;
-      box-shadow: 0 4px 12px rgba(236, 72, 153, 0.35);
+      box-shadow: 0 4px 12px rgba(249, 60, 173, 0.35);
       transform: translateY(-1px);
     }
 
@@ -701,7 +701,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
     }
 
     .social-btn:focus-visible {
-      outline: 2px solid var(--vamo-pink, #ec4899);
+      outline: 2px solid var(--vamo-pink, #F93CAD);
       outline-offset: 2px;
     }
 
@@ -732,19 +732,19 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
 
     .signup-link {
       font-size: 0.88rem;
-      color: var(--vamo-pink, #ec4899);
+      color: var(--vamo-pink, #F93CAD);
       text-decoration: none;
       font-weight: 700;
       transition: color 0.15s ease;
     }
 
     .signup-link:hover {
-      color: #be185d;
+      color: var(--vamo-pink-hover, #e0289a);
       text-decoration: underline;
     }
 
     .signup-link:focus-visible {
-      outline: 2px solid var(--vamo-pink, #ec4899);
+      outline: 2px solid var(--vamo-pink, #F93CAD);
       outline-offset: 2px;
       border-radius: 4px;
     }

@@ -223,10 +223,10 @@ interface NavSection {
     }
 
     .nav-link.active {
-      background: rgba(124, 58, 237, 0.18);
+      background: rgba(128, 112, 192, 0.18);
       color: #ffffff;
       font-weight: 600;
-      border: 1px solid rgba(124, 58, 237, 0.4);
+      border: 1px solid rgba(128, 112, 192, 0.4);
     }
 
     .nav-link.active .nav-icon {
@@ -234,13 +234,13 @@ interface NavSection {
     }
 
     .nav-link.action-link {
-      background: rgba(254, 57, 127, 0.08);
+      background: rgba(249, 60, 173, 0.08);
       color: #ff75a6;
-      border: 1px dashed rgba(254, 57, 127, 0.3);
+      border: 1px dashed rgba(249, 60, 173, 0.3);
     }
 
     .nav-link.action-link:hover {
-      background: rgba(254, 57, 127, 0.16);
+      background: rgba(249, 60, 173, 0.16);
       color: #ffffff;
       border-style: solid;
     }
@@ -249,7 +249,7 @@ interface NavSection {
       background: var(--vamo-gradient-accent);
       color: #ffffff;
       border: none;
-      box-shadow: 0 4px 12px rgba(254, 57, 127, 0.35);
+      box-shadow: 0 4px 12px rgba(249, 60, 173, 0.35);
     }
 
     .nav-link.action-link.active .nav-icon {

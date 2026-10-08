@@ -574,12 +574,12 @@ import {
     }
 
     .action-card-highlight {
-      border-color: rgba(124, 58, 237, 0.3);
-      background: rgba(124, 58, 237, 0.03);
+      border-color: rgba(128, 112, 192, 0.3);
+      background: rgba(128, 112, 192, 0.03);
     }
 
     .action-card-highlight:hover {
-      background: rgba(124, 58, 237, 0.08);
+      background: rgba(128, 112, 192, 0.08);
       border-color: var(--vamo-primary);
     }
 
@@ -595,7 +595,7 @@ import {
     }
 
     .icon-pink {
-      background: rgba(124, 58, 237, 0.1);
+      background: rgba(128, 112, 192, 0.1);
       color: var(--vamo-primary);
     }
 

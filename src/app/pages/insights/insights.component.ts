@@ -323,7 +323,7 @@ interface ChartModel {
     .ins-thumb { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
     .ins-thumb--fallback {
       display: inline-flex; align-items: center; justify-content: center;
-      background: var(--vamo-pink-light, #fce7f3); color: var(--vamo-pink, #db2777); font-weight: 800; font-size: 1.2rem;
+      background: var(--vamo-pink-light, rgba(249, 60, 173, 0.12)); color: var(--vamo-pink, #F93CAD); font-weight: 800; font-size: 1.2rem;
     }
     .ins-top-info { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
     .ins-top-name { margin: 0; font-weight: 700; color: var(--vamo-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
