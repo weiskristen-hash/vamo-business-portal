@@ -1326,6 +1326,9 @@ export const esTranslations: Record<string, any> = {
       "DISMISS": "Cerrar",
       "LOADING": "Cargando opciones de promoción…",
 
+      "OVERVIEW_TITLE": "Posicionamientos de Promoción",
+      "OVERVIEW_SUBTITLE": "Aumenta tu visibilidad en la app y el sitio web de VAMO con opciones de alto impacto.",
+
       "ACTIVE_PLACEMENTS_TITLE": "Posicionamientos Activos",
       "ACTIVE_PLACEMENTS_SUBTITLE": "Tus publicaciones destacadas actualmente en las secciones de descubrimiento de VAMO.",
       "EMPTY_ACTIVE": "No hay promociones activas en este momento. Promociona una publicación a continuación para aumentar su alcance.",
@@ -1488,6 +1491,9 @@ export const esTranslations: Record<string, any> = {
       "PROFILE_ERROR": "No se pudo actualizar el perfil. Por favor, inténtalo de nuevo.",
       "PASSWORD_ERROR": "No se pudo enviar el correo de restablecimiento. Por favor, inténtalo de nuevo.",
       "DELETE_ERROR": "No se pudo eliminar la cuenta. Por favor, inténtalo de nuevo o contacta con soporte.",
+      "DELETE_UNAVAILABLE": "La eliminación de cuenta no está disponible en este momento. Por favor, contacta con soporte en support@vamo-app.com.",
+      "DELETE_SESSION_EXPIRED": "Tu sesión ha expirado. Por favor, inicia sesión de nuevo.",
+      "DELETE_NETWORK_ERROR": "Error de red. Por favor, comprueba tu conexión e inténtalo de nuevo.",
       "VALIDATION_REQUIRED": "Este campo es obligatorio.",
       "VALIDATION_EMAIL": "Por favor, introduce un correo electrónico válido."
     },

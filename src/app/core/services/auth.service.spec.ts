@@ -580,7 +580,7 @@ describe('AuthService', () => {
       const { directusClient } = await import('../directus/directus-client');
       vi.spyOn(directusClient, 'getToken').mockResolvedValue(null);
 
-      await expect(service.deleteAccount()).rejects.toThrow('Not authenticated');
+      await expect(service.deleteAccount()).rejects.toThrow('NOT_AUTHENTICATED');
     });
 
     it('deleteAccount throws if deleteAccountFlow is not configured', async () => {
@@ -590,6 +590,32 @@ describe('AuthService', () => {
       vi.spyOn(runtimeConfig, 'deleteAccountFlow', 'get').mockReturnValue('');
 
       await expect(service.deleteAccount()).rejects.toThrow('DELETE_ACCOUNT_FLOW_NOT_CONFIGURED');
+    });
+
+    it('deleteAccount throws SESSION_EXPIRED on 401 response and preserves session', async () => {
+      const { directusClient } = await import('../directus/directus-client');
+      const { runtimeConfig } = await import('../config/runtime-config');
+      vi.spyOn(directusClient, 'getToken').mockResolvedValue('test-token');
+      vi.spyOn(runtimeConfig, 'deleteAccountFlow', 'get').mockReturnValue('flow-delete-123');
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Unauthorized', { status: 401 }));
+      const logoutSpy = vi.spyOn(service, 'logout');
+
+      await expect(service.deleteAccount()).rejects.toThrow('SESSION_EXPIRED');
+      expect(logoutSpy).not.toHaveBeenCalled();
+    });
+
+    it('deleteAccount handles network failure with isNetworkError flag', async () => {
+      const { directusClient } = await import('../directus/directus-client');
+      const { runtimeConfig } = await import('../config/runtime-config');
+      vi.spyOn(directusClient, 'getToken').mockResolvedValue('test-token');
+      vi.spyOn(runtimeConfig, 'deleteAccountFlow', 'get').mockReturnValue('flow-delete-123');
+
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
+      const logoutSpy = vi.spyOn(service, 'logout');
+
+      await expect(service.deleteAccount()).rejects.toThrow('Failed to fetch');
+      expect(logoutSpy).not.toHaveBeenCalled();
     });
 
     it('deleteAccount triggers canonical flow with Bearer token and clears session on success', async () => {

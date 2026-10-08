@@ -957,7 +957,27 @@ export class SettingsComponent implements OnInit, OnDestroy {
       await this.router.navigate(['/login'], { replaceUrl: true });
     } catch (err: any) {
       this.isDeletingAccount.set(false);
-      this.deleteError.set(this.i18n.t('PORTAL.SETTINGS.DELETE_ERROR'));
+      if (err?.message === 'DELETE_ACCOUNT_FLOW_NOT_CONFIGURED') {
+        this.deleteError.set(this.i18n.t('PORTAL.SETTINGS.DELETE_UNAVAILABLE'));
+      } else if (
+        err?.message === 'SESSION_EXPIRED' ||
+        err?.message === 'NOT_AUTHENTICATED' ||
+        err?.status === 401 ||
+        err?.status === 403
+      ) {
+        this.deleteError.set(this.i18n.t('PORTAL.SETTINGS.DELETE_SESSION_EXPIRED'));
+      } else if (
+        err?.isNetworkError ||
+        err?.name === 'TypeError' ||
+        err?.message === 'NETWORK_ERROR' ||
+        err?.message?.includes('network') ||
+        err?.message?.includes('Failed to fetch') ||
+        (typeof navigator !== 'undefined' && !navigator.onLine)
+      ) {
+        this.deleteError.set(this.i18n.t('PORTAL.SETTINGS.DELETE_NETWORK_ERROR'));
+      } else {
+        this.deleteError.set(this.i18n.t('PORTAL.SETTINGS.DELETE_ERROR'));
+      }
     }
   }
 }

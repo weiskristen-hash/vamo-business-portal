@@ -85,6 +85,50 @@ interface PartialSuccessState {
 
   <div *ngIf="!isLoading()" class="promotions-content">
 
+    <!-- ── PROMOTIONS OVERVIEW (INFORMATIONAL) ────────────────────────── -->
+    <section class="card promotions-overview-card" aria-labelledby="promotions-overview-title">
+      <div class="card-header">
+        <div>
+          <h2 id="promotions-overview-title" class="card-title">{{ 'PORTAL.PROMOTIONS.OVERVIEW_TITLE' | translate }}</h2>
+          <p class="card-subtitle">{{ 'PORTAL.PROMOTIONS.OVERVIEW_SUBTITLE' | translate }}</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="overview-grid">
+          <!-- Main Banner Overview -->
+          <div class="overview-item">
+            <div class="overview-icon overview-icon--banner">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="m3 11 18-5v12L3 14v-3z"></path>
+                <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path>
+              </svg>
+            </div>
+            <div class="overview-details">
+              <div class="overview-header-row">
+                <h3 class="overview-title">{{ 'PORTAL.PROMOTIONS.MAIN_BANNER_TITLE' | translate }} · {{ mainBannerDisplayPrice() }}</h3>
+              </div>
+              <p class="overview-desc">{{ 'PORTAL.PROMOTIONS.MAIN_BANNER_DESC' | translate }}</p>
+            </div>
+          </div>
+
+          <!-- What's Hot Overview -->
+          <div class="overview-item">
+            <div class="overview-icon overview-icon--hot">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path>
+              </svg>
+            </div>
+            <div class="overview-details">
+              <div class="overview-header-row">
+                <h3 class="overview-title">{{ 'PORTAL.PROMOTIONS.WHATS_HOT_TITLE' | translate }} · {{ whatsHotDisplayPrice() }}</h3>
+              </div>
+              <p class="overview-desc">{{ 'PORTAL.PROMOTIONS.WHATS_HOT_DESC' | translate }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ── ACTIVE PROMOTIONS SECTION ───────────────────────────────── -->
     <section *ngIf="activeEvents().length > 0" class="card active-placements-card">
       <div class="card-header">
@@ -453,7 +497,7 @@ interface PartialSuccessState {
   padding: 1.5rem;
   max-width: 1200px;
   margin: 0 auto;
-  color: #ffffff;
+  color: var(--vamo-text, #0f172a);
 }
 
 .page-header {
@@ -463,14 +507,14 @@ interface PartialSuccessState {
 .page-title {
   font-size: 1.875rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--vamo-text, #0f172a);
   margin: 0 0 0.5rem 0;
   letter-spacing: -0.025em;
 }
 
 .page-subtitle {
   font-size: 1rem;
-  color: #a0a0b8;
+  color: var(--vamo-text-muted, #475569);
   margin: 0;
   max-width: 700px;
 }
@@ -487,21 +531,89 @@ interface PartialSuccessState {
 }
 
 .alert-danger {
-  background: rgba(239, 68, 68, 0.12);
+  background: rgba(239, 68, 68, 0.08);
   border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #fca5a5;
+  color: #991b1b;
 }
 
 .alert-warning {
-  background: rgba(245, 158, 11, 0.12);
+  background: rgba(245, 158, 11, 0.08);
   border: 1px solid rgba(245, 158, 11, 0.3);
-  color: #fcd34d;
+  color: #92400e;
 }
 
 .alert-success {
-  background: rgba(16, 185, 129, 0.12);
+  background: rgba(16, 185, 129, 0.08);
   border: 1px solid rgba(16, 185, 129, 0.3);
-  color: #6ee7b7;
+  color: #065f46;
+}
+
+/* Promotions Overview Card */
+.promotions-overview-card {
+  margin-bottom: 0;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.25rem;
+}
+
+.overview-item {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.overview-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.overview-icon--banner {
+  background: rgba(254, 57, 127, 0.15);
+  color: #FE397F;
+}
+
+.overview-icon--hot {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.overview-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.overview-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.overview-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+.overview-desc {
+  font-size: 0.875rem;
+  color: #a0a0b8;
+  margin: 0;
+  line-height: 1.5;
 }
 
 .alert-icon {
@@ -1289,6 +1401,16 @@ export class PromotionsComponent implements OnInit, OnDestroy {
   whatsHotPrice = computed(() =>
     this.addonPrices().find(p => this.normalize(p.name).includes('whats hot'))
   );
+
+  mainBannerDisplayPrice = computed(() => {
+    const mb = this.mainBannerPrice();
+    return mb ? this.formatPrice(mb.amount, mb.currency) : '$30';
+  });
+
+  whatsHotDisplayPrice = computed(() => {
+    const wh = this.whatsHotPrice();
+    return wh ? this.formatPrice(wh.amount, wh.currency) : '$15';
+  });
 
   mainBannerSlotsLeft = computed(() => {
     const avail = this.boostAvailability();
