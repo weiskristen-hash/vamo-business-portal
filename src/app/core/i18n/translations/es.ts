@@ -1346,9 +1346,9 @@ export const esTranslations: Record<string, any> = {
       "STEP_PLACEMENT_SUBTITLE": "Selecciona una o ambas ubicaciones de alto impacto en la aplicación VAMO.",
 
       "MAIN_BANNER_TITLE": "Banner Principal",
-      "MAIN_BANNER_DESC": "Pon tu evento o actividad en el centro de atención en la pantalla de inicio de VAMO durante hasta 7 días.",
+      "MAIN_BANNER_DESC": "Dale a tu evento visibilidad premium en la app y el sitio web de VAMO durante un período de promoción de 7 días. Promoción adicional en redes sociales.",
       "WHATS_HOT_TITLE": "Lo Más Caliente",
-      "WHATS_HOT_DESC": "Consigue más visibilidad destacando tu evento o actividad en la sección Lo Más Caliente durante hasta 7 días.",
+      "WHATS_HOT_DESC": "Pon tu evento en el centro de atención como una recomendación destacada en la app y el sitio web de VAMO por hasta 7 días. Promoción adicional en redes sociales.",
 
       "PRICE_PER_DURATION": "{{price}} / 7 días",
       "SLOTS_LEFT": "{{count}} disponibles",
