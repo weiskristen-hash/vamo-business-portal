@@ -43,6 +43,7 @@ export class OnboardingComponent implements OnInit {
   currentStep = signal<OnboardingStep>('business-pitch');
   isLoggedInUser = signal<boolean>(false);
   pitchSlide = signal<number>(0);
+  isDirectEntry = signal<boolean>(false);
 
   // Area & Location State
   areas = signal<Area[]>([]);
@@ -121,6 +122,24 @@ export class OnboardingComponent implements OnInit {
         } catch {}
       }
       await this.continueBusinessSetup(currentUser);
+    } else {
+      const stepParam = this.route.snapshot.queryParamMap?.get('step');
+      const isRegisterRoute =
+        this.route.snapshot.routeConfig?.path === 'register' ||
+        (typeof this.router.url === 'string' && this.router.url.split('?')[0].endsWith('/register'));
+      const isDirectRegister =
+        isRegisterRoute || stepParam === 'register' || stepParam === 'business-register';
+
+      if (isDirectRegister) {
+        this.isDirectEntry.set(true);
+        this.currentStep.set('business-register');
+      } else if (
+        stepParam === 'business-pitch' ||
+        stepParam === 'area' ||
+        stepParam === 'business-details'
+      ) {
+        this.currentStep.set(stepParam as OnboardingStep);
+      }
     }
 
     try {
@@ -346,8 +365,12 @@ export class OnboardingComponent implements OnInit {
         void this.router.navigate(['/login'], { replaceUrl: true });
       }
     } else if (step === 'business-register') {
-      this.pitchSlide.set(2);
-      this.currentStep.set('business-pitch');
+      if (this.isDirectEntry()) {
+        void this.router.navigate(['/login'], { replaceUrl: true });
+      } else {
+        this.pitchSlide.set(2);
+        this.currentStep.set('business-pitch');
+      }
     } else if (step === 'business-details') {
       this.currentStep.set('area');
     }
