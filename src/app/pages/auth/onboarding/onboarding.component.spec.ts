@@ -458,4 +458,54 @@ describe('OnboardingComponent (Canonical Source Parity)', () => {
     expect(authServiceSpy.register).not.toHaveBeenCalled();
   });
 
+  it('opens business-register step directly when route is /register', async () => {
+    const route = TestBed.inject(ActivatedRoute);
+    (route.snapshot as any).routeConfig = { path: 'register' };
+    (route.snapshot as any).queryParamMap = { get: () => null };
+
+    const regComp = TestBed.createComponent(OnboardingComponent).componentInstance;
+    await regComp.ngOnInit();
+
+    expect(regComp.currentStep()).toBe('business-register');
+    expect(regComp.isDirectEntry()).toBe(true);
+  });
+
+  it('opens business-register step directly when step=register query param is present', async () => {
+    const route = TestBed.inject(ActivatedRoute);
+    (route.snapshot as any).routeConfig = { path: 'onboarding' };
+    (route.snapshot as any).queryParamMap = {
+      get: (key: string) => (key === 'step' ? 'register' : null),
+    };
+
+    const regComp = TestBed.createComponent(OnboardingComponent).componentInstance;
+    await regComp.ngOnInit();
+
+    expect(regComp.currentStep()).toBe('business-register');
+    expect(regComp.isDirectEntry()).toBe(true);
+  });
+
+  it('navigates to /login when clicking goBack on business-register if entered directly', async () => {
+    const route = TestBed.inject(ActivatedRoute);
+    (route.snapshot as any).routeConfig = { path: 'register' };
+    (route.snapshot as any).queryParamMap = { get: () => null };
+
+    const regComp = TestBed.createComponent(OnboardingComponent).componentInstance;
+    await regComp.ngOnInit();
+
+    regComp.goBack();
+    expect(routerSpy.navigate).toHaveBeenCalledWith(['/login'], { replaceUrl: true });
+  });
+
+  it('navigates to /login when clicking cancelOnboarding on business-register', async () => {
+    const route = TestBed.inject(ActivatedRoute);
+    (route.snapshot as any).routeConfig = { path: 'register' };
+    (route.snapshot as any).queryParamMap = { get: () => null };
+
+    const regComp = TestBed.createComponent(OnboardingComponent).componentInstance;
+    await regComp.ngOnInit();
+
+    await regComp.cancelOnboarding();
+    expect(routerSpy.navigate).toHaveBeenCalledWith(['/login'], { replaceUrl: true });
+  });
+
 });

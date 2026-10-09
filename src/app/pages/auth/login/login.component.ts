@@ -199,7 +199,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
           <!-- Secondary Intentional Registration CTA -->
           <div class="signup-prompt">
             <span class="signup-prompt-text">{{ 'PORTAL.LOGIN.NEW_TO_VAMO' | translate }}</span>
-            <a routerLink="/register" class="signup-link">
+            <a routerLink="/register" queryParamsHandling="preserve" class="signup-link">
               {{ 'PORTAL.LOGIN.CREATE_ACCOUNT_LINK' | translate }}
             </a>
           </div>
