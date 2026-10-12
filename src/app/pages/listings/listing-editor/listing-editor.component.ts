@@ -10,6 +10,7 @@ import { I18nService } from '../../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../../core/i18n/translate.pipe';
 import { isEventPast, parseLocalDate, validateEventForPublish, validateEventSchedule, scheduleErrorMessageKey } from '../../../core/utils/event-display.util';
 import { getDrCurrentDateTime } from '../../../core/utils/date-validation.util';
+import { PublishingAccessService } from '../../../core/services/publishing-access.service';
 
 export interface ExistingImage {
   junctionId: number | string;
@@ -1889,6 +1890,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   private customerErrorService = inject(CustomerErrorService);
   private cdr = inject(ChangeDetectorRef);
   private i18n = inject(I18nService);
+  private publishingAccess = inject(PublishingAccessService);
 
   categories: EventCategory[] = EVENT_CATEGORIES;
   allWeekdays = [
@@ -2549,6 +2551,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   private async executeSave(status: 'draft' | 'published'): Promise<void> {
+    if (this.submitting) return;
     if (this.isPastEvent) {
       this.errorMessage = this.i18n.t('PORTAL.LISTINGS.ERRORS.PAST_EVENT_NO_EDIT');
       return;
@@ -2566,9 +2569,11 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     this.cdr.markForCheck();
 
     try {
+      let alreadyPublished = false;
       if (this.isEditMode && this.eventId) {
         // Guard direct editor route: re-check before update so expiring events cannot be modified
         const fresh = await this.businessService.getEventById(this.eventId);
+        alreadyPublished = fresh.status === 'published';
         if (isEventPast(fresh, this.businessService)) {
           this.isPastEvent = true;
           this.datesLocked = true;
@@ -2586,12 +2591,28 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         return;
       }
 
+      let billingReason: 'subscription' | 'quota' | null = null;
+      let addonExpiry: string | null | undefined;
+      if (status === 'published' && !alreadyPublished) {
+        const access = await this.publishingAccess.check(user.email || '', providerId);
+        if (!access.allowed) {
+          // Match VAMO: retain the complete first post as a draft before checkout.
+          billingReason = access.reason;
+          status = 'draft';
+        } else {
+          addonExpiry = access.usesAddonSlot
+            ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+            : null;
+        }
+      }
+
       const payload: Partial<VamoEvent> = {
         name: this.draft.name ?? undefined,
         category: this.draft.category ?? undefined,
         description: this.draft.description ?? undefined,
         mode: this.draft.mode!,
         status,
+        ...(addonExpiry !== undefined ? { addon_expires_at: addonExpiry } : {}),
         startDate: this.draft.startDate || undefined,
         endDate: this.multiDay ? (this.draft.endDate || undefined) : undefined,
         allDay: this.draft.allDay,
@@ -2616,8 +2637,9 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
       const areaIds = this.selectedAreaId ? [this.selectedAreaId] : [];
 
+      let saved: VamoEvent;
       if (this.isEditMode && this.eventId) {
-        await this.businessService.updateEvent(
+        saved = await this.businessService.updateEvent(
           this.eventId,
           payload,
           this.selectedNewFiles,
@@ -2627,15 +2649,25 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
           this.originalEvent || undefined
         );
       } else {
-        await this.businessService.createEvent(
+        saved = await this.businessService.createEvent(
           payload,
           this.selectedNewFiles,
           areaIds
         );
       }
 
+      this.eventId = saved.id;
+      this.isEditMode = true;
+      this.isDraft = status === 'draft';
+      this.originalEvent = saved;
       this.isDirty = false;
-      this.router.navigate(['/app/listings']);
+      if (billingReason) {
+        await this.router.navigate(['/app/billing'], {
+          queryParams: { returnEventId: this.eventId, reason: billingReason },
+        });
+      } else {
+        await this.router.navigate(['/app/listings']);
+      }
     } catch (err: any) {
       this.errorMessage = this.customerErrorService.toCustomerMessage(err, 'save');
     } finally {

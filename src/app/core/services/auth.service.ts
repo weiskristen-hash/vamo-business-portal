@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, OnDestroy, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
@@ -15,7 +15,7 @@ export type AuthState = 'loading' | 'authenticated' | 'unauthenticated';
 @Injectable({
   providedIn: 'root',
 })
-export class AuthService {
+export class AuthService implements OnDestroy {
   private router = inject(Router);
   private googleAuthService = inject(GoogleAuthService);
 
@@ -27,6 +27,11 @@ export class AuthService {
   private proactiveRefreshTimer: any = null;
   private restoreSessionNonce = 0;
   private loginNonce = 0;
+  private refreshScheduleNonce = 0;
+  private readonly resumeSession = () => { void this.restoreSession(); };
+  private readonly resumeVisibleSession = () => {
+    if (document.visibilityState === 'visible') this.resumeSession();
+  };
 
   constructor() {
     this.restoreSession();
@@ -94,15 +99,42 @@ export class AuthService {
           this.scheduleProactiveRefresh();
           return true;
         } catch (err) {
-          console.warn('[AuthService] Token refresh failed, handling session expiry:', err);
-          await this.handleSessionExpired();
-          return false;
+          if (this.isSessionRejection(err)) {
+            await this.handleSessionExpired();
+            return false;
+          }
+          // Losing connectivity or an API outage does not revoke a valid session.
+          this.scheduleRefreshRetry();
+          throw err;
         } finally {
           this.refreshPromise = null;
         }
       })();
     }
     return this.refreshPromise;
+  }
+
+  private isSessionRejection(err: any): boolean {
+    const code = err?.errors?.[0]?.extensions?.code ?? err?.code;
+    const status = err?.status ?? err?.response?.status;
+    return status === 401 || ['TOKEN_EXPIRED', 'INVALID_TOKEN', 'INVALID_CREDENTIALS'].includes(code);
+  }
+
+  private clearRefreshTimer(): void {
+    this.refreshScheduleNonce++;
+    if (this.proactiveRefreshTimer) clearTimeout(this.proactiveRefreshTimer);
+    this.proactiveRefreshTimer = null;
+  }
+
+  private scheduleRefreshRetry(): void {
+    this.clearRefreshTimer();
+    this.proactiveRefreshTimer = setTimeout(() => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        this.scheduleRefreshRetry();
+        return;
+      }
+      void this.refreshToken().catch(() => { /* next retry is scheduled by refreshToken */ });
+    }, 30_000);
   }
 
   // ======================================================
@@ -144,10 +176,8 @@ export class AuthService {
   }
 
   async handleSessionExpired(): Promise<void> {
-    if (this.proactiveRefreshTimer) {
-      clearTimeout(this.proactiveRefreshTimer);
-      this.proactiveRefreshTimer = null;
-    }
+    this.clearRefreshTimer();
+    this.restoreSessionNonce++;
 
     try {
       await directusClient.setToken(null);
@@ -206,7 +236,10 @@ export class AuthService {
   // ======================================================
 
   private async proactiveRefreshCheck(): Promise<void> {
-    const token = await directusClient.getToken();
+    // SDK getToken() can itself refresh near expiry, even with autoRefresh:false.
+    // Inspect storage first so all refreshes use our error handling and lock.
+    const session = await createBrowserAuthStorage().get();
+    const token = session?.access_token;
     if (!token) return;
 
     const expiresAt = this.decodeJwtExpiry(token);
@@ -216,17 +249,17 @@ export class AuthService {
     const buffer = 2 * 60 * 1000; // 2 minutes buffer
 
     if (expiresAt - now < buffer) {
-      await this.refreshToken();
+      if (!await this.refreshToken()) throw new Error('SESSION_EXPIRED');
     }
   }
 
   private scheduleProactiveRefresh(): void {
-    if (this.proactiveRefreshTimer) {
-      clearTimeout(this.proactiveRefreshTimer);
-      this.proactiveRefreshTimer = null;
-    }
+    this.clearRefreshTimer();
+    const nonce = this.refreshScheduleNonce;
 
-    directusClient.getToken().then((token) => {
+    Promise.resolve(createBrowserAuthStorage().get()).then((session) => {
+      if (nonce !== this.refreshScheduleNonce) return;
+      const token = session?.access_token;
       if (!token) return;
 
       const expiresAt = this.decodeJwtExpiry(token);
@@ -235,11 +268,13 @@ export class AuthService {
       const now = Date.now();
       const timeout = expiresAt - now - 2 * 60 * 1000;
 
-      if (timeout > 0) {
-        this.proactiveRefreshTimer = setTimeout(() => {
-          this.refreshToken();
-        }, timeout);
-      }
+      this.proactiveRefreshTimer = setTimeout(() => {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          this.scheduleRefreshRetry();
+          return;
+        }
+        void this.refreshToken().catch(() => { /* preserve session and retry */ });
+      }, Math.max(1000, timeout));
     });
   }
 
@@ -263,7 +298,8 @@ export class AuthService {
   }
 
   async getToken(): Promise<string | null> {
-    return directusClient.getToken();
+    await this.proactiveRefreshCheck();
+    return (await createBrowserAuthStorage().get())?.access_token ?? null;
   }
 
   // ======================================================
@@ -290,8 +326,10 @@ export class AuthService {
       console.info('[AuthService] No active or valid session found during restore:', err?.message || err);
       if (nonce !== this.restoreSessionNonce) return null;
 
-      this.userSubject.next(null);
-      return null;
+      if (this.isSessionRejection(err)) this.userSubject.next(null);
+      else if (this.userSubject.value === undefined) this.userSubject.next(null);
+      // Keep an already loaded user and stored tokens on transient resume errors.
+      return this.currentUser;
     }
   }
 
@@ -547,8 +585,8 @@ export class AuthService {
       expires_at: expires ? Date.now() + expires : null,
     });
 
-    // Also sync Directus client instance token
-    await directusClient.setToken(accessToken);
+    // The SDK reads this storage on every request. setToken() would overwrite
+    // it with access_token only and erase the Google/SSO refresh token.
 
     const user = await this.loadCurrentUser();
     this.userSubject.next(user);
@@ -562,10 +600,8 @@ export class AuthService {
   // ======================================================
 
   async logout(redirect: boolean = true): Promise<void> {
-    if (this.proactiveRefreshTimer) {
-      clearTimeout(this.proactiveRefreshTimer);
-      this.proactiveRefreshTimer = null;
-    }
+    this.clearRefreshTimer();
+    this.restoreSessionNonce++;
 
     if (typeof window !== 'undefined' && window.sessionStorage) {
       try {
@@ -692,9 +728,18 @@ export class AuthService {
 
   private setupNetworkListener(): void {
     if (typeof window !== 'undefined') {
-      window.addEventListener('online', () => {
-        this.restoreSession();
-      });
+      window.addEventListener('online', this.resumeSession);
+      window.addEventListener('focus', this.resumeSession);
+      document.addEventListener('visibilitychange', this.resumeVisibleSession);
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.clearRefreshTimer();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('online', this.resumeSession);
+      window.removeEventListener('focus', this.resumeSession);
+      document.removeEventListener('visibilitychange', this.resumeVisibleSession);
     }
   }
 }

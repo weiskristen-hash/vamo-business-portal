@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/services/auth.service';
+import { PublishingAccessService } from '../../core/services/publishing-access.service';
 import { BusinessService } from '../../core/services/business.service';
 import { CustomerErrorService } from '../../core/services/customer-error.service';
 import { VamoEvent, EVENT_CATEGORIES, EventCategory } from '../../core/models/event.model';
@@ -1098,6 +1099,7 @@ import {
   `],
 })
 export class ListingsComponent implements OnInit {
+  private publishingAccess = inject(PublishingAccessService);
   private authService = inject(AuthService);
   private businessService = inject(BusinessService);
   private customerErrorService = inject(CustomerErrorService);
@@ -1349,6 +1351,7 @@ export class ListingsComponent implements OnInit {
   }
 
   async onPublish(event: VamoEvent): Promise<void> {
+    if (this.actionInProgressId) return;
     const validation = validateEventForPublish(event);
     if (!validation.valid) {
       // Draft is incomplete or past — route to editor with helpful message
@@ -1363,7 +1366,14 @@ export class ListingsComponent implements OnInit {
     this.cdr.markForCheck();
 
     try {
-      await this.businessService.publishEvent(event.id);
+      const user = this.authService.currentUser;
+      const access = await this.publishingAccess.check(user?.email || '', user?.provider_link?.id || '');
+      if (!access.allowed) {
+        await this.router.navigate(['/app/billing'], { queryParams: { returnEventId: event.id, reason: access.reason } });
+        return;
+      }
+      const expires = access.usesAddonSlot ? new Date(Date.now() + 30 * 86400000).toISOString() : null;
+      await this.businessService.publishEvent(event.id, expires);
       this.actionSuccessMessage = this.i18n.t('PORTAL.LISTINGS.TOAST_PUBLISHED', { name: event.name });
       await this.loadEvents();
     } catch (err: any) {

@@ -1260,6 +1260,9 @@ export const enTranslations: Record<string, any> = {
       "REACTIVATE_SUB_BTN": "Reactivate Subscription",
 
       "QUOTA_TITLE": "Publishing Quota",
+      "DRAFT_SUBSCRIPTION_NOTICE": "Your post is saved as a draft. Choose a subscription to publish it. After subscribing, you can return to your draft and publish.",
+      "DRAFT_QUOTA_NOTICE": "Your post is saved as a draft because your publishing limit has been reached. Review your plan to publish more posts.",
+      "RETURN_TO_DRAFT": "Return to draft",
       "QUOTA_COUNT": "{{used}} / {{limit}} Posts",
       "QUOTA_DESC": "{{used}} active listing(s) published on VAMO discovery. Upgrade your plan to increase your active post capacity.",
 

@@ -1260,6 +1260,9 @@ export const esTranslations: Record<string, any> = {
       "REACTIVATE_SUB_BTN": "Reactivar suscripción",
 
       "QUOTA_TITLE": "Límite de publicaciones",
+      "DRAFT_SUBSCRIPTION_NOTICE": "Tu publicación está guardada como borrador. Elige una suscripción para publicarla. Después de suscribirte, podrás volver a tu borrador y publicarlo.",
+      "DRAFT_QUOTA_NOTICE": "Tu publicación está guardada como borrador porque alcanzaste tu límite de publicaciones. Revisa tu plan para publicar más.",
+      "RETURN_TO_DRAFT": "Volver al borrador",
       "QUOTA_COUNT": "{{used}} / {{limit}} publicaciones",
       "QUOTA_DESC": "{{used}} publicación(es) activa(s) en VAMO. Mejora tu plan para aumentar tu capacidad de publicaciones activas.",
 

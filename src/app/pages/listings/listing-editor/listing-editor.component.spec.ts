@@ -5,6 +5,7 @@ import { BusinessService } from '../../../core/services/business.service';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { VamoEvent } from '../../../core/models/event.model';
 import { I18nService } from '../../../core/i18n/i18n.service';
+import { PublishingAccessService } from '../../../core/services/publishing-access.service';
 
 describe('ListingEditorComponent', () => {
   let component: ListingEditorComponent;
@@ -13,6 +14,7 @@ describe('ListingEditorComponent', () => {
   let businessServiceSpy: any;
   let router: Router;
   let i18nService: I18nService;
+  let publishingAccessSpy: any;
 
   const mockUser = {
     id: 'user-1',
@@ -71,6 +73,7 @@ describe('ListingEditorComponent', () => {
   beforeEach(async () => {
     mockParamId = null;
     mockQueryEventId = null;
+    publishingAccessSpy = { check: vi.fn().mockResolvedValue({ allowed: true, usesAddonSlot: false }) };
 
     authServiceSpy = {
       currentUser: mockUser,
@@ -98,6 +101,7 @@ describe('ListingEditorComponent', () => {
         provideRouter([]),
         { provide: AuthService, useValue: authServiceSpy },
         { provide: BusinessService, useValue: businessServiceSpy },
+        { provide: PublishingAccessService, useValue: publishingAccessSpy },
         {
           provide: ActivatedRoute,
           useValue: {
@@ -242,6 +246,88 @@ describe('ListingEditorComponent', () => {
       ['area-1']
     );
     expect(router.navigate).toHaveBeenCalledWith(['/app/listings']);
+  });
+
+  describe('Subscription-gated publishing', () => {
+    async function prepareNewPost() {
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      component.draft.name = 'First Business Event';
+      component.draft.description = 'A complete description for the first event.';
+      component.draft.startDate = '2026-11-20';
+      component.draft.address = 'Beach Road 1';
+      component.existingImages = [{ junctionId: 55, url: 'image.jpg' }];
+      businessServiceSpy.createEvent.mockImplementation(async (payload: any) => ({ ...mockExistingEvent, ...payload, id: 'ev-first-draft' }));
+    }
+
+    it('saves the first post as a draft and redirects to subscribe with its ID', async () => {
+      await prepareNewPost();
+      const file = new File(['image'], 'event.png');
+      component.selectedNewFiles = [file];
+      publishingAccessSpy.check.mockResolvedValue({ allowed: false, reason: 'subscription' });
+      await component.publishListing();
+      expect(publishingAccessSpy.check).toHaveBeenCalledWith(mockUser.email, mockUser.provider_link.id);
+      expect(businessServiceSpy.createEvent).toHaveBeenCalledOnce();
+      expect(businessServiceSpy.createEvent).toHaveBeenCalledWith(expect.objectContaining({ status: 'draft', name: 'First Business Event' }), [file], ['area-1']);
+      expect(router.navigate).toHaveBeenCalledWith(['/app/billing'], { queryParams: { returnEventId: 'ev-first-draft', reason: 'subscription' } });
+      expect(component.isDirty).toBe(false);
+    });
+
+    it('routes exhausted quota through a retained draft without publishing', async () => {
+      await prepareNewPost();
+      publishingAccessSpy.check.mockResolvedValue({ allowed: false, reason: 'quota' });
+      await component.publishListing();
+      expect(businessServiceSpy.createEvent.mock.calls[0][0].status).toBe('draft');
+      expect(router.navigate).toHaveBeenCalledWith(['/app/billing'], { queryParams: { returnEventId: 'ev-first-draft', reason: 'quota' } });
+    });
+
+    it('preserves unsaved content and does not write or redirect if subscription lookup fails', async () => {
+      await prepareNewPost();
+      component.isDirty = true;
+      publishingAccessSpy.check.mockRejectedValue(new TypeError('Failed to fetch'));
+      await component.publishListing();
+      expect(businessServiceSpy.createEvent).not.toHaveBeenCalled();
+      expect(router.navigate).not.toHaveBeenCalled();
+      expect(component.isDirty).toBe(true);
+      expect(component.errorMessage).toBeTruthy();
+    });
+
+    it('does not require a subscription to save a draft', async () => {
+      await prepareNewPost();
+      await component.saveDraft();
+      expect(publishingAccessSpy.check).not.toHaveBeenCalled();
+    });
+
+    it('checks subscription again when publishing a saved draft and reuses its ID', async () => {
+      await prepareNewPost();
+      component.isEditMode = true;
+      component.eventId = 'ev-saved-draft';
+      businessServiceSpy.getEventById.mockResolvedValue({ ...mockExistingEvent, id: 'ev-saved-draft', status: 'draft' });
+      await component.publishListing();
+      expect(publishingAccessSpy.check).toHaveBeenCalledOnce();
+      expect(businessServiceSpy.createEvent).not.toHaveBeenCalled();
+      expect(businessServiceSpy.updateEvent).toHaveBeenCalledWith('ev-saved-draft', expect.objectContaining({ status: 'published' }), [], [], ['area-1'], [], undefined);
+    });
+
+    it('does not consume a new publishing slot when editing an already published post', async () => {
+      await prepareNewPost();
+      component.isEditMode = true;
+      component.eventId = mockExistingEvent.id;
+      await component.publishListing();
+      expect(publishingAccessSpy.check).not.toHaveBeenCalled();
+      expect(businessServiceSpy.updateEvent).toHaveBeenCalled();
+    });
+
+    it('sets the canonical 30-day expiry for an additional-post slot', async () => {
+      await prepareNewPost();
+      publishingAccessSpy.check.mockResolvedValue({ allowed: true, usesAddonSlot: true });
+      const before = Date.now();
+      await component.publishListing();
+      const expires = Date.parse(businessServiceSpy.createEvent.mock.calls[0][0].addon_expires_at);
+      expect(expires).toBeGreaterThanOrEqual(before + 30 * 86400000);
+      expect(expires).toBeLessThanOrEqual(Date.now() + 30 * 86400000);
+    });
   });
 
   it('should show cancel modal if form has dirty edits', async () => {
