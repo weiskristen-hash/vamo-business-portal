@@ -165,19 +165,59 @@ describe('LoginComponent', () => {
     expect(component.loading).toBe(true);
   });
 
-  it('should display simplified SaaS dashboard hero copy and not render preview card or bullets', () => {
+  it('should display marketing panel with reference copy, how it works section, and four steps', () => {
     const compiled = fixture.nativeElement as HTMLElement;
-    const heroTitle = compiled.querySelector('.hero-title');
-    const heroDesc = compiled.querySelector('.hero-description');
-    const heroSyncNote = compiled.querySelector('.hero-sync-note');
+    const heroTitle = compiled.querySelector('.business-hero h1');
+    const heroSubtitle = compiled.querySelector('.business-hero-subtitle');
+    const sectionTitle = compiled.querySelector('.process-section h2');
+    const sectionSubtitle = compiled.querySelector('.section-subtitle');
+    const stepCards = compiled.querySelectorAll('.process-card');
 
-    expect(heroTitle?.textContent).toContain('Welcome to your VAMO Business Dashboard');
-    expect(heroDesc?.textContent).toContain('Manage your business profile, posts, promotions, and performance from the web.');
-    expect(heroSyncNote?.textContent).toContain('Everything you manage here stays synced with VAMO.');
+    expect(heroTitle?.textContent).toContain('Get discovered. Get customers.');
+    expect(heroSubtitle?.textContent).toContain('Put your business, events, offers, and experiences in front of locals and travelers looking for things to do in the Dominican Republic.');
+    expect(sectionTitle?.textContent).toContain('How It Works');
+    expect(sectionSubtitle?.textContent).toContain('Start reaching customers in four simple steps.');
+
+    expect(stepCards.length).toBe(4);
+    expect(stepCards[0].textContent).toContain('STEP 1');
+    expect(stepCards[0].textContent).toContain('Create your business profile');
+    expect(stepCards[1].textContent).toContain('STEP 2');
+    expect(stepCards[1].textContent).toContain('Publish your posts');
+    expect(stepCards[2].textContent).toContain('STEP 3');
+    expect(stepCards[2].textContent).toContain('Promote important posts');
+    expect(stepCards[3].textContent).toContain('STEP 4');
+    expect(stepCards[3].textContent).toContain('See how people engage');
 
     // Bullets and preview card removed
     expect(compiled.querySelector('.hero-preview-card')).toBeNull();
     expect(compiled.querySelector('.hero-features')).toBeNull();
+  });
+
+  it('should reactively switch marketing panel copy to Spanish', () => {
+    const i18n = TestBed.inject(I18nService);
+    i18n.setLang('es');
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const heroTitle = compiled.querySelector('.business-hero h1');
+    const heroSubtitle = compiled.querySelector('.business-hero-subtitle');
+    const sectionTitle = compiled.querySelector('.process-section h2');
+    const stepCards = compiled.querySelectorAll('.process-card');
+
+    expect(heroTitle?.textContent).toContain('Haz que te descubran. Consigue clientes.');
+    expect(heroSubtitle?.textContent).toContain('Pon tu negocio, eventos, ofertas y experiencias frente a residentes y viajeros que buscan qué hacer en la República Dominicana.');
+    expect(sectionTitle?.textContent).toContain('Cómo Funciona');
+    expect(stepCards[0].textContent).toContain('PASO 1');
+    expect(stepCards[0].textContent).toContain('Crea tu perfil de negocio');
+    expect(stepCards[1].textContent).toContain('PASO 2');
+    expect(stepCards[1].textContent).toContain('Publica tu contenido');
+    expect(stepCards[2].textContent).toContain('PASO 3');
+    expect(stepCards[2].textContent).toContain('Promociona publicaciones clave');
+    expect(stepCards[3].textContent).toContain('PASO 4');
+    expect(stepCards[3].textContent).toContain('Monitorea la interacción');
+
+    i18n.setLang('en');
+    fixture.detectChanges();
   });
 
   it('should display friendly notice banner when session expired reason or storage flag is set', async () => {

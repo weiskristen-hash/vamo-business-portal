@@ -31,14 +31,14 @@ describe('OverviewComponent', () => {
       id: 'ev-1',
       name: 'Whale Watching Sunrise Tour',
       status: 'published' as const,
-      startDate: '2026-10-10',
+      startDate: '2026-10-25',
       from: '06:30',
     },
     {
       id: 'ev-2',
       name: 'Waterfall Horseback Expedition',
       status: 'draft' as const,
-      startDate: '2026-10-12',
+      startDate: '2026-10-26',
       from: '09:00',
     },
   ];
@@ -112,6 +112,23 @@ describe('OverviewComponent', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     const cards = compiled.querySelectorAll('.summary-card');
     expect(cards.length).toBe(4);
+  });
+
+  it('should display authoritative subscription status in Card 4 agreed with subStatus', async () => {
+    fixture = TestBed.createComponent(OverviewComponent);
+    component = fixture.componentInstance;
+    await component.loadData();
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const tierCard = compiled.querySelectorAll('.summary-card')[3];
+    expect(tierCard).toBeTruthy();
+    expect(tierCard.querySelector('.summary-label')?.textContent).toContain('Business Tier');
+
+    const tierValue = tierCard.querySelector('.tier-value');
+    const tierFooter = tierCard.querySelector('.summary-footer .badge');
+    expect(tierValue?.textContent?.trim()).toBe(component.subStatus().cardTierDisplay);
+    expect(tierFooter?.textContent?.trim()).toBe(component.subStatus().cardStatusDisplay);
   });
 
   it('should render recent posts list', async () => {

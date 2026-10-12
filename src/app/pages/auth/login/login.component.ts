@@ -32,19 +32,27 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
 
           <!-- Hero Headline & Supporting Copy -->
           <div class="hero-body">
-            <h1 class="hero-title">{{ 'PORTAL.LOGIN.HOW_TITLE' | translate }}</h1>
-            <p class="hero-description">
-              {{ 'PORTAL.LOGIN.HOW_DESC' | translate }}
-            </p>
-            <ol class="how-steps">
-              <li *ngFor="let step of [1, 2, 3, 4]" class="how-step">
-                <span class="step-number" aria-hidden="true">0{{ step }}</span>
-                <div>
-                  <h2>{{ ('PORTAL.LOGIN.STEP_' + step + '_TITLE') | translate }}</h2>
+            <div class="business-hero">
+              <h1 class="hero-title">{{ 'PORTAL.LOGIN.HERO_TITLE' | translate }}</h1>
+              <p class="business-hero-subtitle">
+                {{ 'PORTAL.LOGIN.HERO_SUBTITLE' | translate }}
+              </p>
+            </div>
+
+            <div class="process-section">
+              <h2 class="section-title">{{ 'PORTAL.LOGIN.HOW_TITLE' | translate }}</h2>
+              <p class="section-subtitle">
+                {{ 'PORTAL.LOGIN.HOW_DESC' | translate }}
+              </p>
+
+              <ol class="process-grid">
+                <li *ngFor="let step of [1, 2, 3, 4]" class="process-card">
+                  <span class="process-step-num">{{ 'PORTAL.LOGIN.STEP_LABEL' | translate }} {{ step }}</span>
+                  <h3>{{ ('PORTAL.LOGIN.STEP_' + step + '_TITLE') | translate }}</h3>
                   <p>{{ ('PORTAL.LOGIN.STEP_' + step + '_DESC') | translate }}</p>
-                </div>
-              </li>
-            </ol>
+                </li>
+              </ol>
+            </div>
           </div>
 
           <!-- Left Footer -->
@@ -269,20 +277,22 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       overflow-x: hidden;
     }
 
-    /* ── Left Hero Panel: Dark Branded Presentation ────────────── */
+    /* ── Left Hero Panel: Marketing & Process ───────────────────── */
     .login-hero {
       flex: 1 1 50%;
       min-width: 480px;
       display: flex;
       flex-direction: column;
       justify-content: flex-start;
-      padding: 32px 60px 40px;
+      padding: 40px 48px;
       background: #090d16;
       border-right: 1px solid rgba(255, 255, 255, 0.08);
       position: relative;
-      overflow: hidden;
+      overflow-y: auto;
+      overflow-x: hidden;
       color: #ffffff;
       box-sizing: border-box;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
     .hero-glow-ambient {
@@ -300,10 +310,11 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
     .hero-content {
       position: relative;
       z-index: 1;
-      max-width: 520px;
+      max-width: 680px;
+      width: 100%;
       display: flex;
       flex-direction: column;
-      gap: 36px;
+      gap: 32px;
     }
 
     .hero-brand {
@@ -323,6 +334,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
     }
 
     .hero-name {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
       font-size: 1.5rem;
       font-weight: 900;
       letter-spacing: -0.02em;
@@ -340,43 +352,118 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
     .hero-body {
       display: flex;
       flex-direction: column;
-      gap: 18px;
+      gap: 32px;
     }
 
-    .hero-title {
-      font-size: 2.2rem;
+    .business-hero {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .business-hero h1,
+    .business-hero .hero-title {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: clamp(2.1rem, 4.5vw, 3.4rem);
       font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin: 0 0 18px 0;
       color: #ffffff;
-      letter-spacing: -0.03em;
-      line-height: 1.2;
-      margin: 0;
+      text-transform: none;
     }
 
-    .hero-description {
-      font-size: 1rem;
+    .business-hero-subtitle {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: clamp(1rem, 1.9vw, 1.2rem);
       line-height: 1.6;
-      color: #94a3b8;
+      color: rgba(255, 255, 255, 0.85);
+      margin: 0;
+      max-width: 660px;
+    }
+
+    .process-section {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .process-section h2,
+    .process-section .section-title {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: clamp(1.75rem, 3.5vw, 2.35rem);
+      font-weight: 700;
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+      color: #ffffff;
+      margin: 0 0 12px 0;
+      text-transform: none;
+    }
+
+    .process-section .section-subtitle {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: clamp(0.95rem, 1.8vw, 1.1rem);
+      line-height: 1.6;
+      color: rgba(255, 255, 255, 0.8);
+      margin: 0 0 24px 0;
+    }
+
+    .process-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      list-style: none;
+      padding: 0;
       margin: 0;
     }
 
-    .how-steps { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 28px; }
-    .how-step { display: flex; align-items: flex-start; gap: 20px; }
-    .step-number { flex: 0 0 48px; height: 48px; display: grid; place-items: center;
-      border: 2px solid var(--vamo-pink, #F93CAD); border-radius: 12px; font-size: 1.1rem; font-weight: 700; }
-    .how-step h2 { margin: 0 0 8px; font-size: 1.12rem; line-height: 1.35; }
-    .how-step p { margin: 0; color: #aab7c9; font-size: .95rem; line-height: 1.6; }
+    .process-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 18px 20px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      transition: border-color 0.2s ease, transform 0.2s ease;
+    }
 
-    .hero-sync-note {
-      font-size: 0.88rem;
-      line-height: 1.5;
-      color: #64748b;
-      margin: 4px 0 0 0;
+    .process-card:hover {
+      border-color: rgba(249, 60, 173, 0.35);
+      transform: translateY(-1px);
+    }
+
+    .process-step-num {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 0.9rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      color: var(--vamo-pink, #F93CAD);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .process-card h3 {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 1.15rem;
+      font-weight: 700;
+      line-height: 1.35;
+      margin: 0 0 8px 0;
+      color: #ffffff;
+      text-transform: none;
+    }
+
+    .process-card p {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 0.92rem;
+      line-height: 1.55;
+      color: rgba(255, 255, 255, 0.75);
+      margin: 0;
     }
 
     .hero-footer {
       font-size: 0.8rem;
       color: #475569;
-      margin-top: 4px;
+      margin-top: 8px;
     }
 
     /* ── Right Auth Panel: Clean Light Presentation ────────────── */
@@ -833,14 +920,14 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       gap: 12px;
     }
 
-    .hero-title, .card-title {
+    .card-title {
       font-family: "Bebas Neue", sans-serif;
       font-weight: 400;
       text-transform: uppercase;
       letter-spacing: .025em;
       font-size: clamp(2.4rem, 3.6vw, 3.5rem);
     }
-    .hero-description, .card-subtitle, .how-step h2 {
+    .card-subtitle {
       font-family: "Roboto Condensed", sans-serif;
     }
     .signup-prompt { flex-direction: column; align-items: stretch; gap: 12px; background: transparent; border: 0; padding: 0; }
@@ -853,6 +940,12 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
     .create-account-btn:hover { background: #fff2fa; text-decoration: none; }
 
     /* Responsive Breakpoints */
+    @media (max-width: 1200px) {
+      .process-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
     @media (max-width: 960px) {
       .login-page {
         flex-direction: column;
@@ -872,16 +965,12 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
         gap: 20px;
       }
 
-      .hero-title {
-        font-size: 1.8rem;
+      .process-grid {
+        grid-template-columns: 1fr;
       }
 
       .hero-footer {
         display: none;
-      }
-
-      .hero-description {
-        margin-bottom: 0;
       }
 
       .login-panel {
