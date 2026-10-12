@@ -9,7 +9,7 @@ export const environment = {
   allowedHosts: ['api.vamo-app.com', 'quepasa-api.c1oud7.de', 'vamo-app.com'],
 
   // Stripe & Billing Flow Configuration (canonical source keys from Isla-Labs-DR/vamo-app)
-  STRIPE_PUBLISHABLE_KEY: 'pk_test_51TA9mfGWvZAV5mbnJOPqWhOtXQX34kOanNIKxZZSotEhpijh3eT0ASVgW7odIxmxOTjKRHm7wDH8FASnBw6AQreB00KMjL6p4M',
+  STRIPE_PUBLISHABLE_KEY: 'pk_live_51TBcT22aqrJCvAj3GlPRJDv034F0hPWBD3KdCb8krqoMCwPvraL3fUDNvsZhZdHmfcfPJhkOClzvfiWYDAlHG9lk00LsYjWq0H',
   STRIPE_GET_PRICES_FLOW: 'ccd7ae9c-27be-453e-94ef-db7d52be0e0a',
   STRIPE_GET_SUBSCRIPTION_FLOW: 'a48e3dee-3d94-471b-804f-16ada69737cf',
   STRIPE_VALIDATE_PROMO_FLOW: '3b580ce9-5023-446f-ad4c-55c8ee5db4fd',
