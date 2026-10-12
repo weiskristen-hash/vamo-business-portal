@@ -205,7 +205,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
           <!-- Secondary Intentional Registration CTA -->
           <div class="signup-prompt">
             <span class="signup-prompt-text">{{ 'PORTAL.LOGIN.NEW_TO_VAMO' | translate }}</span>
-            <a routerLink="/register" queryParamsHandling="preserve" class="signup-link">
+            <a routerLink="/register" queryParamsHandling="preserve" class="signup-link create-account-btn">
               {{ 'PORTAL.LOGIN.CREATE_ACCOUNT_LINK' | translate }}
             </a>
           </div>
@@ -265,6 +265,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       min-height: 100vh;
       width: 100vw;
       background: #f8fafc;
+      font-family: "Montserrat", sans-serif;
       overflow-x: hidden;
     }
 
@@ -274,8 +275,8 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       min-width: 480px;
       display: flex;
       flex-direction: column;
-      justify-content: center;
-      padding: 64px 60px 48px;
+      justify-content: flex-start;
+      padding: 32px 60px 40px;
       background: #090d16;
       border-right: 1px solid rgba(255, 255, 255, 0.08);
       position: relative;
@@ -383,9 +384,9 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       flex: 1 1 50%;
       min-width: 440px;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
-      padding: 48px 32px;
+      padding: 32px;
       background: #f8fafc;
       box-sizing: border-box;
     }
@@ -831,6 +832,25 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       justify-content: flex-end;
       gap: 12px;
     }
+
+    .hero-title, .card-title {
+      font-family: "Bebas Neue", sans-serif;
+      font-weight: 400;
+      text-transform: uppercase;
+      letter-spacing: .025em;
+      font-size: clamp(2.4rem, 3.6vw, 3.5rem);
+    }
+    .hero-description, .card-subtitle, .how-step h2 {
+      font-family: "Roboto Condensed", sans-serif;
+    }
+    .signup-prompt { flex-direction: column; align-items: stretch; gap: 12px; background: transparent; border: 0; padding: 0; }
+    .create-account-btn {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 48px; padding: 10px 16px; box-sizing: border-box;
+      border: 2px solid var(--vamo-pink, #F93CAD); border-radius: 8px;
+      font-family: "Montserrat", sans-serif; text-align: center;
+    }
+    .create-account-btn:hover { background: #fff2fa; text-decoration: none; }
 
     /* Responsive Breakpoints */
     @media (max-width: 960px) {
