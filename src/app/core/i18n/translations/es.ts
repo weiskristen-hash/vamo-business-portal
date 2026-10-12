@@ -712,6 +712,16 @@ export const esTranslations: Record<string, any> = {
       "TAG": "PORTAL DE NEGOCIOS"
     },
     "LOGIN": {
+      "HOW_TITLE": "Cómo funciona",
+      "HOW_DESC": "Empieza a llegar a clientes en cuatro pasos sencillos.",
+      "STEP_1_TITLE": "Crea el perfil de tu negocio",
+      "STEP_1_DESC": "Muéstrales a los clientes quién eres, dónde estás y cómo contactarte.",
+      "STEP_2_TITLE": "Publica tus posts",
+      "STEP_2_DESC": "Añade eventos, ofertas, actividades y experiencias a VAMO.",
+      "STEP_3_TITLE": "Promociona tus posts importantes",
+      "STEP_3_DESC": "Dale más visibilidad a publicaciones seleccionadas con los espacios promocionales de VAMO.",
+      "STEP_4_TITLE": "Mira cómo interactúan las personas",
+      "STEP_4_DESC": "Consulta los datos de interacción que VAMO ya registra.",
       "HERO_TITLE": "Te damos la bienvenida a tu panel de VAMO Business",
       "HERO_DESC": "Gestiona el perfil de tu negocio, publicaciones, promociones y rendimiento desde la web.",
       "HERO_SYNC_NOTE": "Todo lo que gestionas aquí se mantiene sincronizado con VAMO.",

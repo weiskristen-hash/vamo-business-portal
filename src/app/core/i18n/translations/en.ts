@@ -712,6 +712,16 @@ export const enTranslations: Record<string, any> = {
       "TAG": "BUSINESS PORTAL"
     },
     "LOGIN": {
+      "HOW_TITLE": "How It Works",
+      "HOW_DESC": "Start reaching customers in four simple steps.",
+      "STEP_1_TITLE": "Create your business profile",
+      "STEP_1_DESC": "Show customers who you are, where you are, and how to reach you.",
+      "STEP_2_TITLE": "Publish your posts",
+      "STEP_2_DESC": "Add events, offers, activities, and experiences to VAMO.",
+      "STEP_3_TITLE": "Promote important posts",
+      "STEP_3_DESC": "Give selected posts more visibility with VAMO promotional placements.",
+      "STEP_4_TITLE": "See how people engage",
+      "STEP_4_DESC": "View the engagement data VAMO already tracks.",
       "HERO_TITLE": "Welcome to your VAMO Business Dashboard",
       "HERO_DESC": "Manage your business profile, posts, promotions, and performance from the web.",
       "HERO_SYNC_NOTE": "Everything you manage here stays synced with VAMO.",
