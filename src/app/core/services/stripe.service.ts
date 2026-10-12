@@ -4,6 +4,8 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 import { runtimeConfig } from '../config/runtime-config';
 import { AuthService } from './auth.service';
 import { I18nService } from '../i18n/i18n.service';
+import { readItems } from '@directus/sdk';
+import { directusClient } from '../directus/directus-client';
 
 export interface StripeSubscription {
   subscriptionId: string;
@@ -184,26 +186,31 @@ export class StripeService {
     if (!flowId) {
       throw new Error('Flow configuration identifier is missing.');
     }
-    const url = `${runtimeConfig.directusUrl}/flows/trigger/${flowId}`;
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(await this.authHeaders()),
-    };
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
+    return this.authService.safeRequest(async () => {
+      const url = `${runtimeConfig.directusUrl}/flows/trigger/${flowId}`;
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(await this.authHeaders()),
+      };
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const text = await response.text();
+      if (!response.ok) {
+        const err: any = new Error(`Flow request failed (${response.status})`);
+        err.status = response.status;
+        try { err.errors = JSON.parse(text)?.errors; } catch { /* non-JSON API error */ }
+        throw err;
+      }
+      if (!text) return null;
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error('Flow returned invalid JSON.');
+      }
     });
-    const text = await response.text();
-    if (!response.ok) {
-      throw new Error(`Flow request failed (${response.status}): ${text.slice(0, 300)}`);
-    }
-    if (!text) return null;
-    try {
-      return JSON.parse(text);
-    } catch {
-      throw new Error(`Flow returned invalid JSON: ${text.slice(0, 200)}`);
-    }
   }
 
   async getPlans(): Promise<StripePlan[]> {
@@ -462,10 +469,22 @@ export class StripeService {
   async getSubscription(email: string): Promise<StripeSubscription | null> {
     const flowId = runtimeConfig.stripeGetSubscriptionFlow;
     if (!flowId) {
-      return null;
+      throw new Error('Subscription lookup is not configured.');
     }
     const data = await this.flowPost(flowId, { email });
     return data?.subscription ?? null;
+  }
+
+  async getPlanLimits(): Promise<{ productName: string; max_posts: number }[]> {
+    return this.authService.safeRequest(async () => {
+      const result = await directusClient.request(readItems('settings' as any, {
+        limit: 1,
+        fields: ['plan_limits'],
+        sort: ['id'],
+      } as any));
+      const row = Array.isArray(result) ? result[0] : result;
+      return (row as any)?.plan_limits ?? [];
+    });
   }
 
   async cancelSubscription(subscriptionId: string, cancelAtPeriodEnd = true): Promise<void> {

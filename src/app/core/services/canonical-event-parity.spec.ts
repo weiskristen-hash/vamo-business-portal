@@ -51,6 +51,25 @@ describe('Canonical Event Creation Parity (Phase 4A.2D)', () => {
     service = TestBed.inject(BusinessService);
   });
 
+  it.each(['2', { '*': '2' }])('reads canonical billing-window usage and accepts Directus aggregate shape %j', async (count) => {
+    clientRequestMock.mockResolvedValueOnce([{ count }]);
+    expect(await service.getPublishedPostCount('prov-1', '2026-10-01T00:00:00.000Z')).toBe(2);
+    const request = clientRequestMock.mock.calls[0][0]();
+    expect(request.params.filter).toEqual({ provider: { id: { _eq: 'prov-1' } }, status: { _eq: 'published' }, date_updated: { _gte: '2026-10-01T00:00:00.000Z' } });
+    expect(request.params.aggregate).toEqual({ count: ['*'] });
+  });
+
+  it('does not treat a malformed post count as unused quota', async () => {
+    clientRequestMock.mockResolvedValueOnce([{}]);
+    await expect(service.getPublishedPostCount('prov-1', '2026-10-01')).rejects.toThrow('usage could not be verified');
+  });
+
+  it('preserves canonical additional-post expiry in the create payload', async () => {
+    clientRequestMock.mockResolvedValueOnce({ id: 'ev-addon' }).mockResolvedValueOnce({ id: 'ev-addon' });
+    await service.createEvent({ name: 'Extra Event', addon_expires_at: '2026-11-11T00:00:00.000Z' });
+    expect(extractPayload(clientRequestMock.mock.calls[0][0]).addon_expires_at).toBe('2026-11-11T00:00:00.000Z');
+  });
+
   it('1. single event canonical payload: recurring is stringified empty days array and mode is single', async () => {
     clientRequestMock.mockResolvedValueOnce({ id: 'ev-single-1' }); // createItem
     clientRequestMock.mockResolvedValueOnce({ id: 'ev-single-1', name: 'Single Event' }); // read back

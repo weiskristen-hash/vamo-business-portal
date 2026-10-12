@@ -12,6 +12,7 @@ describe('StripeService', () => {
     runtimeConfig.reset();
 
     authServiceSpy = {
+      safeRequest: vi.fn((fn) => fn()),
       getToken: vi.fn().mockResolvedValue('test-jwt-token'),
       currentUser: { email: 'business@example.com' },
     };
@@ -96,6 +97,24 @@ describe('StripeService', () => {
   });
 
   describe('flowPost execution', () => {
+    it('uses the session wrapper and rebuilds Authorization on an expired-token retry', async () => {
+      authServiceSpy.getToken.mockResolvedValueOnce('expired-token').mockResolvedValueOnce('fresh-token');
+      authServiceSpy.safeRequest.mockImplementation(async (fn: any) => {
+        try { return await fn(); } catch (err: any) {
+          expect(err.status).toBe(401);
+          expect(err.errors[0].extensions.code).toBe('TOKEN_EXPIRED');
+          return fn();
+        }
+      });
+      const fetch = vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce({ ok: false, status: 401, text: async () => JSON.stringify({ errors: [{ extensions: { code: 'TOKEN_EXPIRED' } }] }) } as Response)
+        .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ subscription: null }) } as Response);
+      expect(await service.flowPost('read-subscription-flow', {})).toEqual({ subscription: null });
+      expect(authServiceSpy.safeRequest).toHaveBeenCalledOnce();
+      expect((fetch.mock.calls[0][1]?.headers as any).Authorization).toBe('Bearer expired-token');
+      expect((fetch.mock.calls[1][1]?.headers as any).Authorization).toBe('Bearer fresh-token');
+    });
+
     it('should throw an informative error if flowId is missing', async () => {
       await expect(service.flowPost('', {})).rejects.toThrow('Flow configuration identifier is missing.');
     });
@@ -131,6 +150,21 @@ describe('StripeService', () => {
 
       await expect(service.flowPost('flow-err', {})).rejects.toThrow('Flow request failed (400)');
     });
+  });
+
+  it('reads publishing limits from the canonical settings field', async () => {
+    const { directusClient } = await import('../directus/directus-client');
+    const limits = [{ productName: 'Basic', max_posts: 4 }];
+    const request = vi.spyOn(directusClient, 'request').mockResolvedValueOnce([{ plan_limits: limits }] as any);
+    expect(await service.getPlanLimits()).toEqual(limits);
+    const options = (request.mock.calls[0][0] as any)();
+    expect(options.path).toBe('/items/settings');
+    expect(options.params.fields).toEqual(['plan_limits']);
+  });
+
+  it('rejects missing subscription configuration instead of reporting no subscription', async () => {
+    runtimeConfig.updateConfig({ stripeGetSubscriptionFlow: '' });
+    await expect(service.getSubscription('business@example.com')).rejects.toThrow('not configured');
   });
 
   describe('getPlans', () => {

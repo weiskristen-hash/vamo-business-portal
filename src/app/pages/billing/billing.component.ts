@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, inject, signal, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
 import { CustomerErrorService } from '../../core/services/customer-error.service';
@@ -30,6 +31,10 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
       <p class="page-subtitle">{{ 'PORTAL.BILLING.SUBTITLE' | translate }}</p>
     </div>
   </header>
+  <div *ngIf="returnEventId" class="status-banner" role="status">
+    {{ (returnReason === 'quota' ? 'PORTAL.BILLING.DRAFT_QUOTA_NOTICE' : 'PORTAL.BILLING.DRAFT_SUBSCRIPTION_NOTICE') | translate }}
+    <button type="button" class="btn btn-secondary btn-sm" (click)="returnToDraft()">{{ 'PORTAL.BILLING.RETURN_TO_DRAFT' | translate }}</button>
+  </div>
 
   <!-- Global Feedback Banners -->
   <div *ngIf="errorMessage()" class="alert alert-danger" role="alert">
@@ -1492,6 +1497,16 @@ export class BillingComponent implements OnInit, OnDestroy {
   stripeService = inject(StripeService);
   errorService = inject(CustomerErrorService);
   i18n = inject(I18nService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  get returnEventId(): string | null {
+    const id = this.route.snapshot.queryParamMap.get('returnEventId');
+    return id && /^[A-Za-z0-9_-]+$/.test(id) ? id : null;
+  }
+  get returnReason(): string | null { return this.route.snapshot.queryParamMap.get('reason'); }
+  async returnToDraft(): Promise<void> {
+    if (this.returnEventId) await this.router.navigate(['/app/listings/edit', this.returnEventId]);
+  }
 
   // Core State Signals
   subscription = signal<StripeSubscription | null | undefined>(undefined);
@@ -1808,6 +1823,11 @@ export class BillingComponent implements OnInit, OnDestroy {
       await this.loadSubscription(user.email);
       await this.loadBillingHistory();
       await this.loadSavedMethods();
+    }
+    // Resume only after the API confirms the subscription. The editor rechecks
+    // quota when the user chooses Publish; checkout never publishes for them.
+    if (this.returnEventId && ['active', 'trialing'].includes(this.subscription()?.status ?? '')) {
+      await this.returnToDraft();
     }
   }
 

@@ -26,6 +26,7 @@ describe('AuthService', () => {
     });
 
     service = TestBed.inject(AuthService);
+    await service.waitForInitialAuth();
   });
 
   afterEach(async () => {
@@ -417,7 +418,7 @@ describe('AuthService', () => {
 
       const storage = createBrowserAuthStorage();
       await storage.set({ access_token: 'valid_tok', refresh_token: 'dead_refresh' });
-      vi.spyOn(directusClient, 'refresh').mockRejectedValue(new Error('Invalid refresh token'));
+      vi.spyOn(directusClient, 'refresh').mockRejectedValue({ status: 401, code: 'INVALID_TOKEN' });
       vi.spyOn(directusClient, 'logout').mockRejectedValue(new Error('400 Bad Request')); // logout failure must not block cleanup
 
       const apiCall = vi.fn().mockImplementation(async () => {
@@ -443,7 +444,7 @@ describe('AuthService', () => {
 
     it('expired-session returnUrl preserved for protected routes', async () => {
       const { directusClient } = await import('../directus/directus-client');
-      vi.spyOn(directusClient, 'refresh').mockRejectedValue(new Error('Refresh failed'));
+      vi.spyOn(directusClient, 'refresh').mockRejectedValue({ status: 401, code: 'INVALID_TOKEN' });
 
       // Simulate being on a protected page
       (service as any).router.url = '/app/listings/edit/event-abc';
@@ -505,7 +506,7 @@ describe('AuthService', () => {
 
     it('concurrent refresh failures do not create multiple redirects', async () => {
       const { directusClient } = await import('../directus/directus-client');
-      vi.spyOn(directusClient, 'refresh').mockRejectedValue(new Error('Invalid token'));
+      vi.spyOn(directusClient, 'refresh').mockRejectedValue({ status: 401, code: 'INVALID_TOKEN' });
 
       const apiCall1 = async () => {
         const err: any = new Error('Token expired');
@@ -548,6 +549,82 @@ describe('AuthService', () => {
       expect(routerSpy.navigate).toHaveBeenCalledWith(['/login']);
       expect(sessionStorage.getItem('vamo_expired_session')).toBeNull();
       expect(sessionStorage.getItem('vamo_expired_return_url')).toBeNull();
+    });
+  });
+
+  describe('Session resilience regressions', () => {
+    const user = { id: 'resilient-user', email: 'host@example.com' };
+
+    async function seedSession(token = 'access-token') {
+      const { createBrowserAuthStorage } = await import('../directus/browser-auth.storage');
+      vi.spyOn(service, 'loadCurrentUser').mockResolvedValue(user as any);
+      await service.handleSsoTokens(token, 'refresh-token', 900000);
+      return createBrowserAuthStorage();
+    }
+
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('keeps Google refresh credentials and expiry after loading the user', async () => {
+      const storage = await seedSession();
+      expect(await storage.get()).toMatchObject({
+        access_token: 'access-token', refresh_token: 'refresh-token', expires: 900000,
+        expires_at: expect.any(Number),
+      });
+    });
+
+    it.each([new TypeError('Failed to fetch'), { status: 503 }, { status: 429 }, { status: 403, code: 'FORBIDDEN' }])(
+      'keeps the session after a non-authentication refresh error: %j', async (error) => {
+        const storage = await seedSession();
+        const { directusClient } = await import('../directus/directus-client');
+        vi.spyOn(directusClient, 'refresh').mockRejectedValue(error);
+        await expect(service.refreshToken()).rejects.toEqual(error);
+        expect((await storage.get())?.refresh_token).toBe('refresh-token');
+        expect(service.currentUser?.id).toBe(user.id);
+        expect(routerSpy.navigate).not.toHaveBeenCalled();
+      }
+    );
+
+    it('preserves an authenticated user during an unsuccessful network resume', async () => {
+      const storage = await seedSession();
+      vi.mocked(service.loadCurrentUser).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      expect(await service.restoreSession()).toEqual(user);
+      expect(service.currentUser?.id).toBe(user.id);
+      expect((await storage.get())?.refresh_token).toBe('refresh-token');
+      expect(routerSpy.navigate).not.toHaveBeenCalled();
+    });
+
+    it('refreshes on browser focus after the tab has slept, without SDK getToken side effects', async () => {
+      const storage = await seedSession();
+      const token = `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 1 }))}.signature`;
+      await storage.set({ access_token: token, refresh_token: 'refresh-token' });
+      const { directusClient } = await import('../directus/directus-client');
+      const refresh = vi.spyOn(directusClient, 'refresh').mockImplementation(async () => {
+        await storage.set({ access_token: 'renewed-access', refresh_token: 'renewed-refresh' });
+        return {} as any;
+      });
+      const sdkRead = vi.spyOn(directusClient, 'getToken');
+      const restored = new Promise<void>(resolve => {
+        vi.mocked(service.loadCurrentUser).mockImplementationOnce(async () => { resolve(); return user as any; });
+      });
+      window.dispatchEvent(new Event('focus'));
+      await restored;
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(sdkRead).not.toHaveBeenCalled();
+      expect((await storage.get())?.refresh_token).toBe('renewed-refresh');
+    });
+
+    it('retries a background refresh after a transient failure without discarding credentials', async () => {
+      vi.useFakeTimers();
+      const storage = await seedSession();
+      const { directusClient } = await import('../directus/directus-client');
+      const refresh = vi.spyOn(directusClient, 'refresh')
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+        .mockResolvedValue({} as any);
+      await expect(service.refreshToken()).rejects.toThrow('Failed to fetch');
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(refresh).toHaveBeenCalledTimes(2);
+      expect((await storage.get())?.refresh_token).toBe('refresh-token');
+      expect(routerSpy.navigate).not.toHaveBeenCalled();
     });
   });
 

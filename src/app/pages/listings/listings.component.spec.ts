@@ -5,6 +5,7 @@ import { BusinessService } from '../../core/services/business.service';
 import { Router, provideRouter } from '@angular/router';
 import { VamoEvent } from '../../core/models/event.model';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { PublishingAccessService } from '../../core/services/publishing-access.service';
 
 describe('ListingsComponent', () => {
   let component: ListingsComponent;
@@ -13,6 +14,7 @@ describe('ListingsComponent', () => {
   let businessServiceSpy: any;
   let router: Router;
   let i18nService: I18nService;
+  let publishingAccessSpy: any;
 
   const mockUser = {
     id: 'user-1',
@@ -77,6 +79,7 @@ describe('ListingsComponent', () => {
   ];
 
   beforeEach(async () => {
+    publishingAccessSpy = { check: vi.fn().mockResolvedValue({ allowed: true, usesAddonSlot: false }) };
     authServiceSpy = {
       currentUser: mockUser,
       safeRequest: vi.fn((fn) => fn()),
@@ -100,6 +103,7 @@ describe('ListingsComponent', () => {
         provideRouter([]),
         { provide: AuthService, useValue: authServiceSpy },
         { provide: BusinessService, useValue: businessServiceSpy },
+        { provide: PublishingAccessService, useValue: publishingAccessSpy },
       ],
     }).compileComponents();
 
@@ -111,6 +115,21 @@ describe('ListingsComponent', () => {
     fixture = TestBed.createComponent(ListingsComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
+  });
+
+  it.each(['subscription', 'quota'])('does not bypass the %s check from the draft-card Publish action', async (reason) => {
+    publishingAccessSpy.check.mockResolvedValue({ allowed: false, reason });
+    const draft = { ...mockEvents[2], description: 'A complete volleyball event description.', from: '18:00', to: '20:00', images: [{ id: 1, directus_files_id: 'image-1' }], areas: [{ id: 1, areas_id: 'area-1' }] };
+    await component.onPublish(draft);
+    expect(businessServiceSpy.publishEvent).not.toHaveBeenCalled();
+    expect(router.navigate).toHaveBeenCalledWith(['/app/billing'], { queryParams: { returnEventId: draft.id, reason } });
+  });
+
+  it('publishes a complete draft with remaining quota and does not add an extra-post expiry', async () => {
+    const draft = { ...mockEvents[2], description: 'A complete volleyball event description.', from: '18:00', to: '20:00', images: [{ id: 1, directus_files_id: 'image-1' }], areas: [{ id: 1, areas_id: 'area-1' }] };
+    await component.onPublish(draft);
+    expect(publishingAccessSpy.check).toHaveBeenCalledWith(mockUser.email, mockUser.provider_link.id);
+    expect(businessServiceSpy.publishEvent).toHaveBeenCalledWith(draft.id, null);
   });
 
   it('should create the listings component and load provider events', async () => {

@@ -4,6 +4,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
 import { CustomerErrorService } from '../../core/services/customer-error.service';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import {
   StripeService,
   StripePlan,
@@ -18,6 +19,7 @@ describe('BillingComponent', () => {
   let authServiceSpy: any;
   let businessServiceSpy: any;
   let stripeServiceSpy: any;
+  let billingParams: Record<string, string>;
 
   const mockUser = {
     id: 'user-1',
@@ -108,6 +110,7 @@ describe('BillingComponent', () => {
   ];
 
   beforeEach(async () => {
+    billingParams = {};
     authServiceSpy = {
       waitForInitialAuth: vi.fn().mockResolvedValue(mockUser),
       currentUser: mockUser,
@@ -183,6 +186,8 @@ describe('BillingComponent', () => {
     await TestBed.configureTestingModule({
       imports: [BillingComponent],
       providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: (key: string) => billingParams[key] ?? null } } } },
         { provide: AuthService, useValue: authServiceSpy },
         { provide: BusinessService, useValue: businessServiceSpy },
         { provide: StripeService, useValue: stripeServiceSpy },
@@ -193,6 +198,30 @@ describe('BillingComponent', () => {
     fixture = TestBed.createComponent(BillingComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
+  });
+
+  it('returns to the saved post after confirmed subscription, without auto-publishing', async () => {
+    billingParams = { returnEventId: 'ev-first-draft', reason: 'subscription' };
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await fixture.whenStable();
+    await (component as any).finalizeSubscriptionSuccess(mockPlans[0]);
+    expect(navigate).toHaveBeenCalledWith(['/app/listings/edit', 'ev-first-draft']);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('saved as a draft');
+  });
+
+  it('does not return to publishing if payment has not produced an active subscription', async () => {
+    billingParams = { returnEventId: 'ev-first-draft' };
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await fixture.whenStable();
+    stripeServiceSpy.getSubscription.mockResolvedValue(null);
+    await (component as any).finalizeSubscriptionSuccess(mockPlans[0]);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('ignores malformed returnEventId instead of accepting an external redirect', () => {
+    billingParams = { returnEventId: 'https://other.example/post' };
+    expect(component.returnEventId).toBeNull();
   });
 
   it('should initialize and load active subscription and plans', async () => {

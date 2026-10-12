@@ -541,6 +541,27 @@ export class BusinessService {
     });
   }
 
+  /** Canonical quota query: published posts updated within the billing window. */
+  async getPublishedPostCount(providerId: string, since: string): Promise<number> {
+    return this.authService.safeRequest(async () => {
+      const result = await directusClient.request(readItems('events', {
+        filter: {
+          provider: { id: { _eq: providerId } },
+          status: { _eq: 'published' },
+          date_updated: { _gte: since },
+        },
+        aggregate: { count: ['*'] },
+      } as any));
+      const count = (result as any)?.[0]?.count;
+      const raw = typeof count === 'object' ? (count?.['*'] ?? count?.['id']) : count;
+      const parsed = Number(raw);
+      if (raw == null || !Number.isFinite(parsed) || parsed < 0) {
+        throw new Error('Post usage could not be verified.');
+      }
+      return parsed;
+    });
+  }
+
   /**
    * Uploads multiple event images using client-side compression.
    */
@@ -599,6 +620,7 @@ export class BusinessService {
           delete: [],
         },
         status: data.status,
+        ...(data.addon_expires_at !== undefined ? { addon_expires_at: data.addon_expires_at } : {}),
       };
 
       // Ensure translations, translation_status, and images are never in the primary event payload
@@ -720,6 +742,7 @@ export class BusinessService {
         payload['currency'] = data.isFree ? undefined : data.currency;
       }
       if (data.status !== undefined) payload['status'] = data.status;
+      if (data.addon_expires_at !== undefined) payload['addon_expires_at'] = data.addon_expires_at;
 
       // Handle area updates matching canonical nested shape
       if (areaIds !== undefined) {
@@ -797,7 +820,7 @@ export class BusinessService {
    * Publishes a draft event (sets status to 'published').
    * Portal-side guard: validates completeness of draft (name, category, description, images, schedule).
    */
-  async publishEvent(eventId: string): Promise<void> {
+  async publishEvent(eventId: string, addonExpiresAt?: string | null): Promise<void> {
     if (!eventId) throw new Error('Event ID is required');
 
     return this.authService.safeRequest(async () => {
@@ -807,7 +830,10 @@ export class BusinessService {
         throw new Error(validation.errorCode || 'INCOMPLETE_EVENT_DRAFT');
       }
 
-      await directusClient.request(updateItem('events', eventId, { status: 'published' } as any));
+      await directusClient.request(updateItem('events', eventId, {
+        status: 'published',
+        ...(addonExpiresAt !== undefined ? { addon_expires_at: addonExpiresAt } : {}),
+      } as any));
     });
   }
 
