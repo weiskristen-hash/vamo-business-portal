@@ -32,13 +32,19 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
 
           <!-- Hero Headline & Supporting Copy -->
           <div class="hero-body">
-            <h1 class="hero-title">{{ 'PORTAL.LOGIN.HERO_TITLE' | translate }}</h1>
+            <h1 class="hero-title">{{ 'PORTAL.LOGIN.HOW_TITLE' | translate }}</h1>
             <p class="hero-description">
-              {{ 'PORTAL.LOGIN.HERO_DESC' | translate }}
+              {{ 'PORTAL.LOGIN.HOW_DESC' | translate }}
             </p>
-            <p class="hero-sync-note">
-              {{ 'PORTAL.LOGIN.HERO_SYNC_NOTE' | translate }}
-            </p>
+            <ol class="how-steps">
+              <li *ngFor="let step of [1, 2, 3, 4]" class="how-step">
+                <span class="step-number" aria-hidden="true">0{{ step }}</span>
+                <div>
+                  <h2>{{ ('PORTAL.LOGIN.STEP_' + step + '_TITLE') | translate }}</h2>
+                  <p>{{ ('PORTAL.LOGIN.STEP_' + step + '_DESC') | translate }}</p>
+                </div>
+              </li>
+            </ol>
           </div>
 
           <!-- Left Footer -->
@@ -351,6 +357,13 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       color: #94a3b8;
       margin: 0;
     }
+
+    .how-steps { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 28px; }
+    .how-step { display: flex; align-items: flex-start; gap: 20px; }
+    .step-number { flex: 0 0 48px; height: 48px; display: grid; place-items: center;
+      border: 2px solid var(--vamo-pink, #F93CAD); border-radius: 12px; font-size: 1.1rem; font-weight: 700; }
+    .how-step h2 { margin: 0 0 8px; font-size: 1.12rem; line-height: 1.35; }
+    .how-step p { margin: 0; color: #aab7c9; font-size: .95rem; line-height: 1.6; }
 
     .hero-sync-note {
       font-size: 0.88rem;
@@ -824,6 +837,8 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       .login-page {
         flex-direction: column;
       }
+
+      .login-panel { order: -1; }
 
       .login-hero {
         min-width: 100%;
