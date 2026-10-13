@@ -211,7 +211,7 @@ describe('ListingsComponent', () => {
 
     component.onEdit(pastEvent);
     expect(router.navigate).not.toHaveBeenCalled();
-    expect(component.error).toBe('Past events cannot be edited. Please copy as a new listing instead.');
+    expect(component.error).toBe('Past events cannot be edited. Please copy as a new post instead.');
 
     // Duplicating past event is allowed
     await component.onDuplicate(pastEvent);
@@ -264,7 +264,7 @@ describe('ListingsComponent', () => {
       i18nService.setLang('en');
       fixture.detectChanges();
       const titleEl = fixture.nativeElement.querySelector('.page-title');
-      expect(titleEl.textContent.trim()).toBe('Listings & Posts');
+      expect(titleEl.textContent.trim()).toBe('Posts');
 
       i18nService.setLang('es');
       fixture.detectChanges();
@@ -286,7 +286,7 @@ describe('ListingsComponent', () => {
       i18nService.setLang('en');
       fixture.detectChanges();
       const createBtn = fixture.nativeElement.querySelector('.header-actions .btn-primary');
-      expect(createBtn.textContent.trim()).toBe('Create Listing');
+      expect(createBtn.textContent.trim()).toBe('Create Post');
 
       i18nService.setLang('es');
       fixture.detectChanges();
@@ -319,8 +319,8 @@ describe('ListingsComponent', () => {
       fixture.detectChanges();
       let emptyTitle = fixture.nativeElement.querySelector('.empty-state .empty-title');
       let emptyAction = fixture.nativeElement.querySelector('.empty-state .empty-action');
-      expect(emptyTitle.textContent.trim()).toBe('You have no listings yet');
-      expect(emptyAction.textContent.trim()).toBe('+ Create Your First Listing');
+      expect(emptyTitle.textContent.trim()).toBe('You have no posts yet');
+      expect(emptyAction.textContent.trim()).toBe('+ Create Your First Post');
 
       i18nService.setLang('es');
       fixture.detectChanges();
@@ -338,7 +338,7 @@ describe('ListingsComponent', () => {
       fixture.detectChanges();
       emptyTitle = fixture.nativeElement.querySelector('.empty-state .empty-title');
       emptyAction = fixture.nativeElement.querySelector('.empty-state .empty-action');
-      expect(emptyTitle.textContent.trim()).toBe('No listings match your filters');
+      expect(emptyTitle.textContent.trim()).toBe('No posts match your filters');
       expect(emptyAction.textContent.trim()).toBe('Clear All Filters');
 
       i18nService.setLang('es');
@@ -373,9 +373,9 @@ describe('ListingsComponent', () => {
       let modalTitle = fixture.nativeElement.querySelector('.modal-title');
       let cancelBtn = fixture.nativeElement.querySelector('.modal-footer .btn-secondary');
       let deleteBtn = fixture.nativeElement.querySelector('.modal-footer .btn-danger');
-      expect(modalTitle.textContent.trim()).toBe('Delete Listing');
+      expect(modalTitle.textContent.trim()).toBe('Delete Post');
       expect(cancelBtn.textContent.trim()).toBe('Cancel');
-      expect(deleteBtn.textContent.trim()).toBe('Delete Listing');
+      expect(deleteBtn.textContent.trim()).toBe('Delete Post');
 
       i18nService.setLang('es');
       fixture.detectChanges();

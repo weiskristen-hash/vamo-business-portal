@@ -733,4 +733,83 @@ describe('AuthService', () => {
       expect(logoutSpy).not.toHaveBeenCalled();
     });
   });
+
+  describe('Cross-tab session reliability & predictable warning', () => {
+    it('skips Directus network call if another tab already refreshed tokens in storage', async () => {
+      const { createBrowserAuthStorage } = await import('../directus/browser-auth.storage');
+      const { directusClient } = await import('../directus/directus-client');
+      const storage = createBrowserAuthStorage();
+
+      // Seed storage with a fresh token valid for 10 minutes
+      const futureExp = Math.floor(Date.now() / 1000) + 600;
+      const freshToken = `header.${btoa(JSON.stringify({ exp: futureExp }))}.sig`;
+      await storage.set({ access_token: freshToken, refresh_token: 'tab2-refresh' });
+
+      const refreshSpy = vi.spyOn(directusClient, 'refresh');
+      const result = await service.refreshToken();
+
+      expect(result).toBe(true);
+      expect(refreshSpy).not.toHaveBeenCalled();
+    });
+
+    it('delegates refresh through navigator.locks.request when available', async () => {
+      const { createBrowserAuthStorage } = await import('../directus/browser-auth.storage');
+      const { directusClient } = await import('../directus/directus-client');
+      const storage = createBrowserAuthStorage();
+
+      // Expired token in storage so refresh must run
+      const pastExp = Math.floor(Date.now() / 1000) - 10;
+      const expiredToken = `header.${btoa(JSON.stringify({ exp: pastExp }))}.sig`;
+      await storage.set({ access_token: expiredToken, refresh_token: 'refresh-old' });
+
+      const lockSpy = vi.fn().mockImplementation(async (_name: string, fn: () => Promise<any>) => fn());
+      (navigator as any).locks = { request: lockSpy };
+
+      vi.spyOn(directusClient, 'refresh').mockResolvedValueOnce({} as any);
+
+      try {
+        const result = await service.refreshToken();
+        expect(result).toBe(true);
+        expect(lockSpy).toHaveBeenCalledWith('vamo_auth_refresh', expect.any(Function));
+      } finally {
+        delete (navigator as any).locks;
+      }
+    });
+
+    it('updates state and dismisses warning on sibling tab storage event', async () => {
+      const { BUSINESS_AUTH_STORAGE_KEY } = await import('../directus/browser-auth.storage');
+
+      let warningState = false;
+      const sub = service.sessionExpiring$.subscribe((val) => { warningState = val; });
+
+      // Trigger warning state manually for test
+      (service as any).sessionExpiringSubject.next(true);
+      expect(warningState).toBe(true);
+
+      // Simulate storage event from another tab renewing the session
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: BUSINESS_AUTH_STORAGE_KEY,
+        newValue: JSON.stringify({ access_token: 'fresh', refresh_token: 'fresh' }),
+      }));
+
+      expect(warningState).toBe(false);
+      sub.unsubscribe();
+    });
+
+    it('staySignedIn refreshes session and resets warning state', async () => {
+      const { directusClient } = await import('../directus/directus-client');
+      vi.spyOn(directusClient, 'refresh').mockResolvedValueOnce({} as any);
+
+      let warningState = false;
+      const sub = service.sessionExpiring$.subscribe((val) => { warningState = val; });
+
+      (service as any).sessionExpiringSubject.next(true);
+      expect(warningState).toBe(true);
+
+      const refreshed = await service.staySignedIn();
+      expect(refreshed).toBe(true);
+      expect(warningState).toBe(false);
+      sub.unsubscribe();
+    });
+  });
 });

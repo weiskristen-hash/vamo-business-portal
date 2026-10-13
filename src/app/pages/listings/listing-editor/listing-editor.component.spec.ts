@@ -122,6 +122,7 @@ describe('ListingEditorComponent', () => {
     vi.spyOn(router, 'navigate').mockResolvedValue(true);
     i18nService = TestBed.inject(I18nService);
     i18nService.setLang('en');
+    sessionStorage.clear();
   });
 
   it('should initialize in create mode with provider defaults', async () => {
@@ -183,7 +184,7 @@ describe('ListingEditorComponent', () => {
     // Empty name
     component.draft.name = '';
     expect(component.validateForm(true)).toBe(false);
-    expect(component.errorMessage).toContain('listing title');
+    expect(component.errorMessage).toContain('post title');
 
     // Name filled, short description
     component.draft.name = 'Valid Event Title';
@@ -523,7 +524,7 @@ describe('ListingEditorComponent', () => {
       i18nService.setLang('en');
       fixture.detectChanges();
       let titleEl = fixture.nativeElement.querySelector('.page-title');
-      expect(titleEl.textContent.trim()).toBe('Create New Listing');
+      expect(titleEl.textContent.trim()).toBe('Create New Post');
 
       i18nService.setLang('es');
       fixture.detectChanges();
@@ -535,7 +536,7 @@ describe('ListingEditorComponent', () => {
       i18nService.setLang('en');
       fixture.detectChanges();
       titleEl = fixture.nativeElement.querySelector('.page-title');
-      expect(titleEl.textContent.trim()).toBe('Edit Listing');
+      expect(titleEl.textContent.trim()).toBe('Edit Post');
 
       i18nService.setLang('es');
       fixture.detectChanges();
@@ -570,7 +571,7 @@ describe('ListingEditorComponent', () => {
       fixture.detectChanges();
       let descs = Array.from(fixture.nativeElement.querySelectorAll('.section-desc'))
         .map((el: any) => el.textContent.trim());
-      expect(descs[0]).toBe('Define the title, category, and a compelling description for your listing.');
+      expect(descs[0]).toBe('Define the title, category, and a compelling description for your post.');
 
       i18nService.setLang('es');
       fixture.detectChanges();
@@ -584,7 +585,7 @@ describe('ListingEditorComponent', () => {
       fixture.detectChanges();
       let labels = Array.from(fixture.nativeElement.querySelectorAll('.form-label'))
         .map((el: any) => el.textContent.trim());
-      expect(labels.some((l) => l.includes('Listing Title'))).toBe(true);
+      expect(labels.some((l) => l.includes('Post Title'))).toBe(true);
       expect(labels.some((l) => l.includes('Category'))).toBe(true);
       expect(labels.some((l) => l.includes('Description'))).toBe(true);
       expect(labels.some((l) => l.includes('Destination Area'))).toBe(true);
@@ -635,7 +636,7 @@ describe('ListingEditorComponent', () => {
       i18nService.setLang('en');
       component.draft.name = '';
       expect(component.validateForm(false)).toBe(false);
-      expect(component.errorMessage).toBe('Please provide a listing title.');
+      expect(component.errorMessage).toBe('Please provide a post title.');
 
       i18nService.setLang('es');
       expect(component.validateForm(false)).toBe(false);
@@ -849,9 +850,9 @@ describe('ListingEditorComponent', () => {
       let backBtn = fixture.nativeElement.querySelector('.back-btn span');
       let draftBtn = fixture.nativeElement.querySelector('.header-actions .btn-secondary:nth-child(2)');
       let publishBtn = fixture.nativeElement.querySelector('.header-actions .btn-primary');
-      expect(backBtn.textContent.trim()).toBe('Back to Listings');
+      expect(backBtn.textContent.trim()).toBe('Back to Posts');
       expect(draftBtn.textContent.trim()).toBe('Save as Draft');
-      expect(publishBtn.textContent.trim()).toBe('Publish Listing');
+      expect(publishBtn.textContent.trim()).toBe('Publish Post');
 
       i18nService.setLang('es');
       fixture.detectChanges();
@@ -867,7 +868,7 @@ describe('ListingEditorComponent', () => {
       i18nService.setLang('en');
       fixture.detectChanges();
       let backBtn = fixture.nativeElement.querySelector('.back-btn');
-      expect(backBtn.getAttribute('aria-label')).toBe('Back to Listings');
+      expect(backBtn.getAttribute('aria-label')).toBe('Back to Posts');
 
       i18nService.setLang('es');
       fixture.detectChanges();
@@ -1109,7 +1110,7 @@ describe('ListingEditorComponent', () => {
       expect(pastAlert.textContent).toContain('Past Event');
 
       expect(component.validateForm(false)).toBe(false);
-      expect(component.errorMessage).toBe('Past events cannot be edited. Please copy as a new listing instead.');
+      expect(component.errorMessage).toBe('Past events cannot be edited. Please copy as a new post instead.');
     });
 
     it('should copy past event as new draft and navigate to editor', async () => {
@@ -1133,6 +1134,83 @@ describe('ListingEditorComponent', () => {
 
       expect(businessServiceSpy.duplicateEventAsDraft).toHaveBeenCalledWith(pastEvent);
       expect(router.navigate).toHaveBeenCalledWith(['/app/listings/edit', 'new-copy-id']);
+    });
+  });
+
+  describe('Draft Minimal Validation & Session Recovery', () => {
+    it('should allow saving a draft with only name filled (no category, no description)', async () => {
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+
+      component.draft.name = 'Minimal Draft Title';
+      component.draft.category = undefined as any;
+      component.draft.description = '';
+
+      expect(component.validateForm(false)).toBe(true);
+
+      await component.saveDraft();
+      expect(businessServiceSpy.createEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Minimal Draft Title',
+          status: 'draft',
+        }),
+        [],
+        ['area-1']
+      );
+    });
+
+    it('should persist draft recovery data to sessionStorage on edit without credentials', () => {
+      sessionStorage.clear();
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+
+      component.draft.name = 'Unsaved In-Progress Post';
+      component.draft.description = 'Typing some details before session times out';
+      component.markDirty();
+
+      const stored = sessionStorage.getItem('vamo_editor_recovery_new');
+      expect(stored).toBeTruthy();
+      const parsed = JSON.parse(stored!);
+      expect(parsed.name).toBe('Unsaved In-Progress Post');
+      expect(parsed.description).toBe('Typing some details before session times out');
+      // Must NEVER contain passwords, tokens, or credentials
+      expect(parsed.password).toBeUndefined();
+      expect(parsed.token).toBeUndefined();
+      expect(parsed.access_token).toBeUndefined();
+      expect(parsed.refresh_token).toBeUndefined();
+    });
+
+    it('should restore draft recovery data on reload', async () => {
+      sessionStorage.setItem('vamo_editor_recovery_new', JSON.stringify({
+        name: 'Recovered Draft',
+        description: 'Recovered description text',
+        mode: 'single',
+      }));
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+
+      expect(component.draft.name).toBe('Recovered Draft');
+      expect(component.draft.description).toBe('Recovered description text');
+      expect(component.isDirty).toBe(true);
+      sessionStorage.clear();
+    });
+
+    it('should clear draft recovery data on successful save', async () => {
+      sessionStorage.setItem('vamo_editor_recovery_new', JSON.stringify({
+        name: 'Draft to Save',
+      }));
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+
+      component.draft.name = 'Draft to Save';
+      await component.saveDraft();
+
+      expect(sessionStorage.getItem('vamo_editor_recovery_new')).toBeNull();
     });
   });
 

@@ -402,16 +402,32 @@ export class StripeService {
       clientSecret,
       locale: this.i18n.lang() === 'es' ? 'es' : 'en',
       appearance: {
-        theme: 'night',
+        theme: 'stripe',
         variables: {
-          colorPrimary: '#F93CAD',
-          colorBackground: '#1c1c2e',
-          colorText: '#ffffff',
-          colorTextSecondary: '#a0a0b8',
+          colorPrimary: '#8070C0',
+          colorBackground: '#ffffff',
+          colorText: '#0f172a',
+          colorTextSecondary: '#64748b',
           colorDanger: '#ef4444',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          borderRadius: '12px',
-          spacingUnit: '5px',
+          fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          borderRadius: '10px',
+          spacingUnit: '4px',
+        },
+        rules: {
+          '.Input': {
+            borderColor: '#e2e8f0',
+            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+          },
+          '.Input:focus': {
+            borderColor: '#8070C0',
+            boxShadow: '0 0 0 2px rgba(128, 112, 192, 0.2)',
+          },
+          '.Label': {
+            color: '#334155',
+            fontWeight: '500',
+            fontSize: '13px',
+            marginBottom: '4px',
+          },
         },
       },
     });

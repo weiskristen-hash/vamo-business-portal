@@ -5,12 +5,19 @@ import { filter } from 'rxjs/operators';
 import { AuthenticationStorage, createItem, passwordRequest, readMe, registerUser, updateMe } from '@directus/sdk';
 import { directusClient, createIsolatedDirectusClient } from '../directus/directus-client';
 import { runtimeConfig } from '../config/runtime-config';
-import { createBrowserAuthStorage, createMemoryAuthStorage } from '../directus/browser-auth.storage';
+import { createBrowserAuthStorage, createMemoryAuthStorage, BUSINESS_AUTH_STORAGE_KEY } from '../directus/browser-auth.storage';
 import { VamoUser } from '../models/user.model';
 import { environment } from '../../../environments/environment';
 import { GoogleAuthService } from './google-auth.service';
 
 export type AuthState = 'loading' | 'authenticated' | 'unauthenticated';
+
+async function runWithCrossTabLock<T>(lockName: string, fn: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== 'undefined' && (navigator as any).locks?.request) {
+    return (navigator as any).locks.request(lockName, fn);
+  }
+  return fn();
+}
 
 @Injectable({
   providedIn: 'root',
@@ -25,12 +32,29 @@ export class AuthService implements OnDestroy {
 
   private refreshPromise: Promise<boolean> | null = null;
   private proactiveRefreshTimer: any = null;
+  private sessionWarningTimer: any = null;
   private restoreSessionNonce = 0;
   private loginNonce = 0;
   private refreshScheduleNonce = 0;
+
+  private sessionExpiringSubject = new BehaviorSubject<boolean>(false);
+  public sessionExpiring$: Observable<boolean> = this.sessionExpiringSubject.asObservable();
+
   private readonly resumeSession = () => { void this.restoreSession(); };
   private readonly resumeVisibleSession = () => {
     if (document.visibilityState === 'visible') this.resumeSession();
+  };
+  private readonly handleStorageChange = (event: StorageEvent) => {
+    if (event.key === BUSINESS_AUTH_STORAGE_KEY) {
+      if (event.newValue) {
+        // Sibling tab refreshed tokens
+        this.scheduleProactiveRefresh();
+        this.sessionExpiringSubject.next(false);
+      } else if (this.userSubject.value) {
+        // Sibling tab logged out
+        this.userSubject.next(null);
+      }
+    }
   };
 
   constructor() {
@@ -45,6 +69,18 @@ export class AuthService implements OnDestroy {
 
   get isInitialCheckDone(): boolean {
     return this.userSubject.value !== undefined;
+  }
+
+  get isSessionExpiring(): boolean {
+    return this.sessionExpiringSubject.value;
+  }
+
+  /**
+   * Extends the current session in response to the session expiry warning.
+   */
+  async staySignedIn(): Promise<boolean> {
+    this.sessionExpiringSubject.next(false);
+    return await this.refreshToken();
   }
 
   /**
@@ -95,23 +131,58 @@ export class AuthService implements OnDestroy {
     if (!this.refreshPromise) {
       this.refreshPromise = (async () => {
         try {
-          await directusClient.refresh();
-          this.scheduleProactiveRefresh();
-          return true;
-        } catch (err) {
-          if (this.isSessionRejection(err)) {
-            await this.handleSessionExpired();
-            return false;
-          }
-          // Losing connectivity or an API outage does not revoke a valid session.
-          this.scheduleRefreshRetry();
-          throw err;
+          return await this.executeLockedRefresh();
         } finally {
           this.refreshPromise = null;
         }
       })();
     }
     return this.refreshPromise;
+  }
+
+  private async executeLockedRefresh(): Promise<boolean> {
+    return runWithCrossTabLock('vamo_auth_refresh', async () => {
+      // 1. Double-checked storage check: another tab may have refreshed while waiting for lock
+      const currentSession = await createBrowserAuthStorage().get();
+      const token = currentSession?.access_token;
+      if (token) {
+        const exp = this.decodeJwtExpiry(token);
+        const now = Date.now();
+        // If token in storage is valid for more than 2 minutes, another tab refreshed it
+        if (exp !== null && exp - now > 2 * 60 * 1000) {
+          this.scheduleProactiveRefresh();
+          this.sessionExpiringSubject.next(false);
+          return true;
+        }
+      }
+
+      // 2. Perform refresh via Directus
+      try {
+        await directusClient.refresh();
+        this.scheduleProactiveRefresh();
+        this.sessionExpiringSubject.next(false);
+        return true;
+      } catch (err: any) {
+        // 3. Before treating as session expiry, check if another tab updated storage during inflight request
+        const freshSession = await createBrowserAuthStorage().get();
+        if (freshSession?.access_token && freshSession.access_token !== token) {
+          const freshExp = this.decodeJwtExpiry(freshSession.access_token);
+          if (freshExp !== null && freshExp > Date.now() + 60 * 1000) {
+            this.scheduleProactiveRefresh();
+            this.sessionExpiringSubject.next(false);
+            return true;
+          }
+        }
+
+        if (this.isSessionRejection(err)) {
+          await this.handleSessionExpired();
+          return false;
+        }
+        // Losing connectivity or an API outage does not revoke a valid session.
+        this.scheduleRefreshRetry();
+        throw err;
+      }
+    });
   }
 
   private isSessionRejection(err: any): boolean {
@@ -124,6 +195,23 @@ export class AuthService implements OnDestroy {
     this.refreshScheduleNonce++;
     if (this.proactiveRefreshTimer) clearTimeout(this.proactiveRefreshTimer);
     this.proactiveRefreshTimer = null;
+    this.clearWarningTimer();
+  }
+
+  private clearWarningTimer(): void {
+    if (this.sessionWarningTimer) {
+      clearTimeout(this.sessionWarningTimer);
+      this.sessionWarningTimer = null;
+    }
+  }
+
+  private scheduleSessionWarning(delayMs: number): void {
+    this.clearWarningTimer();
+    this.sessionWarningTimer = setTimeout(() => {
+      if (this.userSubject.value) {
+        this.sessionExpiringSubject.next(true);
+      }
+    }, Math.max(1000, delayMs));
   }
 
   private scheduleRefreshRetry(): void {
@@ -266,7 +354,11 @@ export class AuthService implements OnDestroy {
       if (expiresAt === null) return;
 
       const now = Date.now();
-      const timeout = expiresAt - now - 2 * 60 * 1000;
+      const timeUntilExpiry = expiresAt - now;
+      const timeout = timeUntilExpiry - 2 * 60 * 1000;
+
+      // Predictable expiry warning 2 minutes before expiration
+      this.scheduleSessionWarning(timeUntilExpiry - 2 * 60 * 1000);
 
       this.proactiveRefreshTimer = setTimeout(() => {
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -730,6 +822,7 @@ export class AuthService implements OnDestroy {
     if (typeof window !== 'undefined') {
       window.addEventListener('online', this.resumeSession);
       window.addEventListener('focus', this.resumeSession);
+      window.addEventListener('storage', this.handleStorageChange);
       document.addEventListener('visibilitychange', this.resumeVisibleSession);
     }
   }
@@ -739,6 +832,7 @@ export class AuthService implements OnDestroy {
     if (typeof window !== 'undefined') {
       window.removeEventListener('online', this.resumeSession);
       window.removeEventListener('focus', this.resumeSession);
+      window.removeEventListener('storage', this.handleStorageChange);
       document.removeEventListener('visibilitychange', this.resumeVisibleSession);
     }
   }

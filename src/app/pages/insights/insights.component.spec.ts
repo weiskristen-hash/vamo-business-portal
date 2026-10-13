@@ -229,7 +229,7 @@ describe('InsightsComponent (Phase 1D.1)', () => {
     const rows = Array.from(el().querySelectorAll('.ins-top-row'));
     expect(rows.length).toBe(3);
     const names = rows.map((r) => r.querySelector('.ins-top-name')?.textContent?.trim());
-    expect(names).toEqual(['Zip Line', 'Sunset Catamaran', 'Untitled listing']);
+    expect(names).toEqual(['Zip Line', 'Sunset Catamaran', 'Untitled post']);
     const first = rows[1];
     expect(first.querySelector('[data-stat="views"] strong')?.textContent?.trim()).toBe('10');
     expect(first.querySelector('[data-stat="shares"] strong')?.textContent?.trim()).toBe('3');

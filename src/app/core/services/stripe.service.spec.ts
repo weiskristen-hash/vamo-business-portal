@@ -499,4 +499,44 @@ describe('StripeService', () => {
       });
     });
   });
+
+  describe('mountPaymentElement (Area 5)', () => {
+    it('initializes Stripe elements with light theme matching portal tokens', async () => {
+      const mockElement = { mount: vi.fn() };
+      const mockElements = {
+        create: vi.fn().mockReturnValue(mockElement),
+      };
+      const mockStripe = {
+        elements: vi.fn().mockReturnValue(mockElements),
+      };
+      vi.spyOn(service, 'getStripe').mockResolvedValue(mockStripe as any);
+
+      const container = document.createElement('div');
+      container.id = 'stripe-test-container';
+      document.body.appendChild(container);
+
+      try {
+        const res = await service.mountPaymentElement('pi_secret_123', 'stripe-test-container');
+        expect(res.stripe).toBe(mockStripe);
+        expect(mockStripe.elements).toHaveBeenCalledWith(
+          expect.objectContaining({
+            clientSecret: 'pi_secret_123',
+            appearance: expect.objectContaining({
+              theme: 'stripe',
+              variables: expect.objectContaining({
+                colorPrimary: '#8070C0',
+                colorBackground: '#ffffff',
+                colorText: '#0f172a',
+                fontFamily: expect.stringContaining('Inter'),
+              }),
+            }),
+          })
+        );
+        expect(mockElements.create).toHaveBeenCalledWith('payment');
+        expect(mockElement.mount).toHaveBeenCalledWith(container);
+      } finally {
+        container.remove();
+      }
+    });
+  });
 });

@@ -285,7 +285,7 @@ describe('PromotionsComponent', () => {
 
       expect(component.selectedEventId()).toBeNull();
       expect(component.errorMessage()).toBe(
-        'The requested listing could not be found or is not eligible for promotion.'
+        'The requested post could not be found or is not eligible for promotion.'
       );
     });
 
@@ -294,7 +294,7 @@ describe('PromotionsComponent', () => {
 
       expect(component.selectedEventId()).toBeNull();
       expect(component.errorMessage()).toBe(
-        'The requested listing could not be found or is not eligible for promotion.'
+        'The requested post could not be found or is not eligible for promotion.'
       );
     });
   });
@@ -332,7 +332,7 @@ describe('PromotionsComponent', () => {
 
       // Warning alert with edit listing link targeting /app/listings/edit/ev-no-area
       const compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.textContent).toContain('This listing needs a destination before it can be promoted.');
+      expect(compiled.textContent).toContain('This post needs a destination before it can be promoted.');
 
       const editLinkDe = fixture.debugElement.query(By.css('.edit-listing-btn'));
       expect(editLinkDe).toBeTruthy();
@@ -672,7 +672,7 @@ describe('PromotionsComponent', () => {
     it('should reactively update error messages when language changes', () => {
       component.errorDescriptor.set({ key: 'PORTAL.PROMOTIONS.ERROR_SELECT_EVENT' });
       i18nService.setLang('en');
-      expect(component.errorMessage()).toBe('Please select a listing to promote.');
+      expect(component.errorMessage()).toBe('Please select a post to promote.');
 
       i18nService.setLang('es');
       expect(component.errorMessage()).toBe('Por favor selecciona una publicación para promocionar.');
@@ -1266,7 +1266,7 @@ describe('PromotionsComponent', () => {
       const backLink = fixture.nativeElement.querySelector('.page-header .header-back-wrap a');
       expect(backLink).toBeTruthy();
       expect(backLink.getAttribute('routerLink') || backLink.getAttribute('href')).toContain('/app/listings');
-      expect(backLink.textContent).toContain('View Listings');
+      expect(backLink.textContent).toContain('View Posts');
     });
 
     it('should render return to listings button in checkout actions when payment is not active', async () => {

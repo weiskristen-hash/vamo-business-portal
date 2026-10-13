@@ -504,4 +504,107 @@ describe('BusinessProfileComponent', () => {
     });
   });
 
+  describe('Gallery Images Resilience and Persistence (Area 3)', () => {
+    it('getGalleryImageUrl resolves URLs for all object, junction, and string formats', () => {
+      // 1. Plain string ID
+      expect(component.getGalleryImageUrl('file-uuid-1')).toContain('file-uuid-1');
+
+      // 2. Junction object with expanded directus_files_id object
+      expect(
+        component.getGalleryImageUrl({
+          id: 'junc-1',
+          directus_files_id: { id: 'file-uuid-expanded' },
+        })
+      ).toContain('file-uuid-expanded');
+
+      // 3. Junction object with raw string directus_files_id
+      expect(
+        component.getGalleryImageUrl({
+          id: 'junc-2',
+          directus_files_id: 'file-uuid-string-id',
+        })
+      ).toContain('file-uuid-string-id');
+
+      // 4. Direct file object with id
+      expect(
+        component.getGalleryImageUrl({
+          id: 'file-uuid-direct',
+        })
+      ).toContain('file-uuid-direct');
+
+      // 5. Null or empty
+      expect(component.getGalleryImageUrl(null)).toBe('');
+      expect(component.getGalleryImageUrl(undefined)).toBe('');
+    });
+
+    it('onGalleryImageError replaces broken image with clean fallback SVG', () => {
+      const img = document.createElement('img');
+      img.src = 'https://api.vamo-app.com/assets/broken-uuid';
+      const event = { target: img } as unknown as Event;
+
+      component.onGalleryImageError(event);
+
+      expect(img.src).toContain('data:image/svg+xml');
+    });
+
+    it('retains gallery images on save even if updateProvider returns a payload with missing images', async () => {
+      await fixture.whenStable();
+
+      // Prepopulate form with 2 gallery images
+      const initialImages = [
+        { id: 'junc-1', directus_files_id: { id: 'file-1' } },
+        { id: 'junc-2', directus_files_id: { id: 'file-2' } },
+      ];
+      component.form.update((f) => ({ ...f, images: initialImages }));
+      component.markDirty();
+
+      // Mock updateProvider returning payload with images omitted or undefined
+      businessServiceSpy.updateProvider.mockResolvedValueOnce({
+        id: 'prov-101',
+        name: 'Updated Name',
+        city: 'Las Terrenas',
+        images: undefined,
+      } as any);
+
+      await component.saveProfile();
+
+      expect(component.saveSuccess()).toBe(true);
+      expect(component.form().images).toEqual(initialImages);
+      expect(component.provider()?.images).toEqual(initialImages);
+    });
+
+    it('uploads gallery photos, updates progress, and refreshes provider to sync junction IDs', async () => {
+      await fixture.whenStable();
+
+      const fakeFile1 = new File(['data1'], 'photo1.jpg', { type: 'image/jpeg' });
+      const fakeFile2 = new File(['data2'], 'photo2.jpg', { type: 'image/jpeg' });
+      const input = document.createElement('input');
+      Object.defineProperty(input, 'files', {
+        value: [fakeFile1, fakeFile2],
+        writable: false,
+      });
+
+      businessServiceSpy.uploadProviderImage
+        .mockResolvedValueOnce('uploaded-file-1')
+        .mockResolvedValueOnce('uploaded-file-2');
+
+      businessServiceSpy.getProviderById.mockResolvedValueOnce({
+        ...mockProvider,
+        images: [
+          { id: 'new-junc-1', directus_files_id: { id: 'uploaded-file-1' } },
+          { id: 'new-junc-2', directus_files_id: { id: 'uploaded-file-2' } },
+        ],
+      });
+
+      await component.onGallerySelected({ target: input } as unknown as Event);
+
+      expect(businessServiceSpy.uploadProviderImage).toHaveBeenCalledTimes(2);
+      expect(businessServiceSpy.getProviderById).toHaveBeenCalledWith('prov-101');
+      expect(component.form().images.length).toBe(2);
+      expect(component.form().images[0].id).toBe('new-junc-1');
+      expect(component.uploadingGallery()).toBe(false);
+      expect(component.uploadProgressMessage()).toBeNull();
+    });
+  });
+
 });
