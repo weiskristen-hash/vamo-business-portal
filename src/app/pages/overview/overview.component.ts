@@ -4,6 +4,7 @@ import { RouterModule, Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
 import { CustomerErrorService } from '../../core/services/customer-error.service';
+import { SubscriptionStatusService } from '../../core/services/subscription-status.service';
 import { I18nService, BUSINESS_TYPES } from '../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { VamoUser } from '../../core/models/user.model';
@@ -122,12 +123,12 @@ import {
               <span class="summary-label">{{ 'PORTAL.OVERVIEW.STAT_TIER' | translate }}</span>
               <span class="summary-icon icon-tier">✦</span>
             </div>
-            <div class="summary-value tier-value">
-              {{ provider?.subscription_tier ? (provider?.subscription_tier | uppercase) : ('PORTAL.OVERVIEW.TIER_VERIFIED' | translate) }}
+            <div class="summary-value tier-value" [class.tier-value-inactive]="subStatus().state === 'inactive'">
+              {{ subStatus().cardTierDisplay }}
             </div>
             <div class="summary-footer">
-              <span class="badge badge-published">
-                {{ getBusinessTypeLabel(provider?.business_type) }}
+              <span class="badge" [ngClass]="subStatus().cardBadgeClass">
+                {{ subStatus().cardStatusDisplay }}
               </span>
             </div>
           </div>
@@ -512,6 +513,10 @@ import {
       color: var(--vamo-primary);
     }
 
+    .tier-value-inactive {
+      color: var(--vamo-text-muted);
+    }
+
     .summary-footer {
       display: flex;
       align-items: center;
@@ -831,9 +836,12 @@ export class OverviewComponent implements OnInit {
   authService = inject(AuthService);
   businessService = inject(BusinessService);
   customerErrorService = inject(CustomerErrorService);
+  subStatusService = inject(SubscriptionStatusService);
   i18n = inject(I18nService);
   router = inject(Router);
   cdr = inject(ChangeDetectorRef);
+
+  readonly subStatus = this.subStatusService.status;
 
   user: VamoUser | null = null;
   provider: Provider | null = null;
@@ -906,6 +914,8 @@ export class OverviewComponent implements OnInit {
         this.error = this.i18n.t('PORTAL.ERRORS.NO_BUSINESS');
         return;
       }
+
+      void this.subStatusService.refresh();
 
       const events = await this.businessService.getEventsForProvider(providerId);
       this.stats = this.businessService.calculateStats(events);

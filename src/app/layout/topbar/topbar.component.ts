@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { BusinessService } from '../../core/services/business.service';
+import { SubscriptionStatusService } from '../../core/services/subscription-status.service';
 import { LanguageSelectorComponent } from '../../core/i18n/language-selector.component';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
@@ -47,9 +48,9 @@ import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
           <div class="business-meta">
             <span class="business-name">{{ user.provider_link?.name || ('PORTAL.SHELL.DEFAULT_BUSINESS_NAME' | translate) }}</span>
-            <span class="business-status">
+            <span class="business-status" [ngClass]="subStatus().statusClass">
               <span class="status-dot"></span>
-              {{ user.provider_link?.subscription_tier ? (user.provider_link?.subscription_tier | uppercase) : ('PORTAL.SHELL.STATUS_ACTIVE' | translate) }}
+              {{ subStatus().topbarStatusDisplay }}
             </span>
           </div>
 
@@ -209,6 +210,26 @@ import { TranslatePipe } from '../../core/i18n/translate.pipe';
       font-weight: 600;
     }
 
+    .business-status.is-inactive {
+      color: var(--vamo-text-muted);
+    }
+    .business-status.is-inactive .status-dot {
+      background: var(--vamo-text-muted);
+    }
+    .business-status.is-loading {
+      color: var(--vamo-text-muted);
+      opacity: 0.7;
+    }
+    .business-status.is-loading .status-dot {
+      background: var(--vamo-text-muted);
+    }
+    .business-status.is-error {
+      color: var(--vamo-status-archived, #ef4444);
+    }
+    .business-status.is-error .status-dot {
+      background: var(--vamo-status-archived, #ef4444);
+    }
+
     .status-dot {
       width: 6px;
       height: 6px;
@@ -326,6 +347,9 @@ import { TranslatePipe } from '../../core/i18n/translate.pipe';
 export class TopbarComponent {
   authService = inject(AuthService);
   businessService = inject(BusinessService);
+  subStatusService = inject(SubscriptionStatusService);
+
+  readonly subStatus = this.subStatusService.status;
 
   @Input() pageTitle = 'Overview';
   @Output() toggleSidebar = new EventEmitter<void>();
