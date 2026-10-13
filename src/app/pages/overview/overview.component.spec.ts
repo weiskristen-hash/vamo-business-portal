@@ -379,7 +379,7 @@ describe('OverviewComponent', () => {
       // Attempting to edit past event should block navigation and set error
       component.onEdit(pastEvent);
       expect(navigateSpy).not.toHaveBeenCalled();
-      expect(component.error).toBe('Past events cannot be edited. Please copy as a new listing instead.');
+      expect(component.error).toBe('Past events cannot be edited. Please copy as a new post instead.');
 
       // Copying past event should create draft and route to editor
       await component.onDuplicate(pastEvent);

@@ -294,6 +294,8 @@ export interface OfferingOption {
                       [src]="getGalleryImageUrl(img)"
                       [alt]="'PORTAL.PROFILE.GALLERY_PHOTO_ALT' | translate"
                       class="gallery-img"
+                      loading="lazy"
+                      (error)="onGalleryImageError($event)"
                     />
                     <button
                       type="button"
@@ -316,11 +318,12 @@ export interface OfferingOption {
                       (change)="onGallerySelected($event)"
                       [disabled]="uploadingGallery()"
                     />
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <span *ngIf="uploadingGallery()" class="spinner spinner-primary"></span>
+                    <svg *ngIf="!uploadingGallery()" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <line x1="12" y1="5" x2="12" y2="19"></line>
                       <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
-                    <span>{{ 'PORTAL.PROFILE.UPLOAD_PHOTO' | translate }}</span>
+                    <span>{{ uploadingGallery() ? (uploadProgressMessage() || ('PORTAL.PROFILE.UPLOADING' | translate)) : ('PORTAL.PROFILE.UPLOAD_PHOTO' | translate) }}</span>
                   </label>
                 </div>
               </div>
@@ -1897,6 +1900,7 @@ export class BusinessProfileComponent implements OnInit {
   saving = signal(false);
   uploadingLogo = signal(false);
   uploadingGallery = signal(false);
+  uploadProgressMessage = signal<string | null>(null);
   detectingLocation = signal(false);
   loadError = signal<string | null>(null);
   saveSuccess = signal(false);
@@ -2276,10 +2280,16 @@ export class BusinessProfileComponent implements OnInit {
 
     this.uploadingGallery.set(true);
     this.saveError.set(null);
+    this.uploadProgressMessage.set(null);
 
     try {
       const files = Array.from(input.files);
-      for (const file of files) {
+      const total = files.length;
+      for (let i = 0; i < total; i++) {
+        const file = files[i];
+        this.uploadProgressMessage.set(
+          this.i18n.t('PORTAL.PROFILE.UPLOADING_PHOTO', { current: i + 1, total })
+        );
         const fileId = await this.businessService.uploadProviderImage(this.form().id, file);
         this.form.update((f) => ({
           ...f,
@@ -2289,17 +2299,31 @@ export class BusinessProfileComponent implements OnInit {
           ],
         }));
       }
+
+      // Synchronize refreshed provider state to retain accurate junction identifiers
+      if (this.form().id) {
+        const refreshed = await this.businessService.getProviderById(this.form().id);
+        this.provider.set(refreshed);
+        this.form.update((f) => ({
+          ...f,
+          images: [...(refreshed.images || [])],
+        }));
+      }
       this.markDirty();
     } catch (err: any) {
       this.saveError.set(this.customerErrorService.toCustomerMessage(err, 'upload'));
     } finally {
       this.uploadingGallery.set(false);
+      this.uploadProgressMessage.set(null);
       input.value = '';
     }
   }
 
   async removeGalleryImage(img: any, index: number): Promise<void> {
-    const fid = typeof img.directus_files_id === 'object' ? img.directus_files_id?.id : img.directus_files_id;
+    const fid =
+      typeof img.directus_files_id === 'object'
+        ? img.directus_files_id?.id
+        : (img.directus_files_id || img.id);
     const junctionId = img.id;
 
     const list = [...this.form().images];
@@ -2317,8 +2341,24 @@ export class BusinessProfileComponent implements OnInit {
   }
 
   getGalleryImageUrl(img: any): string {
-    const fileId = typeof img.directus_files_id === 'object' ? img.directus_files_id?.id : img.directus_files_id;
+    if (!img) return '';
+    if (typeof img === 'string') {
+      return this.businessService.getAssetUrl(img, 'width=300&height=220&fit=cover');
+    }
+    const fileId =
+      typeof img.directus_files_id === 'object' && img.directus_files_id !== null
+        ? img.directus_files_id.id
+        : (img.directus_files_id || img.id);
+    if (!fileId) return '';
     return this.businessService.getAssetUrl(fileId, 'width=300&height=220&fit=cover');
+  }
+
+  onGalleryImageError(event: Event): void {
+    const target = event.target as HTMLImageElement;
+    if (target && !target.src.includes('data:image/svg+xml')) {
+      target.src =
+        'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%22300%22%20height%3D%22220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20300%20220%22%20fill%3D%22none%22%3E%3Crect%20width%3D%22300%22%20height%3D%22220%22%20fill%3D%22%23f1f5f9%22%2F%3E%3Cpath%20d%3D%22M150%2090a20%2020%200%201%200%200%2040%2020%2020%200%200%200%200-40zm-40%2050l25-25%2015%2015%2035-35%2035%2045H110z%22%20fill%3D%22%2394a3b8%22%2F%3E%3C%2Fsvg%3E';
+    }
   }
 
   // ── Operating Hours Handlers ────────────────────────────────────────
@@ -2437,8 +2477,19 @@ export class BusinessProfileComponent implements OnInit {
         this.provider() ?? undefined
       );
 
-      this.provider.set(updated);
-      this.populateForm(updated);
+      // Defensively preserve existing gallery images if response omitted relations
+      const safeImages =
+        updated && Array.isArray(updated.images) && updated.images.length > 0
+          ? updated.images
+          : this.form().images || [];
+
+      const consolidatedProvider: Provider = {
+        ...updated,
+        images: safeImages,
+      };
+
+      this.provider.set(consolidatedProvider);
+      this.populateForm(consolidatedProvider);
       this.saveSuccess.set(true);
       this.isDirty.set(false);
 

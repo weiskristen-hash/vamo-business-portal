@@ -2019,6 +2019,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     } else {
       // New listing defaults
       this.initNewDraft();
+      this.checkAndRestoreDraftRecovery();
       this.loadingInitial = false;
       this.cdr.markForCheck();
       setTimeout(() => this.initMap(), 100);
@@ -2127,14 +2128,88 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.LOAD_FAILED');
       this.initNewDraft();
     } finally {
+      this.checkAndRestoreDraftRecovery();
       this.loadingInitial = false;
       this.cdr.markForCheck();
       setTimeout(() => this.initMap(), 100);
     }
   }
 
+  private getDraftRecoveryKey(): string {
+    return `vamo_editor_recovery_${this.eventId || 'new'}`;
+  }
+
+  private saveDraftRecovery(): void {
+    if (typeof window === 'undefined' || !window.sessionStorage) return;
+    try {
+      // NEVER include credentials, passwords, or tokens in recovery data
+      const data = {
+        name: this.draft.name,
+        category: this.draft.category,
+        description: this.draft.description,
+        mode: this.draft.mode,
+        startDate: this.draft.startDate,
+        endDate: this.draft.endDate,
+        allDay: this.draft.allDay,
+        openEnd: this.draft.openEnd,
+        from: this.draft.from,
+        to: this.draft.to,
+        recurring: this.draft.recurring,
+        isFree: this.draft.isFree,
+        contactForPrice: this.draft.contactForPrice,
+        price: this.draft.price,
+        currency: this.draft.currency,
+        hasPromotion: this.draft.hasPromotion,
+        promoText: this.draft.promoText,
+        address: this.draft.address,
+        lat: this.lat,
+        lng: this.lng,
+        selectedAreaId: this.selectedAreaId,
+        multiDay: this.multiDay,
+      };
+      window.sessionStorage.setItem(this.getDraftRecoveryKey(), JSON.stringify(data));
+    } catch {}
+  }
+
+  clearDraftRecovery(): void {
+    if (typeof window === 'undefined' || !window.sessionStorage) return;
+    try {
+      window.sessionStorage.removeItem(this.getDraftRecoveryKey());
+      if (this.eventId) {
+        window.sessionStorage.removeItem('vamo_editor_recovery_new');
+      }
+    } catch {}
+  }
+
+  private checkAndRestoreDraftRecovery(): void {
+    if (typeof window === 'undefined' || !window.sessionStorage) return;
+    try {
+      const raw = window.sessionStorage.getItem(this.getDraftRecoveryKey());
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (!data) return;
+
+      if (data.name && !this.draft.name) this.draft.name = data.name;
+      if (data.category && !this.draft.category) this.draft.category = data.category;
+      if (data.description && !this.draft.description) this.draft.description = data.description;
+      if (data.mode) this.draft.mode = data.mode;
+      if (data.startDate && !this.draft.startDate) this.draft.startDate = data.startDate;
+      if (data.endDate && !this.draft.endDate) this.draft.endDate = data.endDate;
+      if (data.from && !this.draft.from) this.draft.from = data.from;
+      if (data.to && !this.draft.to) this.draft.to = data.to;
+      if (data.address && !this.draft.address) this.draft.address = data.address;
+      if (data.selectedAreaId && !this.selectedAreaId) this.selectedAreaId = data.selectedAreaId;
+      if (data.lat !== undefined && this.lat === null) this.lat = data.lat;
+      if (data.lng !== undefined && this.lng === null) this.lng = data.lng;
+      if (data.multiDay !== undefined) this.multiDay = data.multiDay;
+      if (data.recurring && this.draft.mode === 'recurring') this.draft.recurring = data.recurring;
+      this.isDirty = true;
+    } catch {}
+  }
+
   markDirty(): void {
     this.isDirty = true;
+    this.saveDraftRecovery();
   }
 
   setCategory(catValue: string): void {
@@ -2506,6 +2581,17 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       return false;
     }
 
+    if (!this.validateCurrentSchedule(forPublish)) {
+      const key = Object.values(this.scheduleErrors).find(Boolean);
+      if (key) this.errorMessage = this.i18n.t(key);
+      return false;
+    }
+
+    // For drafts, category, description, and images are not required
+    if (!forPublish) {
+      return true;
+    }
+
     if (!this.draft.category) {
       this.errorMessage = this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.CATEGORY_REQUIRED');
       return false;
@@ -2516,25 +2602,18 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       return false;
     }
 
-    if (!this.validateCurrentSchedule(forPublish)) {
-      const key = Object.values(this.scheduleErrors).find(Boolean);
-      if (key) this.errorMessage = this.i18n.t(key);
+    const validation = validateEventForPublish({
+      ...this.draft,
+      endDate: this.multiDay ? this.draft.endDate : undefined,
+    }, {
+      originalEvent: this.isEditMode ? this.originalEvent : undefined,
+      hasImages: this.existingImages.length > 0 || this.selectedNewFiles.length > 0,
+      areaIds: this.selectedAreaId ? [this.selectedAreaId] : [],
+      todayStr: this.businessService.drTodayStr(),
+    });
+    if (!validation.valid) {
+      this.errorMessage = this.i18n.t(validation.messageKey);
       return false;
-    }
-    if (forPublish) {
-      const validation = validateEventForPublish({
-        ...this.draft,
-        endDate: this.multiDay ? this.draft.endDate : undefined,
-      }, {
-        originalEvent: this.isEditMode ? this.originalEvent : undefined,
-        hasImages: this.existingImages.length > 0 || this.selectedNewFiles.length > 0,
-        areaIds: this.selectedAreaId ? [this.selectedAreaId] : [],
-        todayStr: this.businessService.drTodayStr(),
-      });
-      if (!validation.valid) {
-        this.errorMessage = this.i18n.t(validation.messageKey);
-        return false;
-      }
     }
 
     return true;
@@ -2661,6 +2740,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       this.isDraft = status === 'draft';
       this.originalEvent = saved;
       this.isDirty = false;
+      this.clearDraftRecovery();
       if (billingReason) {
         await this.router.navigate(['/app/billing'], {
           queryParams: { returnEventId: this.eventId, reason: billingReason },
@@ -2701,6 +2781,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     this.showCancelConfirmModal = false;
     this.pendingExitTarget = 'listings';
     this.isDirty = false;
+    this.clearDraftRecovery();
     if (target === 'promotions' && targetEventId) {
       this.router.navigate(['/app/promotions'], { queryParams: { eventId: targetEventId } });
     } else {

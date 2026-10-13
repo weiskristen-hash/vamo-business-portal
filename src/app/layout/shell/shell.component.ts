@@ -5,11 +5,12 @@ import { filter } from 'rxjs/operators';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 import { TopbarComponent } from '../topbar/topbar.component';
 import { AuthService } from '../../core/services/auth.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [CommonModule, RouterModule, SidebarComponent, TopbarComponent],
+  imports: [CommonModule, RouterModule, SidebarComponent, TopbarComponent, TranslatePipe],
   template: `
     <div class="shell-container">
       <!-- Desktop Permanent / Mobile Drawer Sidebar -->
@@ -40,6 +41,41 @@ import { AuthService } from '../../core/services/auth.service';
             <router-outlet></router-outlet>
           </div>
         </main>
+      </div>
+
+      <!-- Predictable Session Expiry Warning Modal -->
+      <div
+        class="session-warning-backdrop"
+        *ngIf="authService.sessionExpiring$ | async"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="session-warning-title"
+      >
+        <div class="session-warning-modal">
+          <div class="session-warning-icon">⏳</div>
+          <h2 id="session-warning-title" class="session-warning-title">
+            {{ 'PORTAL.SHELL.SESSION_EXPIRING_TITLE' | translate }}
+          </h2>
+          <p class="session-warning-msg">
+            {{ 'PORTAL.SHELL.SESSION_EXPIRING_MSG' | translate }}
+          </p>
+          <div class="session-warning-actions">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              (click)="onSignOutSession()"
+            >
+              {{ 'PORTAL.SHELL.SIGN_OUT_BTN' | translate }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              (click)="onStaySignedIn()"
+            >
+              {{ 'PORTAL.SHELL.STAY_SIGNED_IN' | translate }}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   `,
@@ -120,6 +156,62 @@ import { AuthService } from '../../core/services/auth.service';
         padding: 20px 16px 36px;
       }
     }
+
+    .session-warning-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .session-warning-modal {
+      background: var(--vamo-surface, #ffffff);
+      border: 1px solid var(--vamo-border, #e2e8f0);
+      border-radius: 16px;
+      padding: 32px;
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+    }
+
+    .session-warning-icon {
+      font-size: 2.5rem;
+      margin-bottom: 16px;
+    }
+
+    .session-warning-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--vamo-text, #0f172a);
+      margin: 0 0 8px;
+    }
+
+    .session-warning-msg {
+      font-size: 0.95rem;
+      color: var(--vamo-text-muted, #64748b);
+      line-height: 1.5;
+      margin: 0 0 24px;
+    }
+
+    .session-warning-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .session-warning-actions .btn {
+      flex: 1;
+      padding: 10px 16px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+    }
   `],
 })
 export class ShellComponent implements OnInit {
@@ -157,6 +249,15 @@ export class ShellComponent implements OnInit {
     if (this.mobileNavOpen) {
       this.closeMobileNav();
     }
+  }
+
+  async onStaySignedIn(): Promise<void> {
+    await this.authService.staySignedIn();
+    this.cdr.markForCheck();
+  }
+
+  async onSignOutSession(): Promise<void> {
+    await this.authService.logout();
   }
 
   private updatePageTitle(url: string): void {

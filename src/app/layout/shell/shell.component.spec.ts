@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { of, BehaviorSubject } from 'rxjs';
 import { ShellComponent } from './shell.component';
 import { provideRouter } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
@@ -25,6 +26,8 @@ describe('ShellComponent', () => {
     const authServiceSpy = {
       currentUser: mockUser,
       logout: vi.fn(),
+      sessionExpiring$: of(false),
+      staySignedIn: vi.fn().mockResolvedValue(true),
     };
 
     const businessServiceSpy = {
@@ -87,7 +90,7 @@ describe('ShellComponent', () => {
       // English labels
       expect(sidebar.textContent).toContain('Overview');
       expect(sidebar.textContent).toContain('Business Profile');
-      expect(sidebar.textContent).toContain('Listings');
+      expect(sidebar.textContent).toContain('Posts');
       expect(sidebar.textContent).toContain('Sign Out');
 
       // Switch to ES
@@ -127,6 +130,35 @@ describe('ShellComponent', () => {
       // Ensure it is not nested inside hidden-on-mobile containers (.business-meta)
       const hiddenContainer = compiled.querySelector('.business-meta app-language-selector');
       expect(hiddenContainer).toBeFalsy();
+    });
+  });
+
+  describe('Predictable Session Expiry Warning Modal', () => {
+    it('renders session expiring modal with bilingual buttons when sessionExpiring$ is true', async () => {
+      const auth = TestBed.inject(AuthService);
+      const expiringSubject = new BehaviorSubject<boolean>(true);
+      (auth as any).sessionExpiring$ = expiringSubject.asObservable();
+
+      fixture = TestBed.createComponent(ShellComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const modal = compiled.querySelector('.session-warning-modal');
+      expect(modal).toBeTruthy();
+      expect(modal?.textContent).toContain('Session Expiring Soon');
+      expect(modal?.textContent).toContain('Stay signed in');
+      expect(modal?.textContent).toContain('Sign out');
+
+      // Stay signed in button invokes authService.staySignedIn
+      const stayBtn = modal?.querySelectorAll('button')[1] as HTMLButtonElement;
+      stayBtn.click();
+      expect(auth.staySignedIn).toHaveBeenCalled();
+
+      // Sign out button invokes authService.logout
+      const signOutBtn = modal?.querySelectorAll('button')[0] as HTMLButtonElement;
+      signOutBtn.click();
+      expect(auth.logout).toHaveBeenCalled();
     });
   });
 });

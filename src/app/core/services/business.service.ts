@@ -208,7 +208,9 @@ export class BusinessService {
       }
 
       const updated = await directusClient.request<Provider>(
-        updateItem('providers', id, payload as any)
+        updateItem('providers', id, payload as any, {
+          fields: this.providerReadFields as any,
+        })
       );
 
       // Refresh auth state to sync across topbar and other widgets
