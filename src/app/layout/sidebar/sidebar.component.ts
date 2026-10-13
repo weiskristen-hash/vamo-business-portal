@@ -162,7 +162,7 @@ interface NavSection {
       display: none;
       background: transparent;
       border: none;
-      color: var(--vamo-text-muted);
+      color: #cbd5e1;
       cursor: pointer;
       padding: 6px;
       border-radius: 6px;
@@ -193,7 +193,7 @@ interface NavSection {
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      color: var(--vamo-text-dim);
+      color: #cbd5e1;
       padding: 4px 12px 6px;
     }
 
@@ -210,7 +210,7 @@ interface NavSection {
       gap: 12px;
       padding: 9px 12px;
       border-radius: 8px;
-      color: var(--vamo-text-secondary);
+      color: #e2e8f0;
       text-decoration: none;
       font-weight: 500;
       font-size: 0.88rem;
@@ -262,7 +262,7 @@ interface NavSection {
       justify-content: center;
       width: 20px;
       height: 20px;
-      color: var(--vamo-text-muted);
+      color: #cbd5e1;
       transition: color 0.15s ease;
     }
 
@@ -276,7 +276,7 @@ interface NavSection {
       padding: 2px 6px;
       border-radius: 999px;
       background: var(--vamo-bg-glass-strong);
-      color: var(--vamo-text-muted);
+      color: #cbd5e1;
     }
 
     .sidebar-footer {
@@ -324,7 +324,7 @@ interface NavSection {
 
     .user-role {
       font-size: 0.72rem;
-      color: var(--vamo-text-muted);
+      color: #cbd5e1;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -339,7 +339,7 @@ interface NavSection {
       background: transparent;
       border: 1px solid var(--vamo-border-glass);
       border-radius: 6px;
-      color: var(--vamo-text-muted);
+      color: #cbd5e1;
       font-size: 0.82rem;
       font-weight: 600;
       cursor: pointer;
