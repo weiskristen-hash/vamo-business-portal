@@ -360,9 +360,24 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       flex-direction: column;
     }
 
+    /* Share the hero typography with the sign-in panel. */
+    .business-hero,
+    .login-panel {
+      --login-font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: var(--login-font-family);
+    }
+
+    .login-panel .card-title,
+    .login-panel .card-subtitle,
+    .login-panel .form-label,
+    .login-panel input,
+    .login-panel button {
+      font-family: var(--login-font-family);
+    }
+
     .business-hero h1,
     .business-hero .hero-title {
-      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: var(--login-font-family);
       font-size: clamp(2.1rem, 4.5vw, 3.4rem);
       font-weight: 800;
       line-height: 1.15;
@@ -373,7 +388,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
     }
 
     .business-hero-subtitle {
-      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: var(--login-font-family);
       font-size: clamp(1rem, 1.9vw, 1.2rem);
       line-height: 1.6;
       color: rgba(255, 255, 255, 0.85);
