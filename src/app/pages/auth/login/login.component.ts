@@ -391,7 +391,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       font-family: var(--login-font-family);
       font-size: clamp(1rem, 1.9vw, 1.2rem);
       line-height: 1.6;
-      color: rgba(255, 255, 255, 0.85);
+      color: #f1f5f9;
       margin: 0;
       max-width: 660px;
     }
@@ -417,7 +417,7 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: clamp(0.95rem, 1.8vw, 1.1rem);
       line-height: 1.6;
-      color: rgba(255, 255, 255, 0.8);
+      color: #f1f5f9;
       margin: 0 0 24px 0;
     }
 
@@ -471,13 +471,13 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 0.92rem;
       line-height: 1.55;
-      color: rgba(255, 255, 255, 0.75);
+      color: #f1f5f9;
       margin: 0;
     }
 
     .hero-footer {
       font-size: 0.8rem;
-      color: #475569;
+      color: #cbd5e1;
       margin-top: 8px;
     }
 
