@@ -518,6 +518,8 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
     }
 
     .card-title {
+      text-transform: none;
+      line-height: 1.15;
       font-size: 1.65rem;
       font-weight: 800;
       color: #0f172a;
@@ -935,16 +937,6 @@ import { GoogleAuthService } from '../../../core/services/google-auth.service';
       gap: 12px;
     }
 
-    .card-title {
-      font-family: "Bebas Neue", sans-serif;
-      font-weight: 400;
-      text-transform: uppercase;
-      letter-spacing: .025em;
-      font-size: clamp(2.4rem, 3.6vw, 3.5rem);
-    }
-    .card-subtitle {
-      font-family: "Roboto Condensed", sans-serif;
-    }
     .signup-prompt { flex-direction: column; align-items: stretch; gap: 12px; background: transparent; border: 0; padding: 0; }
     .create-account-btn {
       display: flex; align-items: center; justify-content: center;
