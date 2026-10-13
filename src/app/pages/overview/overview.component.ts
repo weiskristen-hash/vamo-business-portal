@@ -82,7 +82,7 @@ import {
         <!-- Summary Cards Grid -->
         <section class="summary-grid" [attr.aria-label]="'PORTAL.OVERVIEW.SUMMARY_ARIA' | translate">
           <!-- Card 1: Live Posts -->
-          <div class="summary-card card">
+          <a class="summary-card card summary-card-link" routerLink="/app/listings" [queryParams]="{ status: 'active' }">
             <div class="summary-header">
               <span class="summary-label">{{ 'PORTAL.OVERVIEW.STAT_LIVE_POSTS' | translate }}</span>
               <span class="summary-icon icon-live">●</span>
@@ -91,10 +91,10 @@ import {
             <div class="summary-footer">
               <span class="badge badge-published">{{ 'PORTAL.OVERVIEW.STAT_LIVE_BADGE' | translate }}</span>
             </div>
-          </div>
+          </a>
 
           <!-- Card 2: Drafts -->
-          <div class="summary-card card">
+          <a class="summary-card card summary-card-link" routerLink="/app/listings" [queryParams]="{ status: 'draft' }">
             <div class="summary-header">
               <span class="summary-label">{{ 'PORTAL.OVERVIEW.STAT_DRAFTS' | translate }}</span>
               <span class="summary-icon icon-draft">✎</span>
@@ -103,7 +103,7 @@ import {
             <div class="summary-footer">
               <span class="badge badge-draft">{{ 'PORTAL.OVERVIEW.STAT_DRAFTS_BADGE' | translate }}</span>
             </div>
-          </div>
+          </a>
 
           <!-- Card 3: Total Posts -->
           <div class="summary-card card">
@@ -305,6 +305,10 @@ import {
     </div>
   `,
   styles: [`
+    .summary-card-link { color: inherit; text-decoration: none; cursor: pointer; }
+    .summary-card-link:hover { border-color: var(--primary, #8070c0); }
+    .summary-card-link:focus-visible { outline: 2px solid var(--primary, #8070c0); outline-offset: 3px; }
+
     .overview-page {
       display: flex;
       flex-direction: column;
