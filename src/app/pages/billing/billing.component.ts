@@ -14,6 +14,7 @@ import {
   BillingHistoryItem,
   SavedPaymentMethod,
   PromoResult,
+  ScheduledDowngradeVerification,
   getCanonicalTierFeatures,
 } from '../../core/services/stripe.service';
 import {
@@ -102,12 +103,12 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
       </div>
 
       <!-- Pending Downgrade Alert -->
-      <div *ngIf="sub.pendingPlanName && sub.pendingPeriodEnd" class="pending-downgrade-banner">
+      <div *ngIf="hasScheduledDowngrade(sub)" class="pending-downgrade-banner">
         <div class="pending-info">
           <span class="pending-icon">⏳</span>
           <div class="pending-text">
             <strong>{{ 'PORTAL.BILLING.SCHEDULED_CHANGE_TITLE' | translate }}</strong>
-            <span>{{ 'PORTAL.BILLING.PENDING_DOWNGRADE_DESC' | translate: { plan: (planTitleKey(sub.pendingPlanName) | translate), date: formatDate(sub.pendingPeriodEnd) } }}</span>
+            <span>{{ 'PORTAL.BILLING.PENDING_DOWNGRADE_DESC' | translate: { plan: (planTitleKey(sub.pendingPlanName) | translate), date: formatDate(sub.pendingPeriodEnd!) } }}</span>
           </div>
         </div>
         <button
@@ -281,7 +282,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             <button
               type="button"
               class="btn btn-warning btn-sm"
-              [disabled]="isLoading()"
+              [disabled]="!canConfirmPlanChange()"
               (click)="confirmDowngradeAnyway()"
             >
               {{ 'PORTAL.BILLING.BTN_DOWNGRADE_ANYWAY' | translate }}
@@ -445,8 +446,8 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             <button
               type="button"
               class="btn btn-primary"
-              *ngIf="subscription() !== null"
-              [disabled]="isLoading()"
+              *ngIf="subscription() !== null && !isPendingPlan(selPlan)"
+              [disabled]="!canConfirmPlanChange()"
               (click)="confirmChangePlan()"
             >
               {{ (isLoading() ? 'PORTAL.BILLING.BTN_UPDATING_PLAN' : 'PORTAL.BILLING.BTN_CONFIRM_PLAN_CHANGE') | translate }}
@@ -1603,6 +1604,7 @@ export class BillingComponent implements OnInit, OnDestroy {
   selectedPlan = signal<StripePlan | null>(null);
   planChangeUnverified = signal(false);
   pendingPlanChangeTarget = signal<{
+    subscriptionId: string;
     plan: StripePlan;
     isUpgrade: boolean;
     previousPriceId: string;
@@ -1660,6 +1662,9 @@ export class BillingComponent implements OnInit, OnDestroy {
         const params = { ...payload.params };
         if (params['planKey']) {
           params['plan'] = this.i18n.t(params['planKey']);
+        }
+        if (typeof params['dateTimestamp'] === 'number') {
+          params['date'] = this.formatDate(params['dateTimestamp']);
         }
         this.successMessage.set(this.i18n.t(payload.key, params));
       }
@@ -1851,10 +1856,13 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   selectPlan(plan: StripePlan): void {
     if (this.isCurrentPlan(plan) || this.isPendingPlan(plan)) return;
+    if (this.planChangeUnverified() && this.selectedPlan()?.id === plan.id) return;
     const nextPlan = this.selectedPlan()?.id === plan.id ? null : plan;
     this.selectedPlan.set(nextPlan);
     this.planChangeUnverified.set(false);
     this.pendingPlanChangeTarget.set(null);
+    this.downgradeWarning.set(null);
+    this.bypassDowngradeCheck = false;
     this.clearError();
     if (nextPlan) {
       this.prefillPromoCodeIfEligible();
@@ -2036,8 +2044,18 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.clearError();
   }
 
+  canConfirmPlanChange(): boolean {
+    const sub = this.subscription();
+    const newPlan = this.selectedPlan();
+    if (!sub || !newPlan) return false;
+    if (this.planChangeInFlight || this.isLoading() || this.isProcessingPayment()) return false;
+    if (this.planChangeUnverified()) return false;
+    if (this.isCurrentPlan(newPlan) || this.isPendingPlan(newPlan)) return false;
+    return true;
+  }
+
   async confirmChangePlan(): Promise<void> {
-    if (this.planChangeInFlight || this.isLoading() || this.isProcessingPayment()) return;
+    if (!this.canConfirmPlanChange()) return;
     const sub = this.subscription();
     const newPlan = this.selectedPlan();
     if (!sub || !newPlan) return;
@@ -2061,6 +2079,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.successMessage.set(null);
 
     const targetContext = {
+      subscriptionId: sub.subscriptionId,
       plan: newPlan,
       isUpgrade,
       previousPriceId: sub.plan.priceId,
@@ -2143,40 +2162,85 @@ export class BillingComponent implements OnInit, OnDestroy {
       const pendingTarget = this.pendingPlanChangeTarget();
       if (pendingTarget) {
         await this.verifyAndApplyPlanChange(pendingTarget);
+      } else {
+        const sub = this.subscription();
+        const selPlan = this.selectedPlan();
+        if (selPlan && sub && !this.subscriptionLoadError()) {
+          if (this.isPendingPlan(selPlan) || this.isCurrentPlan(selPlan)) {
+            this.planChangeUnverified.set(false);
+            this.clearError();
+            this.showChangePlanSection.set(false);
+            this.selectedPlan.set(null);
+            this.selectedSavedMethod.set(null);
+          }
+        }
       }
     } finally {
       this.isLoading.set(false);
     }
   }
 
-  private checkVerifiedSchedule(
-    schedule: StripeSubscription['schedule'],
-    targetPriceId: string,
-    expectedRenewalEnd: number,
+  private checkLookupReportedScheduledChange(
+    subscription: StripeSubscription | null | undefined,
+    options?: {
+      expectedSubscriptionId?: string;
+      currentPriceId?: string;
+      targetPriceId?: string;
+      targetPlanName?: string;
+      targetTier?: 'starter' | 'basic' | 'advanced' | null;
+      expectedRenewalTimestamp?: number;
+    },
   ): boolean {
-    if (typeof this.stripeService.hasVerifiedRenewalSchedule === 'function') {
-      return this.stripeService.hasVerifiedRenewalSchedule(schedule, targetPriceId, expectedRenewalEnd);
+    if (typeof this.stripeService.hasLookupReportedScheduledChange === 'function') {
+      return this.stripeService.hasLookupReportedScheduledChange(subscription, options);
     }
-    return StripeService.prototype.hasVerifiedRenewalSchedule.call(
+    return StripeService.prototype.hasLookupReportedScheduledChange.call(
       this.stripeService,
-      schedule,
-      targetPriceId,
-      expectedRenewalEnd,
+      subscription,
+      options,
+    );
+  }
+
+  private evaluateScheduledDowngrade(
+    subscription: StripeSubscription | null | undefined,
+    options?: {
+      expectedSubscriptionId?: string;
+      currentPriceId?: string;
+      targetPriceId?: string;
+      targetPlanName?: string;
+      targetTier?: 'starter' | 'basic' | 'advanced' | null;
+      expectedRenewalTimestamp?: number;
+    },
+  ): ScheduledDowngradeVerification {
+    if (typeof this.stripeService.evaluateScheduledDowngrade === 'function') {
+      return this.stripeService.evaluateScheduledDowngrade(subscription, options);
+    }
+    return StripeService.prototype.evaluateScheduledDowngrade.call(
+      this.stripeService,
+      subscription,
+      options,
     );
   }
 
   private async verifyAndApplyPlanChange(target: {
+    subscriptionId: string;
     plan: StripePlan;
     isUpgrade: boolean;
     previousPriceId: string;
     expectedRenewalEnd: number;
   }): Promise<boolean> {
     const refreshed = this.subscription();
-    if (this.subscriptionLoadError() || !refreshed) {
+    if (
+      this.subscriptionLoadError() ||
+      !refreshed ||
+      refreshed.subscriptionId !== target.subscriptionId
+    ) {
       this.planChangeUnverified.set(true);
       this.setTranslatedError('PORTAL.BILLING.ERROR_PLAN_CHANGE_UNVERIFIED');
       return false;
     }
+
+    let downgradeVerification: ScheduledDowngradeVerification = 'unverified';
 
     if (target.isUpgrade) {
       if (refreshed.paymentIntentStatus === 'requires_action') {
@@ -2211,25 +2275,25 @@ export class BillingComponent implements OnInit, OnDestroy {
 
       await this.stripeService.setProviderTier(target.plan.tier).catch(() => {});
     } else {
-      // Downgrades must keep the current plan active and have an authoritative schedule
-      // confirming both target priceId and renewal timing. Never rely solely on Directus
-      // pending fields and never accept immediate downgrade as a fallback.
-      const isCurrentPlanStillActive =
-        ['active', 'trialing'].includes(refreshed.status) &&
-        refreshed.plan?.priceId === target.previousPriceId;
-      const isScheduleVerified = this.checkVerifiedSchedule(
-        refreshed.schedule,
-        target.plan.id,
-        target.expectedRenewalEnd,
-      );
+      downgradeVerification = this.evaluateScheduledDowngrade(refreshed, {
+        expectedSubscriptionId: target.subscriptionId,
+        currentPriceId: target.previousPriceId,
+        targetPriceId: target.plan.id,
+        targetPlanName: target.plan.name,
+        targetTier: target.plan.tier,
+        expectedRenewalTimestamp: target.expectedRenewalEnd,
+      });
 
-      if (!isCurrentPlanStillActive || !isScheduleVerified) {
+      if (downgradeVerification === 'unverified') {
         this.planChangeUnverified.set(true);
         this.setTranslatedError('PORTAL.BILLING.ERROR_PLAN_CHANGE_UNVERIFIED');
         return false;
       }
 
-      if (!refreshed.pendingPlanName || !refreshed.pendingPeriodEnd) {
+      if (
+        downgradeVerification === 'verified_schedule' &&
+        (!refreshed.pendingPlanName || !refreshed.pendingPeriodEnd)
+      ) {
         this.subscription.set({
           ...refreshed,
           pendingPlanName: refreshed.pendingPlanName ?? target.plan.name,
@@ -2248,19 +2312,43 @@ export class BillingComponent implements OnInit, OnDestroy {
 
     const planKey = this.planTitleKey(target.plan.name);
     const planTitle = this.getPlanTitle(target.plan.name);
-    const msgKey = target.isUpgrade
-      ? 'PORTAL.BILLING.SUCCESS_UPGRADED'
-      : 'PORTAL.BILLING.SUCCESS_DOWNGRADE_SCHEDULED';
-    this.activeSuccessPayload.set({ key: msgKey, params: { planKey, plan: planTitle } });
-    this.successMessage.set(
-      target.isUpgrade
-        ? this.i18n.t('PORTAL.BILLING.SUCCESS_UPGRADED', { plan: planTitle })
-        : this.i18n.t('PORTAL.BILLING.SUCCESS_DOWNGRADE_SCHEDULED', { plan: planTitle })
-    );
+    if (target.isUpgrade) {
+      this.activeSuccessPayload.set({
+        key: 'PORTAL.BILLING.SUCCESS_UPGRADED',
+        params: { planKey, plan: planTitle },
+      });
+      this.successMessage.set(this.i18n.t('PORTAL.BILLING.SUCCESS_UPGRADED', { plan: planTitle }));
+    } else if (downgradeVerification === 'verified_schedule') {
+      this.activeSuccessPayload.set({
+        key: 'PORTAL.BILLING.SUCCESS_DOWNGRADE_SCHEDULED',
+        params: { planKey, plan: planTitle },
+      });
+      this.successMessage.set(
+        this.i18n.t('PORTAL.BILLING.SUCCESS_DOWNGRADE_SCHEDULED', { plan: planTitle })
+      );
+    } else {
+      const effectiveDate = refreshed.pendingPeriodEnd ?? target.expectedRenewalEnd;
+      this.activeSuccessPayload.set({
+        key: 'PORTAL.BILLING.PENDING_DOWNGRADE_DESC',
+        params: {
+          planKey,
+          plan: planTitle,
+          dateTimestamp: effectiveDate,
+          date: this.formatDate(effectiveDate),
+        },
+      });
+      this.successMessage.set(
+        this.i18n.t('PORTAL.BILLING.PENDING_DOWNGRADE_DESC', {
+          plan: planTitle,
+          date: this.formatDate(effectiveDate),
+        })
+      );
+    }
     return true;
   }
 
   confirmDowngradeAnyway(): void {
+    if (!this.canConfirmPlanChange()) return;
     this.bypassDowngradeCheck = true;
     this.confirmChangePlan();
   }
@@ -2387,13 +2475,52 @@ export class BillingComponent implements OnInit, OnDestroy {
     return this.subscription()?.plan?.priceId === plan.id;
   }
 
+  hasScheduledDowngrade(sub: StripeSubscription | null | undefined): boolean {
+    if (!sub || this.subscriptionLoadError() || this.planChangeUnverified()) return false;
+    if (!sub.pendingPlanName || !sub.pendingPeriodEnd) return false;
+
+    const pendingTier = this.stripeService.tierFromProductName(sub.pendingPlanName);
+    const pendingKey = this.planTitleKey(sub.pendingPlanName);
+    const matchingPlan = this.plans().find(
+      (p) =>
+        (pendingTier && p.tier === pendingTier) ||
+        (pendingKey && this.planTitleKey(p.name) === pendingKey),
+    );
+
+    if (matchingPlan) {
+      const status = this.evaluateScheduledDowngrade(sub, {
+        expectedSubscriptionId: sub.subscriptionId,
+        currentPriceId: sub.plan?.priceId,
+        targetPriceId: matchingPlan.id,
+        targetPlanName: matchingPlan.name,
+        targetTier: matchingPlan.tier,
+        expectedRenewalTimestamp: sub.currentPeriodEnd,
+      });
+      return status === 'verified_schedule' || status === 'reported_by_lookup';
+    }
+
+    return this.checkLookupReportedScheduledChange(sub, {
+      expectedSubscriptionId: sub.subscriptionId,
+      currentPriceId: sub.plan?.priceId,
+      expectedRenewalTimestamp: sub.currentPeriodEnd,
+    });
+  }
+
   isPendingPlan(plan: StripePlan): boolean {
     const sub = this.subscription();
-    if (!sub) return false;
-    if (this.checkVerifiedSchedule(sub.schedule, plan.id, sub.currentPeriodEnd)) {
-      return true;
+    if (!sub || this.subscriptionLoadError() || this.isCurrentPlan(plan)) return false;
+    const pendingTarget = this.pendingPlanChangeTarget();
+    if (this.planChangeUnverified() && pendingTarget?.plan.id === plan.id) {
+      return false;
     }
-    if (!sub.pendingPlanName) return false;
-    return plan.name.toLowerCase() === sub.pendingPlanName.toLowerCase();
+    const status = this.evaluateScheduledDowngrade(sub, {
+      expectedSubscriptionId: sub.subscriptionId,
+      currentPriceId: sub.plan?.priceId,
+      targetPriceId: plan.id,
+      targetPlanName: plan.name,
+      targetTier: plan.tier,
+      expectedRenewalTimestamp: sub.currentPeriodEnd,
+    });
+    return status === 'verified_schedule' || status === 'reported_by_lookup';
   }
 }

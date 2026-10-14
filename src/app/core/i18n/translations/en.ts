@@ -1267,7 +1267,7 @@ export const enTranslations: Record<string, any> = {
       "RENEWS_ON": "Renews on",
 
       "SCHEDULED_CHANGE_TITLE": "Scheduled Plan Change:",
-      "PENDING_DOWNGRADE_DESC": "Downgrade to {{plan}} will take effect on {{date}}.",
+      "PENDING_DOWNGRADE_DESC": "Your billing information shows {{plan}} scheduled for {{date}}. Your current plan stays active until then.",
       "CANCEL_DOWNGRADE_BTN": "Cancel Downgrade",
 
       "CURRENT_PLAN": "Current Plan",

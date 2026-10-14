@@ -136,6 +136,11 @@ export type PlanChangeOutcomeStatus =
   | 'requires_action'
   | 'failed';
 
+export type ScheduledDowngradeVerification =
+  | 'verified_schedule'
+  | 'reported_by_lookup'
+  | 'unverified';
+
 export interface PlanChangeResult {
   status: PlanChangeOutcomeStatus;
   subscriptionId?: string;
@@ -699,6 +704,320 @@ export class StripeService {
     return false;
   }
 
+  hasContradictoryScheduleEvidence(
+    schedule: StripeSubscriptionSchedule | null | undefined,
+    pendingScheduleId: string,
+    pendingPeriodEnd: number,
+    currentPriceId: string,
+    targetPriceId?: string,
+  ): boolean {
+    if (!schedule || typeof schedule !== 'object') {
+      return false;
+    }
+
+    if (
+      schedule.status &&
+      ['canceled', 'released', 'completed', 'inactive'].includes(
+        String(schedule.status).toLowerCase(),
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      typeof schedule.id === 'string' &&
+      schedule.id.trim().length > 0 &&
+      schedule.id.trim() !== pendingScheduleId.trim()
+    ) {
+      return true;
+    }
+
+    const directStart =
+      schedule.renewalDate ??
+      schedule.effectiveAt ??
+      schedule.startDate ??
+      schedule.start_date;
+    if (directStart !== undefined && directStart !== null && directStart !== pendingPeriodEnd) {
+      return true;
+    }
+
+    const directPrice = schedule.targetPriceId ?? schedule.priceId;
+    if (typeof directPrice === 'string' && directPrice.trim().length > 0) {
+      if (directPrice === currentPriceId) return true;
+      if (targetPriceId && directPrice !== targetPriceId) return true;
+    }
+
+    if (schedule.nextPhase && typeof schedule.nextPhase === 'object') {
+      const nextStart = schedule.nextPhase.startDate ?? schedule.nextPhase.start_date;
+      if (nextStart !== undefined && nextStart !== null && nextStart !== pendingPeriodEnd) {
+        return true;
+      }
+      const nextPrice =
+        schedule.nextPhase.priceId ??
+        (typeof schedule.nextPhase.price === 'string'
+          ? schedule.nextPhase.price
+          : schedule.nextPhase.price?.id);
+      if (typeof nextPrice === 'string' && nextPrice.trim().length > 0) {
+        if (nextPrice === currentPriceId) return true;
+        if (targetPriceId && nextPrice !== targetPriceId) return true;
+      }
+    }
+
+    if (Array.isArray(schedule.phases)) {
+      if (schedule.phases.length === 0) {
+        return true;
+      }
+      if (targetPriceId) {
+        if (!this.hasVerifiedRenewalSchedule(schedule, targetPriceId, pendingPeriodEnd)) {
+          return true;
+        }
+      } else {
+        const renewalPhases = schedule.phases.filter(
+          (phase) => (phase?.start_date ?? phase?.startDate) === pendingPeriodEnd,
+        );
+        if (renewalPhases.length === 0) {
+          return true;
+        }
+        const pointsOnlyToCurrent = renewalPhases.every((phase) => {
+          const directPhasePrice =
+            phase?.priceId ??
+            (typeof phase?.price === 'string' ? phase.price : phase?.price?.id);
+          if (directPhasePrice) return directPhasePrice === currentPriceId;
+          if (Array.isArray(phase?.items) && phase.items.length > 0) {
+            return phase.items.every((item) => {
+              const itemPrice =
+                item?.priceId ??
+                (typeof item?.price === 'string' ? item.price : item?.price?.id);
+              return itemPrice === currentPriceId;
+            });
+          }
+          return false;
+        });
+        if (pointsOnlyToCurrent) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Recognizes a scheduled downgrade as reported by the billing lookup when full
+   * Stripe schedule phase details are not exposed by the unchanged backend flow.
+   * This is distinct from independent Stripe schedule phase verification.
+   */
+  hasLookupReportedScheduledChange(
+    subscription: StripeSubscription | null | undefined,
+    options?: {
+      expectedSubscriptionId?: string;
+      currentPriceId?: string;
+      targetPriceId?: string;
+      targetPlanName?: string;
+      targetTier?: 'starter' | 'basic' | 'advanced' | null;
+      expectedRenewalTimestamp?: number;
+      nowSeconds?: number;
+    },
+  ): boolean {
+    if (!subscription || typeof subscription !== 'object') {
+      return false;
+    }
+
+    const subId =
+      typeof subscription.subscriptionId === 'string' ? subscription.subscriptionId.trim() : '';
+    if (!subId) {
+      return false;
+    }
+    if (options?.expectedSubscriptionId && subId !== options.expectedSubscriptionId) {
+      return false;
+    }
+
+    if (!['active', 'trialing'].includes(subscription.status)) {
+      return false;
+    }
+
+    const currentPriceId =
+      typeof subscription.plan?.priceId === 'string' ? subscription.plan.priceId.trim() : '';
+    if (!currentPriceId) {
+      return false;
+    }
+    if (options?.currentPriceId && currentPriceId !== options.currentPriceId) {
+      return false;
+    }
+
+    const pendingScheduleId =
+      typeof subscription.pendingScheduleId === 'string'
+        ? subscription.pendingScheduleId.trim()
+        : '';
+    if (!pendingScheduleId) {
+      return false;
+    }
+
+    const pendingPlanName =
+      typeof subscription.pendingPlanName === 'string' ? subscription.pendingPlanName.trim() : '';
+    if (!pendingPlanName) {
+      return false;
+    }
+
+    const pendingTier = this.tierFromProductName(pendingPlanName);
+    const pendingTitleKey = this.planTitleKey(pendingPlanName);
+    if (!pendingTier || !pendingTitleKey) {
+      return false;
+    }
+
+    const currentTier = this.tierFromProductName(subscription.plan?.productName);
+    const currentTitleKey = this.planTitleKey(subscription.plan?.productName);
+    if (
+      (currentTier && pendingTier === currentTier) ||
+      (currentTitleKey && pendingTitleKey === currentTitleKey)
+    ) {
+      return false;
+    }
+
+    if (options?.targetPriceId && options.targetPriceId === currentPriceId) {
+      return false;
+    }
+
+    if (options?.targetPlanName !== undefined || options?.targetTier !== undefined) {
+      const expectedTier = options.targetTier ?? this.tierFromProductName(options.targetPlanName);
+      const expectedTitleKey = options.targetPlanName
+        ? this.planTitleKey(options.targetPlanName)
+        : null;
+      if (!expectedTier || pendingTier !== expectedTier) {
+        return false;
+      }
+      if (expectedTitleKey && pendingTitleKey !== expectedTitleKey) {
+        return false;
+      }
+    }
+
+    const pendingPeriodEnd = subscription.pendingPeriodEnd;
+    const currentPeriodEnd = subscription.currentPeriodEnd;
+    if (
+      typeof pendingPeriodEnd !== 'number' ||
+      !Number.isFinite(pendingPeriodEnd) ||
+      typeof currentPeriodEnd !== 'number' ||
+      !Number.isFinite(currentPeriodEnd) ||
+      pendingPeriodEnd !== currentPeriodEnd
+    ) {
+      return false;
+    }
+
+    if (
+      options?.expectedRenewalTimestamp !== undefined &&
+      pendingPeriodEnd !== options.expectedRenewalTimestamp
+    ) {
+      return false;
+    }
+
+    const nowSec = options?.nowSeconds ?? Math.floor(Date.now() / 1000);
+    if (pendingPeriodEnd <= nowSec) {
+      return false;
+    }
+
+    if (
+      this.hasContradictoryScheduleEvidence(
+        subscription.schedule,
+        pendingScheduleId,
+        pendingPeriodEnd,
+        currentPriceId,
+        options?.targetPriceId,
+      )
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  evaluateScheduledDowngrade(
+    subscription: StripeSubscription | null | undefined,
+    options?: {
+      expectedSubscriptionId?: string;
+      currentPriceId?: string;
+      targetPriceId?: string;
+      targetPlanName?: string;
+      targetTier?: 'starter' | 'basic' | 'advanced' | null;
+      expectedRenewalTimestamp?: number;
+      nowSeconds?: number;
+    },
+  ): ScheduledDowngradeVerification {
+    if (!subscription || typeof subscription !== 'object') {
+      return 'unverified';
+    }
+
+    const subId =
+      typeof subscription.subscriptionId === 'string' ? subscription.subscriptionId.trim() : '';
+    if (!subId) {
+      return 'unverified';
+    }
+    if (options?.expectedSubscriptionId && subId !== options.expectedSubscriptionId) {
+      return 'unverified';
+    }
+
+    if (!['active', 'trialing'].includes(subscription.status)) {
+      return 'unverified';
+    }
+
+    const currentPriceId =
+      typeof subscription.plan?.priceId === 'string' ? subscription.plan.priceId.trim() : '';
+    if (!currentPriceId) {
+      return 'unverified';
+    }
+    if (options?.currentPriceId && currentPriceId !== options.currentPriceId) {
+      return 'unverified';
+    }
+
+    if (options?.targetPriceId && options.targetPriceId === currentPriceId) {
+      return 'unverified';
+    }
+
+    const renewalTimestamp = options?.expectedRenewalTimestamp ?? subscription.currentPeriodEnd;
+    if (
+      options?.targetPriceId &&
+      this.hasVerifiedRenewalSchedule(
+        subscription.schedule,
+        options.targetPriceId,
+        renewalTimestamp,
+      )
+    ) {
+      if (
+        typeof subscription.pendingScheduleId === 'string' &&
+        subscription.pendingScheduleId.trim().length > 0 &&
+        typeof subscription.schedule?.id === 'string' &&
+        subscription.schedule.id.trim().length > 0 &&
+        subscription.pendingScheduleId.trim() !== subscription.schedule.id.trim()
+      ) {
+        return 'unverified';
+      }
+      if (
+        subscription.pendingPeriodEnd !== undefined &&
+        subscription.pendingPeriodEnd !== null &&
+        subscription.pendingPeriodEnd !== renewalTimestamp
+      ) {
+        return 'unverified';
+      }
+      if (
+        typeof subscription.pendingPlanName === 'string' &&
+        subscription.pendingPlanName.trim().length > 0 &&
+        (options.targetPlanName !== undefined || options.targetTier !== undefined)
+      ) {
+        const pTier = this.tierFromProductName(subscription.pendingPlanName);
+        const tTier = options.targetTier ?? this.tierFromProductName(options.targetPlanName);
+        if (!pTier || !tTier || pTier !== tTier) {
+          return 'unverified';
+        }
+      }
+      return 'verified_schedule';
+    }
+
+    if (this.hasLookupReportedScheduledChange(subscription, options)) {
+      return 'reported_by_lookup';
+    }
+
+    return 'unverified';
+  }
+
   normalizePlanChangeResponse(
     raw: any,
     isUpgrade: boolean,
@@ -882,11 +1201,13 @@ export class StripeService {
   }
 
   tierFromProductName(productName: string | null | undefined): 'starter' | 'basic' | 'advanced' | null {
-    const n = (productName ?? '').toLowerCase();
-    if (n.includes('advanced')) return 'advanced';
-    if (n.includes('basic')) return 'basic';
-    if (n.includes('starter')) return 'starter';
-    return null;
+    const n = (productName ?? '').trim().toLowerCase();
+    if (!n) return null;
+    const matches: Array<'starter' | 'basic' | 'advanced'> = [];
+    if (/\b(advanced|avanzado)\b/.test(n)) matches.push('advanced');
+    if (/\b(basic|b[aá]sico)\b/.test(n)) matches.push('basic');
+    if (/\b(starter|inicial)\b/.test(n)) matches.push('starter');
+    return matches.length === 1 ? matches[0] : null;
   }
 
   /**
