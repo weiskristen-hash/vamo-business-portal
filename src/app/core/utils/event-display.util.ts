@@ -496,3 +496,105 @@ export function canEditEvent(
   if (event.status === 'draft') return true;
   return !isEventPast(event, businessService);
 }
+
+/**
+ * Normalizes event description line endings (CRLF / CR -> LF) while preserving
+ * single line breaks (\n), blank lines between paragraphs (\n\n), and plain text.
+ */
+export function normalizeEventDescription(text: string | null | undefined): string {
+  if (typeof text !== 'string') return '';
+  return text.replace(/\r\n?/g, '\n');
+}
+
+export const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
+
+export const STANDARD_IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+] as const;
+
+export const LOGO_IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/svg+xml',
+] as const;
+
+const STANDARD_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'] as const;
+const LOGO_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.svg'] as const;
+
+export interface ImageUploadValidationOptions {
+  allowSvg?: boolean;
+  maxFiles?: number;
+  maxSizeBytes?: number;
+}
+
+export interface ImageUploadValidationResult {
+  valid: boolean;
+  errorReason?: 'multiple_not_allowed' | 'invalid_type' | 'file_too_large';
+}
+
+/**
+ * Checks whether a drag event carries local files (ignoring remote URL or text drags).
+ */
+export function isFileDragEvent(event: DragEvent | Event | any): boolean {
+  const dt = event?.dataTransfer;
+  if (!dt) return true;
+  if (dt.files && dt.files.length > 0) return true;
+  if (dt.types && dt.types.length > 0) {
+    const types = Array.from(dt.types as ArrayLike<string>);
+    return types.includes('Files') || types.includes('application/x-moz-file');
+  }
+  if (dt.items && dt.items.length > 0) {
+    return Array.from(dt.items as ArrayLike<DataTransferItem>).some((item) => item.kind === 'file');
+  }
+  return true;
+}
+
+/**
+ * Extracts local File objects from a drop event's DataTransfer without downloading remote URLs.
+ */
+export function extractDroppedFiles(event: DragEvent | Event | any): File[] {
+  const dt = event?.dataTransfer;
+  if (!dt?.files || dt.files.length === 0) return [];
+  return Array.from(dt.files as ArrayLike<File>);
+}
+
+/**
+ * Validates selected or dropped image files for format, size limit, and count limit.
+ */
+export function validateImageUploadFiles(
+  files: File[],
+  options: ImageUploadValidationOptions = {}
+): ImageUploadValidationResult {
+  if (options.maxFiles !== undefined && files.length > options.maxFiles) {
+    return { valid: false, errorReason: 'multiple_not_allowed' };
+  }
+
+  const allowedMimes = options.allowSvg ? LOGO_IMAGE_MIME_TYPES : STANDARD_IMAGE_MIME_TYPES;
+  const allowedExtensions = options.allowSvg ? LOGO_IMAGE_EXTENSIONS : STANDARD_IMAGE_EXTENSIONS;
+  const maxBytes = options.maxSizeBytes ?? MAX_IMAGE_UPLOAD_BYTES;
+
+  for (const file of files) {
+    const mime = (file?.type || '').toLowerCase().trim();
+    const name = (file?.name || '').toLowerCase().trim();
+    const hasAllowedExt = allowedExtensions.some((ext) => name.endsWith(ext));
+    const isTypeValid = mime
+      ? (allowedMimes as readonly string[]).includes(mime)
+      : hasAllowedExt;
+
+    if (!isTypeValid) {
+      return { valid: false, errorReason: 'invalid_type' };
+    }
+
+    if (typeof file?.size === 'number' && file.size > maxBytes) {
+      return { valid: false, errorReason: 'file_too_large' };
+    }
+  }
+
+  return { valid: true };
+}
+

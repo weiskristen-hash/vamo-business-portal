@@ -1214,4 +1214,218 @@ describe('ListingEditorComponent', () => {
     });
   });
 
+  describe('Drag-and-Drop Image Uploads & Event Description Paragraph Preservation', () => {
+    const MULTILINE_FIXTURE =
+      'First paragraph, first line.\nSecond line.\n\nSecond paragraph with accents: República Dominicana 🌴';
+
+    beforeEach(async () => {
+      sessionStorage.clear();
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    });
+
+    it('highlights dropzone on file dragenter/dragover, handles nested dragenter/dragleave without flickering, and resets on drop', () => {
+      const fileDragEvent = () => {
+        const preventDefault = vi.fn();
+        const stopPropagation = vi.fn();
+        return {
+          preventDefault,
+          stopPropagation,
+          dataTransfer: {
+            types: ['Files'],
+            files: [new File(['img'], 'flyer.jpg', { type: 'image/jpeg' })] as unknown as FileList,
+            dropEffect: 'none',
+          },
+        } as unknown as DragEvent;
+      };
+
+      const enterOuter = fileDragEvent();
+      component.onPhotoDragEnter(enterOuter);
+      expect(enterOuter.preventDefault).toHaveBeenCalled();
+      expect(component.isPhotoDragOver).toBe(true);
+
+      // Nested child dragenter increments depth to 2
+      const enterInner = fileDragEvent();
+      component.onPhotoDragEnter(enterInner);
+      expect(component.isPhotoDragOver).toBe(true);
+
+      // Leaving inner child decrements depth to 1 -> highlight stays true (no flicker)
+      const leaveInner = fileDragEvent();
+      component.onPhotoDragLeave(leaveInner);
+      expect(component.isPhotoDragOver).toBe(true);
+
+      // Leaving outer container decrements depth to 0 -> highlight resets
+      const leaveOuter = fileDragEvent();
+      component.onPhotoDragLeave(leaveOuter);
+      expect(component.isPhotoDragOver).toBe(false);
+
+      // Dragover sets copy dropEffect and active state
+      const overEvt = fileDragEvent();
+      component.onPhotoDragOver(overEvt);
+      expect(overEvt.preventDefault).toHaveBeenCalled();
+      expect(overEvt.dataTransfer!.dropEffect).toBe('copy');
+      expect(component.isPhotoDragOver).toBe(true);
+      fixture.detectChanges();
+
+      const dropzoneEl = fixture.nativeElement.querySelector('.upload-dropzone-btn');
+      expect(dropzoneEl.classList.contains('drag-over')).toBe(true);
+
+      // Drop resets highlight, prevents browser navigation, and adds file to selectedNewFiles
+      const dropEvt = fileDragEvent();
+      component.onPhotoDrop(dropEvt);
+      expect(dropEvt.preventDefault).toHaveBeenCalled();
+      expect(dropEvt.stopPropagation).toHaveBeenCalled();
+      expect(component.isPhotoDragOver).toBe(false);
+      expect(component.selectedNewFiles.length).toBe(1);
+      expect(component.selectedNewFiles[0].name).toBe('flyer.jpg');
+      expect(component.isDirty).toBe(true);
+    });
+
+    it('rejects unsupported file types and oversized files (>10MB) on drop with localized EN/ES validation error', () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+
+      const badTypeDrop = {
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+        dataTransfer: {
+          types: ['Files'],
+          files: [new File(['pdf'], 'flyer.pdf', { type: 'application/pdf' })] as unknown as FileList,
+        },
+      } as unknown as DragEvent;
+
+      component.onPhotoDrop(badTypeDrop);
+      expect(component.selectedNewFiles.length).toBe(0);
+      expect(component.errorMessage).toBe('Unsupported image format. Please use JPG, PNG, or WebP.');
+
+      i18nService.setLang('es');
+      const oversizedFile = new File(['x'], 'huge.png', { type: 'image/png' });
+      Object.defineProperty(oversizedFile, 'size', { value: 11 * 1024 * 1024 });
+      const oversizedDrop = {
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+        dataTransfer: {
+          types: ['Files'],
+          files: [oversizedFile] as unknown as FileList,
+        },
+      } as unknown as DragEvent;
+
+      component.onPhotoDrop(oversizedDrop);
+      expect(component.selectedNewFiles.length).toBe(0);
+      expect(component.errorMessage).toBe('La imagen supera el límite de 10 MB. Elige un archivo más pequeño.');
+      i18nService.setLang('en');
+    });
+
+    it('ignores remote URL drops (without local files) and drops when disabled/past event', () => {
+      const remoteUrlDrop = {
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+        dataTransfer: {
+          types: ['text/uri-list'],
+          files: [] as unknown as FileList,
+        },
+      } as unknown as DragEvent;
+
+      component.onPhotoDrop(remoteUrlDrop);
+      expect(component.selectedNewFiles.length).toBe(0);
+
+      // Disabled when past event
+      component.isPastEvent = true;
+      const validDropWhilePast = {
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+        dataTransfer: {
+          types: ['Files'],
+          files: [new File(['img'], 'photo.png', { type: 'image/png' })] as unknown as FileList,
+        },
+      } as unknown as DragEvent;
+
+      component.onPhotoDrop(validDropWhilePast);
+      expect(component.selectedNewFiles.length).toBe(0);
+    });
+
+    it('supports keyboard Enter and Space activation on the photo upload dropzone', () => {
+      const fileInput = document.createElement('input');
+      const clickSpy = vi.spyOn(fileInput, 'click').mockImplementation(() => {});
+      const keyEvt = new KeyboardEvent('keydown', { key: 'Enter' });
+      const preventSpy = vi.spyOn(keyEvt, 'preventDefault');
+
+      component.onDropzoneKeydown(keyEvt, fileInput);
+      expect(preventSpy).toHaveBeenCalled();
+      expect(clickSpy).toHaveBeenCalled();
+    });
+
+    it('preserves multi-paragraph descriptions and single line breaks across input, CRLF normalization, save payload, reload, and preview', async () => {
+      // Simulate pasting text with CRLF line endings and blank lines between paragraphs
+      const crlfInput = MULTILINE_FIXTURE.replace(/\n/g, '\r\n');
+      component.onDescriptionChange(crlfInput);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(component.draft.description).toBe(MULTILINE_FIXTURE);
+
+      // Live preview element renders exact multi-paragraph text with pre-wrap styling
+      const previewDescEl = fixture.nativeElement.querySelector('.phone-desc') as HTMLElement;
+      expect(previewDescEl).toBeTruthy();
+      expect(previewDescEl.textContent).toBe(MULTILINE_FIXTURE);
+
+      // Session recovery stores normalized multiline description
+      const stored = JSON.parse(sessionStorage.getItem('vamo_editor_recovery_new')!);
+      expect(stored.description).toBe(MULTILINE_FIXTURE);
+
+      // Save payload preserves exact paragraph breaks and single line breaks
+      component.draft.name = 'Sunset Acoustic Session';
+      component.draft.category = 'music';
+      component.draft.address = 'Playa Bonita';
+      component.draft.startDate = '2026-11-20';
+      component.existingImages = [{ junctionId: 1, url: 'https://example.com/1.jpg' }];
+
+      await component.publishListing();
+
+      expect(businessServiceSpy.createEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: MULTILINE_FIXTURE,
+        }),
+        expect.anything(),
+        expect.anything()
+      );
+
+      // Reloading existing event preserves exact multiline description in textarea and preview
+      businessServiceSpy.getEventById.mockResolvedValueOnce({
+        id: 'ev-multiline-1',
+        name: 'Sunset Acoustic Session',
+        category: 'music',
+        description: MULTILINE_FIXTURE,
+        status: 'published',
+        startDate: '2026-11-20',
+      });
+
+      await component.loadExistingEvent('ev-multiline-1');
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      const textarea = fixture.nativeElement.querySelector('#event-desc') as HTMLTextAreaElement;
+      expect(textarea.value).toBe(MULTILINE_FIXTURE);
+      const reloadedPreview = fixture.nativeElement.querySelector('.phone-desc') as HTMLElement;
+      expect(reloadedPreview.textContent).toBe(MULTILINE_FIXTURE);
+    });
+
+    it('renders HTML-like strings in event description safely as literal text without injecting DOM elements', async () => {
+      const unsafeText = 'Line 1 <script>alert(1)</script>\n\n<b>Bold tag as plain text</b>';
+      component.onDescriptionChange(unsafeText);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      const previewDescEl = fixture.nativeElement.querySelector('.phone-desc') as HTMLElement;
+      expect(previewDescEl).toBeTruthy();
+      expect(previewDescEl.textContent).toBe(unsafeText);
+      expect(previewDescEl.querySelector('script')).toBeNull();
+      expect(previewDescEl.querySelector('b')).toBeNull();
+    });
+  });
+
 });
+

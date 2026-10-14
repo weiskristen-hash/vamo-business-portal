@@ -8,7 +8,17 @@ import { CustomerErrorService } from '../../../core/services/customer-error.serv
 import { VamoEvent, Area, EVENT_CATEGORIES, EventCategory } from '../../../core/models/event.model';
 import { I18nService } from '../../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../../core/i18n/translate.pipe';
-import { isEventPast, parseLocalDate, validateEventForPublish, validateEventSchedule, scheduleErrorMessageKey } from '../../../core/utils/event-display.util';
+import {
+  isEventPast,
+  parseLocalDate,
+  validateEventForPublish,
+  validateEventSchedule,
+  scheduleErrorMessageKey,
+  normalizeEventDescription,
+  isFileDragEvent,
+  extractDroppedFiles,
+  validateImageUploadFiles,
+} from '../../../core/utils/event-display.util';
 import { getDrCurrentDateTime } from '../../../core/utils/date-validation.util';
 import { PublishingAccessService } from '../../../core/services/publishing-access.service';
 
@@ -164,8 +174,9 @@ export interface ExistingImage {
                   rows="4"
                   class="form-control form-textarea"
                   [placeholder]="'PORTAL.EVENT_EDITOR.DESC_PLACEHOLDER' | translate"
-                  [(ngModel)]="draft.description"
-                  (ngModelChange)="markDirty()"
+                  [ngModel]="draft.description"
+                  (ngModelChange)="onDescriptionChange($event)"
+                  [disabled]="isPastEvent"
                 ></textarea>
                 <div class="field-footer">
                   <span class="form-hint">{{ 'PORTAL.EVENT_EDITOR.DESC_HINT' | translate }}</span>
@@ -206,12 +217,28 @@ export interface ExistingImage {
                 </div>
 
                 <!-- Upload Dropzone Button -->
-                <label class="upload-dropzone-btn" *ngIf="!isPastEvent">
+                <label
+                  class="upload-dropzone-btn"
+                  *ngIf="!isPastEvent"
+                  tabindex="0"
+                  role="button"
+                  [class.drag-over]="isPhotoDragOver"
+                  [class.disabled]="submitting || isPastEvent"
+                  [attr.aria-disabled]="submitting || isPastEvent"
+                  (keydown.enter)="onDropzoneKeydown($event, photoFileInput)"
+                  (keydown.space)="onDropzoneKeydown($event, photoFileInput)"
+                  (dragenter)="onPhotoDragEnter($event)"
+                  (dragover)="onPhotoDragOver($event)"
+                  (dragleave)="onPhotoDragLeave($event)"
+                  (drop)="onPhotoDrop($event)"
+                >
                   <input
+                    #photoFileInput
                     type="file"
                     class="hidden-file-input"
                     accept="image/jpeg,image/png,image/webp"
                     multiple
+                    [disabled]="submitting || isPastEvent"
                     (change)="onFilesSelected($event)"
                   />
                   <div class="dropzone-content">
@@ -224,6 +251,7 @@ export interface ExistingImage {
                       <span class="dropzone-label">{{ 'PORTAL.EVENT_EDITOR.ADD_PHOTOS' | translate }}</span>
                       <span class="required-star">*</span>
                     </div>
+                    <span class="dropzone-subhint">{{ 'PORTAL.EVENT_EDITOR.DRAG_DROP_HINT' | translate }}</span>
                     <span class="dropzone-hint">{{ 'PORTAL.EVENT_EDITOR.PHOTO_FORMATS' | translate }}</span>
                   </div>
                 </label>
@@ -815,9 +843,7 @@ export interface ExistingImage {
                       <span class="truncate">{{ draft.address }}</span>
                     </div>
 
-                    <p class="phone-desc" *ngIf="draft.description">
-                      {{ draft.description }}
-                    </p>
+                    <p class="phone-desc" *ngIf="draft.description">{{ draft.description }}</p>
                   </div>
                 </div>
               </div>
@@ -1035,6 +1061,11 @@ export interface ExistingImage {
       font-size: 0.92rem;
     }
 
+    .form-textarea {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
     .field-footer {
       display: flex;
       align-items: center;
@@ -1154,7 +1185,8 @@ export interface ExistingImage {
     }
 
     .upload-dropzone-btn {
-      height: 110px;
+      min-height: 110px;
+      padding: 8px;
       border: 2px dashed var(--vamo-border-hover);
       border-radius: var(--vamo-radius-md);
       display: flex;
@@ -1165,9 +1197,23 @@ export interface ExistingImage {
       background: var(--vamo-surface-subtle);
     }
 
-    .upload-dropzone-btn:hover {
+    .upload-dropzone-btn:hover,
+    .upload-dropzone-btn:focus-visible,
+    .upload-dropzone-btn.drag-over {
       border-color: var(--vamo-primary);
       background: var(--vamo-primary-light);
+    }
+
+    .upload-dropzone-btn.drag-over {
+      border-style: solid;
+      box-shadow: 0 0 0 3px rgba(128, 112, 192, 0.22);
+      transform: translateY(-1px);
+    }
+
+    .upload-dropzone-btn.disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      pointer-events: none;
     }
 
     .hidden-file-input {
@@ -1178,14 +1224,21 @@ export interface ExistingImage {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 4px;
+      gap: 3px;
       color: var(--vamo-text-muted);
+      text-align: center;
     }
 
     .dropzone-label {
       font-size: 0.8rem;
       font-weight: 600;
       color: var(--vamo-primary);
+    }
+
+    .dropzone-subhint {
+      font-size: 0.68rem;
+      line-height: 1.25;
+      color: var(--vamo-text-muted);
     }
 
     .dropzone-hint {
@@ -1753,11 +1806,10 @@ export interface ExistingImage {
       font-size: 0.75rem;
       color: #475569;
       margin: 6px 0 0;
-      line-height: 1.35;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .preview-footnote {
@@ -1986,6 +2038,8 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   removedImageJunctionIds: (number | string)[] = [];
   selectedNewFiles: File[] = [];
   newFilePreviews: string[] = [];
+  isPhotoDragOver = false;
+  private photoDragDepth = 0;
 
   async ngOnInit(): Promise<void> {
     const user = this.authService.currentUser;
@@ -2080,7 +2134,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         id: event.id,
         name: event.name || '',
         category: event.category || 'other',
-        description: event.description || '',
+        description: normalizeEventDescription(event.description || ''),
         mode: event.mode || 'single',
         startDate: event.startDate ? String(event.startDate).split('T')[0] : '',
         endDate: event.endDate ? String(event.endDate).split('T')[0] : null,
@@ -2146,7 +2200,9 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       const data = {
         name: this.draft.name,
         category: this.draft.category,
-        description: this.draft.description,
+        description: typeof this.draft.description === 'string'
+          ? normalizeEventDescription(this.draft.description)
+          : this.draft.description,
         mode: this.draft.mode,
         startDate: this.draft.startDate,
         endDate: this.draft.endDate,
@@ -2191,7 +2247,9 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
       if (data.name && !this.draft.name) this.draft.name = data.name;
       if (data.category && !this.draft.category) this.draft.category = data.category;
-      if (data.description && !this.draft.description) this.draft.description = data.description;
+      if (data.description && !this.draft.description) {
+        this.draft.description = normalizeEventDescription(data.description);
+      }
       if (data.mode) this.draft.mode = data.mode;
       if (data.startDate && !this.draft.startDate) this.draft.startDate = data.startDate;
       if (data.endDate && !this.draft.endDate) this.draft.endDate = data.endDate;
@@ -2207,7 +2265,15 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     } catch {}
   }
 
+  onDescriptionChange(value: string): void {
+    this.draft.description = normalizeEventDescription(value);
+    this.markDirty();
+  }
+
   markDirty(): void {
+    if (typeof this.draft.description === 'string') {
+      this.draft.description = normalizeEventDescription(this.draft.description);
+    }
     this.isDirty = true;
     this.saveDraftRecovery();
   }
@@ -2544,15 +2610,95 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     this.markDirty();
   }
 
-  onFilesSelected(event: Event): void {
-    const files = Array.from((event.target as HTMLInputElement)?.files || []);
-    if (!files.length) return;
+  onDropzoneKeydown(event: Event, input: HTMLInputElement): void {
+    if (this.isPastEvent || this.submitting) return;
+    event.preventDefault();
+    input.click();
+  }
 
+  onPhotoDragEnter(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.isPastEvent || this.submitting || !isFileDragEvent(event)) return;
+    this.photoDragDepth++;
+    this.isPhotoDragOver = true;
+    this.cdr.markForCheck();
+  }
+
+  onPhotoDragOver(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.isPastEvent || this.submitting || !isFileDragEvent(event)) return;
+    if (event.dataTransfer) {
+      try {
+        event.dataTransfer.dropEffect = 'copy';
+      } catch {}
+    }
+    if (!this.isPhotoDragOver) {
+      this.photoDragDepth = Math.max(this.photoDragDepth, 1);
+      this.isPhotoDragOver = true;
+      this.cdr.markForCheck();
+    }
+  }
+
+  onPhotoDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.photoDragDepth > 0) {
+      this.photoDragDepth--;
+    }
+    if (this.photoDragDepth === 0 && this.isPhotoDragOver) {
+      this.isPhotoDragOver = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  onPhotoDrop(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.photoDragDepth = 0;
+    this.isPhotoDragOver = false;
+    if (this.isPastEvent || this.submitting || !isFileDragEvent(event)) {
+      this.cdr.markForCheck();
+      return;
+    }
+    const files = extractDroppedFiles(event);
+    if (!files.length) {
+      this.cdr.markForCheck();
+      return;
+    }
+    this.handleSelectedFiles(files);
+  }
+
+  onFilesSelected(event: Event): void {
+    const input = event.target as HTMLInputElement | null;
+    const files = Array.from(input?.files || []);
+    if (input && typeof input.value === 'string') {
+      input.value = '';
+    }
+    if (!files.length) return;
+    this.handleSelectedFiles(files);
+  }
+
+  handleSelectedFiles(files: File[]): void {
+    if (this.isPastEvent || this.submitting || !files.length) return;
+
+    const validation = validateImageUploadFiles(files, { allowSvg: false });
+    if (!validation.valid) {
+      this.errorMessage = validation.errorReason === 'file_too_large'
+        ? this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.FILE_TOO_LARGE')
+        : this.i18n.t('PORTAL.EVENT_EDITOR.VALIDATION.INVALID_FILE_TYPE');
+      this.cdr.markForCheck();
+      return;
+    }
+
+    this.errorMessage = null;
     for (const file of files) {
       this.selectedNewFiles.push(file);
       this.newFilePreviews.push(URL.createObjectURL(file));
     }
     this.markDirty();
+    this.cdr.markForCheck();
   }
 
   removeNewFile(index: number): void {
@@ -2685,10 +2831,15 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         }
       }
 
+      const normalizedDesc = typeof this.draft.description === 'string'
+        ? normalizeEventDescription(this.draft.description)
+        : (this.draft.description ?? undefined);
+      this.draft.description = normalizedDesc ?? '';
+
       const payload: Partial<VamoEvent> = {
         name: this.draft.name ?? undefined,
         category: this.draft.category ?? undefined,
-        description: this.draft.description ?? undefined,
+        description: normalizedDesc,
         mode: this.draft.mode!,
         status,
         ...(addonExpiry !== undefined ? { addon_expires_at: addonExpiry } : {}),

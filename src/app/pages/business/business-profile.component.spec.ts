@@ -605,6 +605,88 @@ describe('BusinessProfileComponent', () => {
       expect(component.uploadingGallery()).toBe(false);
       expect(component.uploadProgressMessage()).toBeNull();
     });
+
+    it('supports drag-and-drop on logo upload area, rejects multi-file drops with clear error, and routes valid single file through updateProviderLogo', async () => {
+      await fixture.whenStable();
+      i18nService.setLang('en');
+      fixture.detectChanges();
+
+      const makeDropEvt = (files: File[]) =>
+        ({
+          preventDefault: vi.fn(),
+          stopPropagation: vi.fn(),
+          dataTransfer: {
+            types: ['Files'],
+            files: files as unknown as FileList,
+            dropEffect: 'none',
+          },
+        }) as unknown as DragEvent;
+
+      // Nested dragenter / dragleave keeps highlight stable
+      const enter1 = makeDropEvt([]);
+      const enter2 = makeDropEvt([]);
+      const leave1 = makeDropEvt([]);
+      component.onLogoDragEnter(enter1);
+      component.onLogoDragEnter(enter2);
+      component.onLogoDragLeave(leave1);
+      expect(component.isLogoDragOver()).toBe(true);
+
+      // Reject multiple files for single-image logo control
+      const multiDrop = makeDropEvt([
+        new File(['1'], 'logo1.png', { type: 'image/png' }),
+        new File(['2'], 'logo2.png', { type: 'image/png' }),
+      ]);
+      await component.onLogoDrop(multiDrop);
+      expect(component.isLogoDragOver()).toBe(false);
+      expect(businessServiceSpy.updateProviderLogo).not.toHaveBeenCalled();
+      expect(component.saveError()).toBe('Please upload only one image for your brand logo.');
+
+      // Valid single file drop routes through updateProviderLogo
+      const singleLogo = new File(['svg'], 'brand.svg', { type: 'image/svg+xml' });
+      const validDrop = makeDropEvt([singleLogo]);
+      await component.onLogoDrop(validDrop);
+      expect(validDrop.preventDefault).toHaveBeenCalled();
+      expect(businessServiceSpy.updateProviderLogo).toHaveBeenCalledWith('prov-101', singleLogo);
+      expect(component.form().logo).toEqual({ id: 'new-logo-id' });
+    });
+
+    it('supports drag-and-drop on gallery upload tile, validates formats, and routes dropped images through uploadProviderImage', async () => {
+      await fixture.whenStable();
+      i18nService.setLang('en');
+      fixture.detectChanges();
+
+      const makeGalleryDrop = (files: File[]) =>
+        ({
+          preventDefault: vi.fn(),
+          stopPropagation: vi.fn(),
+          dataTransfer: {
+            types: ['Files'],
+            files: files as unknown as FileList,
+            dropEffect: 'none',
+          },
+        }) as unknown as DragEvent;
+
+      // Highlight on dragenter/dragover
+      const overEvt = makeGalleryDrop([]);
+      component.onGalleryDragOver(overEvt);
+      expect(component.isGalleryDragOver()).toBe(true);
+
+      // Reject SVG in gallery (gallery accepts JPEG, PNG, WebP only)
+      const svgDrop = makeGalleryDrop([new File(['<svg></svg>'], 'icon.svg', { type: 'image/svg+xml' })]);
+      await component.onGalleryDrop(svgDrop);
+      expect(component.isGalleryDragOver()).toBe(false);
+      expect(businessServiceSpy.uploadProviderImage).not.toHaveBeenCalled();
+      expect(component.saveError()).toBe('Unsupported image format. Please use JPG, PNG, or WebP.');
+
+      // Valid multi-file drop uploads and refreshes provider
+      const img1 = new File(['1'], 'beach1.webp', { type: 'image/webp' });
+      const img2 = new File(['2'], 'beach2.jpg', { type: 'image/jpeg' });
+      await component.onGalleryDrop(makeGalleryDrop([img1, img2]));
+      expect(businessServiceSpy.uploadProviderImage).toHaveBeenCalledTimes(2);
+      expect(businessServiceSpy.uploadProviderImage).toHaveBeenNthCalledWith(1, 'prov-101', img1);
+      expect(businessServiceSpy.uploadProviderImage).toHaveBeenNthCalledWith(2, 'prov-101', img2);
+    });
   });
 
 });
+
