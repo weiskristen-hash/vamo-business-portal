@@ -10,6 +10,11 @@ import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { Provider, OpeningHour } from '../../core/models/provider.model';
 import { PhoneInputComponent } from '../../shared/components/phone-input/phone-input.component';
 import { isValidPhone, getWhatsAppUrl } from '../../core/utils/phone';
+import {
+  isFileDragEvent,
+  extractDroppedFiles,
+  validateImageUploadFiles,
+} from '../../core/utils/event-display.util';
 
 export interface BusinessTypeOption {
   value: string;
@@ -219,7 +224,15 @@ export interface OfferingOption {
               </div>
 
               <!-- Logo Upload & Preview -->
-              <div class="logo-row">
+              <div
+                class="logo-row"
+                [class.drag-over]="isLogoDragOver()"
+                [class.dropzone-disabled]="uploadingLogo() || saving()"
+                (dragenter)="onLogoDragEnter($event)"
+                (dragover)="onLogoDragOver($event)"
+                (dragleave)="onLogoDragLeave($event)"
+                (drop)="onLogoDrop($event)"
+              >
                 <div class="logo-preview-box">
                   <img
                     *ngIf="logoPreviewUrl(); else logoPlaceholder"
@@ -239,16 +252,27 @@ export interface OfferingOption {
                   <p class="logo-desc">
                     {{ 'PORTAL.PROFILE.LOGO_DESC' | translate }}
                   </p>
+                  <p class="logo-drop-hint">
+                    {{ 'PORTAL.PROFILE.LOGO_DRAG_DROP_HINT' | translate }}
+                  </p>
                   <div class="logo-actions">
-                    <label class="btn btn-secondary btn-sm cursor-pointer">
+                    <label
+                      class="btn btn-secondary btn-sm cursor-pointer"
+                      tabindex="0"
+                      role="button"
+                      [attr.aria-disabled]="uploadingLogo() || saving()"
+                      (keydown.enter)="onUploadKeydown($event, logoInput, uploadingLogo() || saving())"
+                      (keydown.space)="onUploadKeydown($event, logoInput, uploadingLogo() || saving())"
+                    >
                       <span *ngIf="uploadingLogo()" class="spinner spinner-primary"></span>
                       <span>{{ uploadingLogo() ? ('PORTAL.PROFILE.UPLOADING' | translate) : (form().logo ? ('PORTAL.PROFILE.REPLACE_LOGO' | translate) : ('PORTAL.PROFILE.UPLOAD_LOGO' | translate)) }}</span>
                       <input
+                        #logoInput
                         type="file"
                         hidden
                         accept="image/png,image/jpeg,image/webp,image/svg+xml"
                         (change)="onLogoSelected($event)"
-                        [disabled]="uploadingLogo()"
+                        [disabled]="uploadingLogo() || saving()"
                       />
                     </label>
                     <button
@@ -256,7 +280,7 @@ export interface OfferingOption {
                       type="button"
                       class="btn btn-ghost btn-sm text-danger"
                       (click)="removeLogo()"
-                      [disabled]="uploadingLogo()"
+                      [disabled]="uploadingLogo() || saving()"
                     >
                       {{ 'PORTAL.PROFILE.REMOVE' | translate }}
                     </button>
@@ -271,16 +295,24 @@ export interface OfferingOption {
                     <h3 class="gallery-title">{{ 'PORTAL.PROFILE.GALLERY_TITLE' | translate }}</h3>
                     <p class="gallery-desc">{{ 'PORTAL.PROFILE.GALLERY_DESC' | translate }}</p>
                   </div>
-                  <label class="btn btn-outline btn-sm cursor-pointer">
+                  <label
+                    class="btn btn-outline btn-sm cursor-pointer"
+                    tabindex="0"
+                    role="button"
+                    [attr.aria-disabled]="uploadingGallery() || saving()"
+                    (keydown.enter)="onUploadKeydown($event, galleryHeaderInput, uploadingGallery() || saving())"
+                    (keydown.space)="onUploadKeydown($event, galleryHeaderInput, uploadingGallery() || saving())"
+                  >
                     <span *ngIf="uploadingGallery()" class="spinner spinner-primary"></span>
                     <span>{{ uploadingGallery() ? ('PORTAL.PROFILE.UPLOADING' | translate) : ('PORTAL.PROFILE.ADD_PHOTOS' | translate) }}</span>
                     <input
+                      #galleryHeaderInput
                       type="file"
                       hidden
                       multiple
                       accept="image/png,image/jpeg,image/webp"
                       (change)="onGallerySelected($event)"
-                      [disabled]="uploadingGallery()"
+                      [disabled]="uploadingGallery() || saving()"
                     />
                   </label>
                 </div>
@@ -309,14 +341,28 @@ export interface OfferingOption {
                   </div>
 
                   <!-- Upload Tile -->
-                  <label class="gallery-upload-tile" [class.tile-loading]="uploadingGallery()">
+                  <label
+                    class="gallery-upload-tile"
+                    tabindex="0"
+                    role="button"
+                    [class.tile-loading]="uploadingGallery()"
+                    [class.drag-over]="isGalleryDragOver()"
+                    [attr.aria-disabled]="uploadingGallery() || saving()"
+                    (keydown.enter)="onUploadKeydown($event, galleryTileInput, uploadingGallery() || saving())"
+                    (keydown.space)="onUploadKeydown($event, galleryTileInput, uploadingGallery() || saving())"
+                    (dragenter)="onGalleryDragEnter($event)"
+                    (dragover)="onGalleryDragOver($event)"
+                    (dragleave)="onGalleryDragLeave($event)"
+                    (drop)="onGalleryDrop($event)"
+                  >
                     <input
+                      #galleryTileInput
                       type="file"
                       hidden
                       multiple
                       accept="image/png,image/jpeg,image/webp"
                       (change)="onGallerySelected($event)"
-                      [disabled]="uploadingGallery()"
+                      [disabled]="uploadingGallery() || saving()"
                     />
                     <span *ngIf="uploadingGallery()" class="spinner spinner-primary"></span>
                     <svg *ngIf="!uploadingGallery()" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -324,6 +370,7 @@ export interface OfferingOption {
                       <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
                     <span>{{ uploadingGallery() ? (uploadProgressMessage() || ('PORTAL.PROFILE.UPLOADING' | translate)) : ('PORTAL.PROFILE.UPLOAD_PHOTO' | translate) }}</span>
+                    <span *ngIf="!uploadingGallery()" class="gallery-drop-hint">{{ 'PORTAL.PROFILE.GALLERY_DRAG_DROP_HINT' | translate }}</span>
                   </label>
                 </div>
               </div>
@@ -1081,9 +1128,23 @@ export interface OfferingOption {
       display: flex;
       align-items: center;
       gap: 24px;
-      padding-bottom: 24px;
-      border-bottom: 1px solid var(--vamo-border);
+      padding: 16px;
+      border: 2px dashed var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
+      background: var(--vamo-surface-subtle);
       margin-bottom: 24px;
+      transition: all 0.18s ease;
+    }
+
+    .logo-row.drag-over {
+      border-color: var(--vamo-primary);
+      border-style: solid;
+      background: rgba(128, 112, 192, 0.08);
+      box-shadow: 0 0 0 3px rgba(128, 112, 192, 0.18);
+    }
+
+    .logo-row.dropzone-disabled {
+      opacity: 0.7;
     }
 
     .logo-preview-box {
@@ -1132,6 +1193,11 @@ export interface OfferingOption {
       font-size: 0.85rem;
       color: var(--vamo-text-muted);
       max-width: 440px;
+    }
+
+    .logo-drop-hint {
+      font-size: 0.78rem;
+      color: var(--vamo-text-muted);
     }
 
     .logo-actions {
@@ -1221,7 +1287,8 @@ export interface OfferingOption {
     }
 
     .gallery-upload-tile {
-      height: 110px;
+      min-height: 110px;
+      padding: 8px;
       border-radius: var(--vamo-radius-sm);
       border: 2px dashed var(--vamo-border);
       background: var(--vamo-surface-subtle);
@@ -1229,18 +1296,34 @@ export interface OfferingOption {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 4px;
       cursor: pointer;
       color: var(--vamo-text-muted);
       font-size: 0.82rem;
       font-weight: 600;
+      text-align: center;
       transition: all 0.18s ease;
     }
 
-    .gallery-upload-tile:hover {
+    .gallery-upload-tile:hover,
+    .gallery-upload-tile:focus-visible,
+    .gallery-upload-tile.drag-over {
       border-color: var(--vamo-primary);
       color: var(--vamo-primary);
-      background: rgba(128, 112, 192, 0.04);
+      background: rgba(128, 112, 192, 0.06);
+    }
+
+    .gallery-upload-tile.drag-over {
+      border-style: solid;
+      box-shadow: 0 0 0 3px rgba(128, 112, 192, 0.18);
+      transform: translateY(-1px);
+    }
+
+    .gallery-drop-hint {
+      font-size: 0.68rem;
+      font-weight: 500;
+      color: var(--vamo-text-muted);
+      line-height: 1.2;
     }
 
     .tile-loading {
@@ -1900,6 +1983,10 @@ export class BusinessProfileComponent implements OnInit {
   saving = signal(false);
   uploadingLogo = signal(false);
   uploadingGallery = signal(false);
+  isLogoDragOver = signal(false);
+  isGalleryDragOver = signal(false);
+  private logoDragDepth = 0;
+  private galleryDragDepth = 0;
   uploadProgressMessage = signal<string | null>(null);
   detectingLocation = signal(false);
   loadError = signal<string | null>(null);
@@ -2249,11 +2336,83 @@ export class BusinessProfileComponent implements OnInit {
   }
 
   // ── Image Handlers ──────────────────────────────────────────────────
-  async onLogoSelected(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    if (!input.files?.length) return;
+  onUploadKeydown(event: Event, input: HTMLInputElement, disabled = false): void {
+    if (disabled) return;
+    event.preventDefault();
+    input.click();
+  }
 
-    const file = input.files[0];
+  onLogoDragEnter(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.uploadingLogo() || this.saving() || !isFileDragEvent(event)) return;
+    this.logoDragDepth++;
+    this.isLogoDragOver.set(true);
+  }
+
+  onLogoDragOver(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.uploadingLogo() || this.saving() || !isFileDragEvent(event)) return;
+    if (event.dataTransfer) {
+      try {
+        event.dataTransfer.dropEffect = 'copy';
+      } catch {}
+    }
+    if (!this.isLogoDragOver()) {
+      this.logoDragDepth = Math.max(this.logoDragDepth, 1);
+      this.isLogoDragOver.set(true);
+    }
+  }
+
+  onLogoDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.logoDragDepth > 0) {
+      this.logoDragDepth--;
+    }
+    if (this.logoDragDepth === 0 && this.isLogoDragOver()) {
+      this.isLogoDragOver.set(false);
+    }
+  }
+
+  async onLogoDrop(event: DragEvent): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    this.logoDragDepth = 0;
+    this.isLogoDragOver.set(false);
+    if (this.uploadingLogo() || this.saving() || !isFileDragEvent(event)) return;
+    const files = extractDroppedFiles(event);
+    if (!files.length) return;
+    await this.handleLogoFiles(files);
+  }
+
+  async onLogoSelected(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement | null;
+    const files = Array.from(input?.files || []);
+    if (input && typeof input.value === 'string') {
+      input.value = '';
+    }
+    if (!files.length) return;
+    await this.handleLogoFiles(files);
+  }
+
+  async handleLogoFiles(files: File[]): Promise<void> {
+    if (this.uploadingLogo() || this.saving() || !files.length) return;
+
+    const validation = validateImageUploadFiles(files, { allowSvg: true, maxFiles: 1 });
+    if (!validation.valid) {
+      if (validation.errorReason === 'multiple_not_allowed') {
+        this.saveError.set(this.i18n.t('PORTAL.PROFILE.LOGO_SINGLE_FILE_ERROR'));
+      } else if (validation.errorReason === 'file_too_large') {
+        this.saveError.set(this.i18n.t('PORTAL.PROFILE.FILE_TOO_LARGE'));
+      } else {
+        this.saveError.set(this.i18n.t('PORTAL.PROFILE.INVALID_LOGO_FILE_TYPE'));
+      }
+      return;
+    }
+
+    const file = files[0];
     this.uploadingLogo.set(true);
     this.saveError.set(null);
 
@@ -2265,7 +2424,6 @@ export class BusinessProfileComponent implements OnInit {
       this.saveError.set(this.customerErrorService.toCustomerMessage(err, 'upload'));
     } finally {
       this.uploadingLogo.set(false);
-      input.value = '';
     }
   }
 
@@ -2274,16 +2432,79 @@ export class BusinessProfileComponent implements OnInit {
     this.markDirty();
   }
 
+  onGalleryDragEnter(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.uploadingGallery() || this.saving() || !isFileDragEvent(event)) return;
+    this.galleryDragDepth++;
+    this.isGalleryDragOver.set(true);
+  }
+
+  onGalleryDragOver(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.uploadingGallery() || this.saving() || !isFileDragEvent(event)) return;
+    if (event.dataTransfer) {
+      try {
+        event.dataTransfer.dropEffect = 'copy';
+      } catch {}
+    }
+    if (!this.isGalleryDragOver()) {
+      this.galleryDragDepth = Math.max(this.galleryDragDepth, 1);
+      this.isGalleryDragOver.set(true);
+    }
+  }
+
+  onGalleryDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.galleryDragDepth > 0) {
+      this.galleryDragDepth--;
+    }
+    if (this.galleryDragDepth === 0 && this.isGalleryDragOver()) {
+      this.isGalleryDragOver.set(false);
+    }
+  }
+
+  async onGalleryDrop(event: DragEvent): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    this.galleryDragDepth = 0;
+    this.isGalleryDragOver.set(false);
+    if (this.uploadingGallery() || this.saving() || !isFileDragEvent(event)) return;
+    const files = extractDroppedFiles(event);
+    if (!files.length) return;
+    await this.handleGalleryFiles(files);
+  }
+
   async onGallerySelected(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    if (!input.files?.length) return;
+    const input = event.target as HTMLInputElement | null;
+    const files = Array.from(input?.files || []);
+    if (input && typeof input.value === 'string') {
+      input.value = '';
+    }
+    if (!files.length) return;
+    await this.handleGalleryFiles(files);
+  }
+
+  async handleGalleryFiles(files: File[]): Promise<void> {
+    if (this.uploadingGallery() || this.saving() || !files.length) return;
+
+    const validation = validateImageUploadFiles(files, { allowSvg: false });
+    if (!validation.valid) {
+      this.saveError.set(
+        validation.errorReason === 'file_too_large'
+          ? this.i18n.t('PORTAL.PROFILE.FILE_TOO_LARGE')
+          : this.i18n.t('PORTAL.PROFILE.INVALID_GALLERY_FILE_TYPE')
+      );
+      return;
+    }
 
     this.uploadingGallery.set(true);
     this.saveError.set(null);
     this.uploadProgressMessage.set(null);
 
     try {
-      const files = Array.from(input.files);
       const total = files.length;
       for (let i = 0; i < total; i++) {
         const file = files[i];
@@ -2315,7 +2536,6 @@ export class BusinessProfileComponent implements OnInit {
     } finally {
       this.uploadingGallery.set(false);
       this.uploadProgressMessage.set(null);
-      input.value = '';
     }
   }
 

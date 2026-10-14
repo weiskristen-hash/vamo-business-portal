@@ -13,6 +13,7 @@ import {
   isEventOngoing,
   isEventUpcoming,
   validateEventForPublish,
+  normalizeEventDescription,
   ScheduleClassificationOptions,
 } from '../utils/event-display.util';
 
@@ -485,6 +486,9 @@ export class BusinessService {
   normalizeEvent(e: any): VamoEvent {
     if (!e) return e;
     const event: VamoEvent = { ...e };
+    if (typeof event.description === 'string') {
+      event.description = normalizeEventDescription(event.description);
+    }
     if (typeof event.recurring === 'string') {
       try {
         event.recurring = JSON.parse(event.recurring);
@@ -595,7 +599,9 @@ export class BusinessService {
       const payload: Record<string, any> = {
         name: data.name ?? undefined,
         category: data.category ?? undefined,
-        description: data.description ?? undefined,
+        description: typeof data.description === 'string'
+          ? normalizeEventDescription(data.description)
+          : (data.description ?? undefined),
         location_point: data.location_point ?? null,
         address: data.address ?? null,
         startDate: data.startDate ? new Date(data.startDate).toISOString().split('T')[0] : undefined,
@@ -713,7 +719,11 @@ export class BusinessService {
 
       if (data.name !== undefined) payload['name'] = data.name ?? undefined;
       if (data.category !== undefined) payload['category'] = data.category ?? undefined;
-      if (data.description !== undefined) payload['description'] = data.description ?? undefined;
+      if (data.description !== undefined) {
+        payload['description'] = typeof data.description === 'string'
+          ? normalizeEventDescription(data.description)
+          : (data.description ?? undefined);
+      }
       if (data.location_point !== undefined) payload['location_point'] = data.location_point ?? null;
       if (data.address !== undefined) payload['address'] = data.address ?? null;
       if (data.startDate !== undefined) {
@@ -847,7 +857,9 @@ export class BusinessService {
       const payload: Record<string, any> = {
         status: 'draft',
         name: event.name ? `${event.name} (Copy)` : 'Untitled Copy',
-        description: event.description,
+        description: typeof event.description === 'string'
+          ? normalizeEventDescription(event.description)
+          : event.description,
         location_point: event.location_point ?? null,
         address: event.address ?? null,
         category: event.category,

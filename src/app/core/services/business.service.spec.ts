@@ -374,7 +374,46 @@ describe('BusinessService', () => {
       const command = request.mock.calls[0][0] as () => { body: string };
       expect(JSON.parse(command().body)).toEqual({ status: 'published' });
     });
+
+    it('preserves multi-paragraph descriptions and normalizes CRLF to LF in createEvent, updateEvent, and normalizeEvent', async () => {
+      const rawCrlf =
+        'First paragraph, first line.\r\nSecond line.\r\n\r\nSecond paragraph with accents: República Dominicana 🌴';
+      const expectedLf =
+        'First paragraph, first line.\nSecond line.\n\nSecond paragraph with accents: República Dominicana 🌴';
+
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({ id: 'created-ev-1' } as any);
+
+      await service.createEvent(
+        {
+          ...valid,
+          status: 'draft',
+          description: rawCrlf,
+        },
+        [],
+        ['area-lt']
+      );
+
+      const createCmd = request.mock.calls[0][0] as () => { body: string };
+      const createBody = JSON.parse(createCmd().body);
+      expect(createBody.description).toBe(expectedLf);
+
+      request.mockClear();
+      vi.spyOn(service, 'getEventById').mockResolvedValue(valid);
+      await service.updateEvent(valid.id, { description: rawCrlf }, [], [], undefined, [], valid);
+
+      const updateCmd = request.mock.calls[0][0] as () => { body: string };
+      const updateBody = JSON.parse(updateCmd().body);
+      expect(updateBody.description).toBe(expectedLf);
+
+      const normalized = (service as any).normalizeEvent({
+        id: 'ev-norm-1',
+        name: 'Test',
+        description: rawCrlf,
+        status: 'published',
+      });
+      expect(normalized.description).toBe(expectedLf);
+    });
   });
 
-
 });
+
