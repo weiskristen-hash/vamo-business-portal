@@ -686,6 +686,24 @@ describe('BusinessProfileComponent', () => {
       expect(businessServiceSpy.uploadProviderImage).toHaveBeenNthCalledWith(1, 'prov-101', img1);
       expect(businessServiceSpy.uploadProviderImage).toHaveBeenNthCalledWith(2, 'prov-101', img2);
     });
+
+    it('renders separate EN and ES business logo size guidance (1:1 square) without applying event-photo 1200x800 dimensions', async () => {
+      await fixture.whenStable();
+      i18nService.setLang('en');
+      fixture.detectChanges();
+
+      const logoGuidanceEl = fixture.nativeElement.querySelector('.logo-size-guidance') as HTMLElement;
+      expect(logoGuidanceEl).toBeTruthy();
+      expect(logoGuidanceEl.textContent?.trim()).toBe('Recommended: Square image (1:1).');
+      expect(fixture.nativeElement.textContent).not.toContain('1200 × 800');
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+
+      expect(logoGuidanceEl.textContent?.trim()).toBe('Recomendado: Imagen cuadrada (1:1).');
+      expect(fixture.nativeElement.textContent).not.toContain('1200 × 800');
+      i18nService.setLang('en');
+    });
   });
 
 });
