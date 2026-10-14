@@ -9,6 +9,7 @@ import { TranslatePipe } from '../../../core/i18n/translate.pipe';
 import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.component';
 import { environment } from '../../../../environments/environment';
 import { GoogleAuthService } from '../../../core/services/google-auth.service';
+import { capturePromoCode, extractPromoFromUrl } from '../../../core/utils/promo-code.util';
 
 @Component({
   selector: 'app-login',
@@ -1112,6 +1113,12 @@ export class LoginComponent implements OnInit, AfterViewInit {
 
     const rawReturnUrl = this.route.snapshot.queryParams['returnUrl'] || sessionStoredReturnUrl || '/app/overview';
     this.returnUrl = this.authService.sanitizeReturnUrl(rawReturnUrl);
+
+    const promoParam =
+      this.route.snapshot.queryParamMap?.get('promo') ??
+      this.route.snapshot.queryParams?.['promo'] ??
+      extractPromoFromUrl(rawReturnUrl);
+    capturePromoCode(promoParam);
 
     if (typeof window !== 'undefined' && this.googleLoginEnabled) {
       this.googleAuthService.loadGoogleScript()
