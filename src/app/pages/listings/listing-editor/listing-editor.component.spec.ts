@@ -1427,5 +1427,160 @@ describe('ListingEditorComponent', () => {
     });
   });
 
+  describe('Image Upload Guidance & Simulated Mobile Placement Previews', () => {
+    beforeEach(async () => {
+      sessionStorage.clear();
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    });
+
+    it('renders concise EN and ES event photo size and safe-area guidance without rejecting non-3:2 images', () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+
+      const sizeEl = fixture.nativeElement.querySelector('.photo-guidance-size') as HTMLElement;
+      const safeAreaEl = fixture.nativeElement.querySelector('.photo-guidance-safe-area') as HTMLElement;
+      expect(sizeEl).toBeTruthy();
+      expect(safeAreaEl).toBeTruthy();
+      expect(sizeEl.textContent?.trim()).toBe('Recommended: 1200 × 800 px (3:2 landscape).');
+      expect(safeAreaEl.textContent?.trim()).toBe(
+        'Keep text, logos, and important subjects near the center. Images may be cropped depending on placement and screen size.'
+      );
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+
+      expect(sizeEl.textContent?.trim()).toBe('Recomendado: 1200 × 800 px (formato horizontal 3:2).');
+      expect(safeAreaEl.textContent?.trim()).toBe(
+        'Mantén el texto, los logos y los elementos importantes cerca del centro. Las imágenes pueden recortarse según la ubicación y el tamaño de la pantalla.'
+      );
+
+      // Guidance is advisory only: uploading valid images does not enforce 1200x800 or 3:2
+      const portraitOrSquareFile = new File(['img-bytes'], 'portrait-poster.png', { type: 'image/png' });
+      component.handleSelectedFiles([portraitOrSquareFile]);
+      expect(component.errorMessage).toBeNull();
+      expect(component.selectedNewFiles.length).toBe(1);
+    });
+
+    it('renders EN/ES placement selector ("Preview image as") and "Approximate mobile preview" label, defaulting to Event Details', () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+
+      expect(component.previewPlacement).toBe('event_details');
+
+      const approxNote = fixture.nativeElement.querySelector('.preview-approx-note') as HTMLElement;
+      const placementLabel = fixture.nativeElement.querySelector('.preview-placement-label') as HTMLElement;
+      const placementBtns = Array.from(
+        fixture.nativeElement.querySelectorAll('.preview-placement-btn')
+      ) as HTMLButtonElement[];
+
+      expect(approxNote.textContent?.trim()).toBe('Approximate mobile preview');
+      expect(placementLabel.textContent?.trim()).toBe('Preview image as');
+      expect(placementBtns.map((b) => b.textContent?.trim())).toEqual([
+        'Event Details',
+        'What’s Hot',
+        'Main Banner',
+      ]);
+      expect(placementBtns[0].classList.contains('active')).toBe(true);
+      expect(placementBtns[0].getAttribute('aria-pressed')).toBe('true');
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+
+      expect(approxNote.textContent?.trim()).toBe('Vista previa móvil aproximada');
+      expect(placementLabel.textContent?.trim()).toBe('Vista previa de la imagen');
+      expect(placementBtns.map((b) => b.textContent?.trim())).toEqual([
+        'Detalles del evento',
+        'What’s Hot',
+        'Banner principal',
+      ]);
+    });
+
+    it('shows an empty image state when no event photo is available and renders the image across all 3 placement modes without altering saved data or dirty state', () => {
+      // Initial create state has no images -> empty state rendered instead of broken placeholder img
+      expect(component.hasPreviewImage()).toBe(false);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.phone-cover-img')).toBeNull();
+      const emptyStateEl = fixture.nativeElement.querySelector('.phone-image-empty-state') as HTMLElement;
+      expect(emptyStateEl).toBeTruthy();
+      expect(emptyStateEl.textContent).toContain('No photo yet');
+
+      // Add two existing images and reset dirty state to verify mode switching is purely visual
+      component.existingImages = [
+        { junctionId: 11, url: 'https://api.vamo-app.com/assets/photo-first.jpg' },
+        { junctionId: 12, url: 'https://api.vamo-app.com/assets/photo-second.jpg' },
+      ];
+      component.isDirty = false;
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+
+      expect(component.hasPreviewImage()).toBe(true);
+      expect(fixture.nativeElement.querySelector('.phone-image-empty-state')).toBeNull();
+
+      const imageWrap = fixture.nativeElement.querySelector('.phone-card-image-wrap') as HTMLElement;
+      const coverImg = fixture.nativeElement.querySelector('.phone-cover-img') as HTMLImageElement;
+      expect(coverImg).toBeTruthy();
+      expect(coverImg.getAttribute('src')).toBe('https://api.vamo-app.com/assets/photo-first.jpg');
+      expect(imageWrap.classList.contains('placement-image-event_details')).toBe(true);
+
+      // Switch to What's Hot
+      const whatsHotBtn = fixture.nativeElement.querySelector(
+        '.preview-placement-btn[data-placement="whats_hot"]'
+      ) as HTMLButtonElement;
+      whatsHotBtn.click();
+      fixture.detectChanges();
+
+      expect(component.previewPlacement).toBe('whats_hot');
+      expect(imageWrap.classList.contains('placement-image-whats_hot')).toBe(true);
+      expect(coverImg.getAttribute('src')).toBe('https://api.vamo-app.com/assets/photo-first.jpg');
+      expect(component.isDirty).toBe(false);
+
+      // Switch to Main Banner
+      const mainBannerBtn = fixture.nativeElement.querySelector(
+        '.preview-placement-btn[data-placement="main_banner"]'
+      ) as HTMLButtonElement;
+      mainBannerBtn.click();
+      fixture.detectChanges();
+
+      expect(component.previewPlacement).toBe('main_banner');
+      expect(imageWrap.classList.contains('placement-image-main_banner')).toBe(true);
+      expect(coverImg.getAttribute('src')).toBe('https://api.vamo-app.com/assets/photo-first.jpg');
+      expect(component.isDirty).toBe(false);
+
+      // Selecting the second thumbnail updates the previewed image across modes without mutating existingImages order or dirty state
+      const photoCards = fixture.nativeElement.querySelectorAll('.photo-preview-card');
+      expect(photoCards.length).toBe(2);
+      photoCards[1].click();
+      fixture.detectChanges();
+
+      expect(coverImg.getAttribute('src')).toBe('https://api.vamo-app.com/assets/photo-second.jpg');
+      expect(component.existingImages.map((i) => i.junctionId)).toEqual([11, 12]);
+      expect(component.isDirty).toBe(false);
+    });
+
+    it('scales the entire simulated phone frame proportionally when the preview stage is narrower than 358px', () => {
+      expect(component.simulatedPhoneViewportWidth).toBe(330);
+      expect(component.simulatedPhoneFrameWidth).toBe(358);
+      expect(component.phoneScale).toBe(1);
+
+      // Simulate a narrow mobile stage width (e.g. 286.4px = 0.8x of 358px)
+      component.updatePhonePreviewScale(286.4);
+      fixture.detectChanges();
+
+      expect(component.phoneScale).toBeCloseTo(0.8, 3);
+      const phoneFrame = fixture.nativeElement.querySelector('.phone-frame') as HTMLElement;
+      expect(phoneFrame.style.transform).toContain('scale(0.8)');
+
+      // Restoring full width resets scale to 1
+      component.updatePhonePreviewScale(358);
+      fixture.detectChanges();
+      expect(component.phoneScale).toBe(1);
+    });
+  });
+
 });
 

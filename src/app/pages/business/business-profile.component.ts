@@ -252,6 +252,9 @@ export interface OfferingOption {
                   <p class="logo-desc">
                     {{ 'PORTAL.PROFILE.LOGO_DESC' | translate }}
                   </p>
+                  <p class="logo-size-guidance">
+                    {{ 'PORTAL.PROFILE.LOGO_SIZE_GUIDANCE' | translate }}
+                  </p>
                   <p class="logo-drop-hint">
                     {{ 'PORTAL.PROFILE.LOGO_DRAG_DROP_HINT' | translate }}
                   </p>
@@ -1193,6 +1196,12 @@ export interface OfferingOption {
       font-size: 0.85rem;
       color: var(--vamo-text-muted);
       max-width: 440px;
+    }
+
+    .logo-size-guidance {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--vamo-text);
     }
 
     .logo-drop-hint {

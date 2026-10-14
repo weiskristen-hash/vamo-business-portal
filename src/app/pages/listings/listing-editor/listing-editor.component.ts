@@ -200,20 +200,36 @@ export interface ExistingImage {
             </div>
 
             <div class="form-body">
+              <!-- Photo Size & Safe-Area Guidance -->
+              <div class="photo-upload-guidance" role="note">
+                <p class="photo-guidance-size">{{ 'PORTAL.EVENT_EDITOR.PHOTO_GUIDANCE_SIZE' | translate }}</p>
+                <p class="photo-guidance-safe-area">{{ 'PORTAL.EVENT_EDITOR.PHOTO_GUIDANCE_SAFE_AREA' | translate }}</p>
+              </div>
+
               <!-- Gallery Preview Grid -->
               <div class="gallery-preview-grid">
                 <!-- Existing Images -->
-                <div *ngFor="let img of existingImages; let idx = index" class="photo-preview-card">
+                <div
+                  *ngFor="let img of existingImages; let idx = index"
+                  class="photo-preview-card"
+                  [class.selected-for-preview]="isPreviewImageSelected(img.url)"
+                  (click)="selectPreviewImage(img.url)"
+                >
                   <img [src]="img.url" [alt]="'PORTAL.EVENT_EDITOR.ALT_EXISTING' | translate" class="preview-img" />
                   <span *ngIf="idx === 0 && selectedNewFiles.length === 0" class="cover-badge">{{ 'PORTAL.EVENT_EDITOR.COVER_BADGE' | translate }}</span>
-                  <button type="button" class="remove-photo-btn" (click)="removeExistingImage(img)" [disabled]="isPastEvent" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
+                  <button type="button" class="remove-photo-btn" (click)="$event.stopPropagation(); removeExistingImage(img)" [disabled]="isPastEvent" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
                 </div>
 
                 <!-- Newly Selected Local Files -->
-                <div *ngFor="let preview of newFilePreviews; let idx = index" class="photo-preview-card">
+                <div
+                  *ngFor="let preview of newFilePreviews; let idx = index"
+                  class="photo-preview-card"
+                  [class.selected-for-preview]="isPreviewImageSelected(preview)"
+                  (click)="selectPreviewImage(preview)"
+                >
                   <img [src]="preview" [alt]="'PORTAL.EVENT_EDITOR.ALT_NEW' | translate" class="preview-img" />
                   <span *ngIf="existingImages.length === 0 && idx === 0" class="cover-badge">{{ 'PORTAL.EVENT_EDITOR.COVER_BADGE' | translate }}</span>
-                  <button type="button" class="remove-photo-btn" (click)="removeNewFile(idx)" [disabled]="isPastEvent" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
+                  <button type="button" class="remove-photo-btn" (click)="$event.stopPropagation(); removeNewFile(idx)" [disabled]="isPastEvent" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
                 </div>
 
                 <!-- Upload Dropzone Button -->
@@ -769,81 +785,146 @@ export interface ExistingImage {
         <aside class="editor-preview-col">
           <div class="preview-card-sticky">
             <div class="preview-header-bar">
-              <span class="preview-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.TITLE' | translate }}</span>
+              <div class="preview-header-titles">
+                <span class="preview-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.TITLE' | translate }}</span>
+                <span class="preview-approx-note">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.APPROXIMATE_NOTE' | translate }}</span>
+              </div>
               <span class="live-pill">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.LIVE_SYNC' | translate }}</span>
             </div>
 
-            <div class="phone-frame">
-              <!-- Phone Status Bar Mockup -->
-              <div class="phone-status-bar">
-                <span>9:41</span>
-                <span class="status-icons">📶 🔋</span>
+            <!-- Placement Mode Selector -->
+            <div class="preview-placement-bar">
+              <span class="preview-placement-label" id="preview-placement-label">
+                {{ 'PORTAL.EVENT_EDITOR.PREVIEW.PREVIEW_IMAGE_AS' | translate }}
+              </span>
+              <div class="preview-placement-tabs" role="group" aria-labelledby="preview-placement-label">
+                <button
+                  type="button"
+                  class="preview-placement-btn"
+                  data-placement="event_details"
+                  [class.active]="previewPlacement === 'event_details'"
+                  [attr.aria-pressed]="previewPlacement === 'event_details'"
+                  (click)="setPreviewPlacement('event_details')"
+                >
+                  {{ 'PORTAL.EVENT_EDITOR.PREVIEW.MODE_EVENT_DETAILS' | translate }}
+                </button>
+                <button
+                  type="button"
+                  class="preview-placement-btn"
+                  data-placement="whats_hot"
+                  [class.active]="previewPlacement === 'whats_hot'"
+                  [attr.aria-pressed]="previewPlacement === 'whats_hot'"
+                  (click)="setPreviewPlacement('whats_hot')"
+                >
+                  {{ 'PORTAL.EVENT_EDITOR.PREVIEW.MODE_WHATS_HOT' | translate }}
+                </button>
+                <button
+                  type="button"
+                  class="preview-placement-btn"
+                  data-placement="main_banner"
+                  [class.active]="previewPlacement === 'main_banner'"
+                  [attr.aria-pressed]="previewPlacement === 'main_banner'"
+                  (click)="setPreviewPlacement('main_banner')"
+                >
+                  {{ 'PORTAL.EVENT_EDITOR.PREVIEW.MODE_MAIN_BANNER' | translate }}
+                </button>
               </div>
+            </div>
 
-              <!-- Phone Content Area -->
-              <div class="phone-content">
-                <!-- Cover Image Card -->
-                <div class="phone-card">
-                  <div class="phone-card-image-wrap">
-                    <img
-                      [src]="getPreviewImageUrl()"
-                      [alt]="'PORTAL.EVENT_EDITOR.PREVIEW.COVER_ALT' | translate"
-                      class="phone-cover-img"
-                    />
-                    <div class="phone-overlay-badges">
-                      <span class="phone-category-pill">
-                        {{ getCategoryEmoji(draft.category) }} {{ getCategoryLabel(draft.category) }}
-                      </span>
-                      <span class="phone-price-pill">
-                        {{ formatPreviewPrice() }}
-                      </span>
+            <div
+              #phonePreviewStage
+              class="phone-preview-stage"
+              [style.height.px]="phoneStageHeightPx"
+            >
+              <div
+                #phoneFrameEl
+                class="phone-frame"
+                [style.transform]="phoneScale < 1 ? 'scale(' + phoneScale + ')' : null"
+              >
+                <!-- Phone Status Bar Mockup -->
+                <div class="phone-status-bar">
+                  <span>9:41</span>
+                  <span class="status-icons">📶 🔋</span>
+                </div>
+
+                <!-- Phone Content Area -->
+                <div class="phone-content" [attr.data-placement]="previewPlacement">
+                  <!-- Cover Image Card -->
+                  <div class="phone-card" [ngClass]="'placement-' + previewPlacement">
+                    <div
+                      class="phone-card-image-wrap"
+                      [ngClass]="'placement-image-' + previewPlacement"
+                    >
+                      <img
+                        *ngIf="hasPreviewImage()"
+                        [src]="getPreviewImageUrl()"
+                        [alt]="'PORTAL.EVENT_EDITOR.PREVIEW.COVER_ALT' | translate"
+                        class="phone-cover-img"
+                      />
+                      <div *ngIf="!hasPreviewImage()" class="phone-image-empty-state">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                          <polyline points="21 15 16 10 5 21"></polyline>
+                        </svg>
+                        <span class="empty-state-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.NO_IMAGE_TITLE' | translate }}</span>
+                        <span class="empty-state-hint">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.NO_IMAGE_HINT' | translate }}</span>
+                      </div>
+                      <div class="phone-overlay-badges">
+                        <span class="phone-category-pill">
+                          {{ getCategoryEmoji(draft.category) }} {{ getCategoryLabel(draft.category) }}
+                        </span>
+                        <span class="phone-price-pill">
+                          {{ formatPreviewPrice() }}
+                        </span>
+                      </div>
+
+                      <div *ngIf="draft.promoText && draft.hasPromotion" class="phone-promo-tag">
+                        🎁 {{ draft.promoText }}
+                      </div>
                     </div>
 
-                    <div *ngIf="draft.promoText && draft.hasPromotion" class="phone-promo-tag">
-                      🎁 {{ draft.promoText }}
+                    <div class="phone-card-body">
+                      <div class="phone-mode-row">
+                        <span class="phone-mode-tag">
+                          {{ draft.mode === 'recurring' ? ('PORTAL.EVENT_EDITOR.PREVIEW.RECURRING_TAG' | translate) : ('PORTAL.EVENT_EDITOR.PREVIEW.EVENT_TAG' | translate) }}
+                        </span>
+                        <span class="phone-provider-name">
+                          {{ providerName }}
+                        </span>
+                      </div>
+
+                      <h4 class="phone-title">
+                        {{ draft.name || ('PORTAL.EVENT_EDITOR.PREVIEW.UNTITLED' | translate) }}
+                      </h4>
+
+                      <div class="phone-meta-row">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+                          <line x1="16" y1="2" x2="16" y2="6"></line>
+                          <line x1="8" y1="2" x2="8" y2="6"></line>
+                        </svg>
+                        <span>{{ formatPreviewSchedule() }}</span>
+                      </div>
+
+                      <div class="phone-meta-row" *ngIf="formatPreviewTime()">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        <span>{{ formatPreviewTime() }}</span>
+                      </div>
+
+                      <div class="phone-meta-row" *ngIf="draft.address">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                          <circle cx="12" cy="10" r="3"></circle>
+                        </svg>
+                        <span class="truncate">{{ draft.address }}</span>
+                      </div>
+
+                      <p class="phone-desc" *ngIf="draft.description">{{ draft.description }}</p>
                     </div>
-                  </div>
-
-                  <div class="phone-card-body">
-                    <div class="phone-mode-row">
-                      <span class="phone-mode-tag">
-                        {{ draft.mode === 'recurring' ? ('PORTAL.EVENT_EDITOR.PREVIEW.RECURRING_TAG' | translate) : ('PORTAL.EVENT_EDITOR.PREVIEW.EVENT_TAG' | translate) }}
-                      </span>
-                      <span class="phone-provider-name">
-                        {{ providerName }}
-                      </span>
-                    </div>
-
-                    <h4 class="phone-title">
-                      {{ draft.name || ('PORTAL.EVENT_EDITOR.PREVIEW.UNTITLED' | translate) }}
-                    </h4>
-
-                    <div class="phone-meta-row">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="3" y="4" width="18" height="18" rx="2"></rect>
-                        <line x1="16" y1="2" x2="16" y2="6"></line>
-                        <line x1="8" y1="2" x2="8" y2="6"></line>
-                      </svg>
-                      <span>{{ formatPreviewSchedule() }}</span>
-                    </div>
-
-                    <div class="phone-meta-row" *ngIf="formatPreviewTime()">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <polyline points="12 6 12 12 16 14"></polyline>
-                      </svg>
-                      <span>{{ formatPreviewTime() }}</span>
-                    </div>
-
-                    <div class="phone-meta-row" *ngIf="draft.address">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                        <circle cx="12" cy="10" r="3"></circle>
-                      </svg>
-                      <span class="truncate">{{ draft.address }}</span>
-                    </div>
-
-                    <p class="phone-desc" *ngIf="draft.description">{{ draft.description }}</p>
                   </div>
                 </div>
               </div>
@@ -968,7 +1049,7 @@ export interface ExistingImage {
     /* 2-Column Grid Layout */
     .editor-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 380px;
+      grid-template-columns: minmax(0, 1fr) 400px;
       gap: 32px;
       align-items: start;
     }
@@ -1133,6 +1214,32 @@ export interface ExistingImage {
       line-height: 1.2;
     }
 
+    /* Photo Upload Size & Safe-Area Guidance */
+    .photo-upload-guidance {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      padding: 10px 12px;
+      border-radius: var(--vamo-radius-md);
+      background: var(--vamo-surface-subtle);
+      border: 1px solid var(--vamo-border);
+    }
+
+    .photo-guidance-size {
+      margin: 0;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--vamo-text);
+      line-height: 1.35;
+    }
+
+    .photo-guidance-safe-area {
+      margin: 0;
+      font-size: 0.78rem;
+      color: var(--vamo-text-muted);
+      line-height: 1.4;
+    }
+
     /* Gallery Grid */
     .gallery-preview-grid {
       display: grid;
@@ -1147,6 +1254,13 @@ export interface ExistingImage {
       overflow: hidden;
       border: 1px solid var(--vamo-border);
       background: #0f172a;
+      cursor: pointer;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .photo-preview-card.selected-for-preview {
+      border-color: var(--vamo-primary);
+      box-shadow: 0 0 0 2px rgba(128, 112, 192, 0.28);
     }
 
     .preview-img {
@@ -1633,6 +1747,8 @@ export interface ExistingImage {
     .editor-preview-col {
       position: sticky;
       top: 24px;
+      min-width: 0;
+      max-width: 100%;
     }
 
     .preview-card-sticky {
@@ -1641,13 +1757,23 @@ export interface ExistingImage {
       border-radius: var(--vamo-radius-xl);
       padding: 20px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
     }
 
     .preview-header-bar {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
-      margin-bottom: 16px;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .preview-header-titles {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
 
     .preview-title {
@@ -1658,6 +1784,12 @@ export interface ExistingImage {
       color: var(--vamo-text-muted);
     }
 
+    .preview-approx-note {
+      font-size: 0.72rem;
+      color: var(--vamo-text-muted);
+      line-height: 1.3;
+    }
+
     .live-pill {
       font-size: 0.7rem;
       font-weight: 700;
@@ -1666,18 +1798,84 @@ export interface ExistingImage {
       padding: 2px 8px;
       border-radius: var(--vamo-radius-full);
       text-transform: uppercase;
+      flex-shrink: 0;
     }
 
-    /* Phone Frame Mockup */
-    .phone-frame {
+    /* Image Placement Mode Selector */
+    .preview-placement-bar {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+
+    .preview-placement-label {
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: var(--vamo-text-muted);
+    }
+
+    .preview-placement-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 4px;
+      padding: 3px;
+      background: var(--vamo-surface-subtle);
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
+    }
+
+    .preview-placement-btn {
+      border: none;
+      background: transparent;
+      padding: 6px 6px;
+      border-radius: calc(var(--vamo-radius-md) - 3px);
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: var(--vamo-text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      line-height: 1.2;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .preview-placement-btn:hover {
+      color: var(--vamo-text);
+    }
+
+    .preview-placement-btn.active {
+      background: var(--vamo-surface);
+      color: var(--vamo-primary);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
+
+    /* Proportional Scaling Stage & Phone Frame Mockup */
+    .phone-preview-stage {
       width: 100%;
-      max-width: 330px;
+      min-width: 0;
+      contain: inline-size;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      overflow: hidden;
+    }
+
+    .phone-frame {
+      width: 358px;
+      min-width: 358px;
+      max-width: 358px;
+      box-sizing: border-box;
       margin: 0 auto;
       background: #0f172a;
       border-radius: 28px;
       padding: 12px 10px 18px;
       box-shadow: 0 16px 32px -8px rgba(15, 23, 42, 0.35);
       border: 4px solid #1e293b;
+      transform-origin: top center;
+      flex-shrink: 0;
     }
 
     .phone-status-bar {
@@ -1690,7 +1888,12 @@ export interface ExistingImage {
       padding: 4px 12px 10px;
     }
 
+    /* Simulated mobile viewport: explicit 330 CSS px width */
     .phone-content {
+      width: 330px;
+      min-width: 330px;
+      max-width: 330px;
+      box-sizing: border-box;
       background: #f8fafc;
       border-radius: 20px;
       overflow: hidden;
@@ -1704,15 +1907,102 @@ export interface ExistingImage {
 
     .phone-card-image-wrap {
       position: relative;
-      width: 100%;
-      height: 165px;
+      box-sizing: border-box;
       background: #1e293b;
+      overflow: hidden;
+    }
+
+    /* Event Details: full content width (330px - 24px horizontal padding = 306px) × 288 CSS px */
+    .phone-card-image-wrap.placement-image-event_details {
+      width: calc(100% - 24px);
+      height: 288px;
+      margin: 12px 12px 0;
+      border-radius: 12px;
+    }
+
+    /* Main Banner: full phone viewport width (330px) × 288 CSS px */
+    .phone-card-image-wrap.placement-image-main_banner {
+      width: 100%;
+      height: 288px;
+      margin: 0;
+      border-radius: 0;
+    }
+
+    /* What's Hot: simulated card image at 220 × 140 CSS px */
+    .phone-card-image-wrap.placement-image-whats_hot {
+      width: 220px;
+      height: 140px;
+      margin: 12px auto 0;
+      border-radius: 12px;
+    }
+
+    .phone-card-image-wrap.placement-image-whats_hot .phone-overlay-badges {
+      top: 6px;
+      left: 6px;
+      right: 6px;
+      gap: 4px;
+    }
+
+    .phone-card-image-wrap.placement-image-whats_hot .phone-category-pill {
+      font-size: 0.58rem;
+      padding: 2px 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 132px;
+    }
+
+    .phone-card-image-wrap.placement-image-whats_hot .phone-price-pill {
+      font-size: 0.6rem;
+      padding: 2px 6px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .phone-card-image-wrap.placement-image-whats_hot .phone-promo-tag {
+      bottom: 6px;
+      left: 6px;
+      right: 6px;
+      font-size: 0.58rem;
+      padding: 2px 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .phone-cover-img {
+      display: block;
       width: 100%;
       height: 100%;
       object-fit: cover;
+      object-position: center;
+    }
+
+    .phone-image-empty-state {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 16px;
+      box-sizing: border-box;
+      text-align: center;
+      color: #94a3b8;
+      background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
+    }
+
+    .phone-image-empty-state .empty-state-title {
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+
+    .phone-image-empty-state .empty-state-hint {
+      font-size: 0.68rem;
+      color: #94a3b8;
+      line-height: 1.3;
     }
 
     .phone-overlay-badges {
@@ -1907,11 +2197,11 @@ export interface ExistingImage {
 
     @media (max-width: 1024px) {
       .editor-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
       }
 
       .editor-preview-col {
-        display: none;
+        position: static;
       }
     }
 
@@ -1934,6 +2224,8 @@ export interface ExistingImage {
 })
 export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('mapContainer', { static: false }) mapContainer?: ElementRef<HTMLDivElement>;
+  @ViewChild('phonePreviewStage', { static: false }) phonePreviewStage?: ElementRef<HTMLDivElement>;
+  @ViewChild('phoneFrameEl', { static: false }) phoneFrameEl?: ElementRef<HTMLDivElement>;
 
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -2033,13 +2325,22 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   private marker: any = null;
   private mapInitialized = false;
 
-  // Images State
+  // Images & Mobile Preview Placement State
   existingImages: ExistingImage[] = [];
   removedImageJunctionIds: (number | string)[] = [];
   selectedNewFiles: File[] = [];
   newFilePreviews: string[] = [];
   isPhotoDragOver = false;
   private photoDragDepth = 0;
+
+  previewPlacement: 'event_details' | 'whats_hot' | 'main_banner' = 'event_details';
+  selectedPreviewImageUrl: string | null = null;
+  readonly simulatedPhoneFrameWidth = 358;
+  readonly simulatedPhoneViewportWidth = 330;
+  phoneScale = 1;
+  phoneStageHeightPx: number | null = null;
+  private previewResizeObserver: ResizeObserver | null = null;
+  private readonly onWindowResizeBound = () => this.updatePhonePreviewScale();
 
   async ngOnInit(): Promise<void> {
     const user = this.authService.currentUser;
@@ -2076,17 +2377,35 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       this.checkAndRestoreDraftRecovery();
       this.loadingInitial = false;
       this.cdr.markForCheck();
-      setTimeout(() => this.initMap(), 100);
+      setTimeout(() => {
+        this.initMap();
+        this.initPreviewResizeObserver();
+        this.updatePhonePreviewScale();
+      }, 100);
     }
   }
 
   async ngAfterViewInit(): Promise<void> {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', this.onWindowResizeBound);
+    }
     if (!this.loadingInitial) {
+      this.initPreviewResizeObserver();
+      this.updatePhonePreviewScale();
       await this.initMap();
     }
   }
 
   ngOnDestroy(): void {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', this.onWindowResizeBound);
+    }
+    if (this.previewResizeObserver) {
+      try {
+        this.previewResizeObserver.disconnect();
+      } catch {}
+      this.previewResizeObserver = null;
+    }
     if (this.map) {
       try {
         this.map.remove();
@@ -2185,7 +2504,11 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       this.checkAndRestoreDraftRecovery();
       this.loadingInitial = false;
       this.cdr.markForCheck();
-      setTimeout(() => this.initMap(), 100);
+      setTimeout(() => {
+        this.initMap();
+        this.initPreviewResizeObserver();
+        this.updatePhonePreviewScale();
+      }, 100);
     }
   }
 
@@ -2702,15 +3025,22 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   removeNewFile(index: number): void {
-    URL.revokeObjectURL(this.newFilePreviews[index]);
+    const removedPreview = this.newFilePreviews[index];
+    URL.revokeObjectURL(removedPreview);
     this.selectedNewFiles.splice(index, 1);
     this.newFilePreviews.splice(index, 1);
+    if (this.selectedPreviewImageUrl === removedPreview) {
+      this.selectedPreviewImageUrl = null;
+    }
     this.markDirty();
   }
 
   removeExistingImage(img: ExistingImage): void {
     this.removedImageJunctionIds.push(img.junctionId);
     this.existingImages = this.existingImages.filter((i) => i.junctionId !== img.junctionId);
+    if (this.selectedPreviewImageUrl === img.url) {
+      this.selectedPreviewImageUrl = null;
+    }
     this.markDirty();
   }
 
@@ -2957,7 +3287,34 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     return found ? found.emoji : '📌';
   }
 
+  setPreviewPlacement(mode: 'event_details' | 'whats_hot' | 'main_banner'): void {
+    this.previewPlacement = mode;
+    this.cdr.markForCheck();
+    setTimeout(() => this.updatePhonePreviewScale(), 0);
+  }
+
+  selectPreviewImage(url: string): void {
+    if (!url) return;
+    this.selectedPreviewImageUrl = url;
+    this.cdr.markForCheck();
+  }
+
+  hasPreviewImage(): boolean {
+    return this.newFilePreviews.length > 0 || this.existingImages.length > 0;
+  }
+
+  isPreviewImageSelected(url: string): boolean {
+    return this.hasPreviewImage() && this.getPreviewImageUrl() === url;
+  }
+
   getPreviewImageUrl(): string {
+    if (this.selectedPreviewImageUrl) {
+      const matchesNew = this.newFilePreviews.includes(this.selectedPreviewImageUrl);
+      const matchesExisting = this.existingImages.some((img) => img.url === this.selectedPreviewImageUrl);
+      if (matchesNew || matchesExisting) {
+        return this.selectedPreviewImageUrl;
+      }
+    }
     if (this.newFilePreviews.length > 0) {
       return this.newFilePreviews[0];
     }
@@ -2965,6 +3322,37 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       return this.existingImages[0].url;
     }
     return '/assets/placeholder.png';
+  }
+
+  initPreviewResizeObserver(): void {
+    if (this.previewResizeObserver || typeof window === 'undefined' || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const stageEl = this.phonePreviewStage?.nativeElement;
+    if (!stageEl) return;
+    this.previewResizeObserver = new ResizeObserver(() => {
+      this.updatePhonePreviewScale();
+    });
+    this.previewResizeObserver.observe(stageEl);
+  }
+
+  updatePhonePreviewScale(overrideStageWidth?: number): void {
+    const stageEl = this.phonePreviewStage?.nativeElement;
+    const frameEl = this.phoneFrameEl?.nativeElement;
+    const measuredWidth = typeof overrideStageWidth === 'number'
+      ? overrideStageWidth
+      : (stageEl?.clientWidth || 0);
+
+    if (measuredWidth > 0 && measuredWidth < this.simulatedPhoneFrameWidth) {
+      const nextScale = Number(Math.max(0.5, measuredWidth / this.simulatedPhoneFrameWidth).toFixed(4));
+      this.phoneScale = nextScale;
+      const frameHeight = frameEl?.offsetHeight || 0;
+      this.phoneStageHeightPx = frameHeight > 0 ? Math.ceil(frameHeight * nextScale) : null;
+    } else {
+      this.phoneScale = 1;
+      this.phoneStageHeightPx = null;
+    }
+    this.cdr.markForCheck();
   }
 
   formatPreviewPrice(): string {
