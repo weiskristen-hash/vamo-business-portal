@@ -428,6 +428,158 @@ describe('StripeService', () => {
       expect(r1.status).toBe('confirmed');
       expect(r2.status).toBe('confirmed');
     });
+
+    it('distinguishes full schedule verification from lookup-reported scheduled downgrades and rejects invalid or contradictory pending fields', () => {
+      const reportedBasicDowngradeFixture = {
+        subscriptionId: 'sub_example',
+        subscriptionItemId: 'si_example',
+        status: 'active',
+        cancelAtPeriodEnd: false,
+        currentPeriodStart: 1791888342,
+        currentPeriodEnd: 1794566742,
+        plan: {
+          priceId: 'price_current',
+          productName: 'Advanced Plan',
+          amount: 9900,
+          currency: 'usd',
+          interval: 'month',
+        },
+        pendingPlanName: 'Basic Plan',
+        pendingPeriodEnd: 1794566742,
+        pendingScheduleId: 'sub_sched_example',
+      };
+
+      // Lookup-reported scheduled downgrade (no schedule phases exposed by unchanged flow)
+      expect(
+        service.evaluateScheduledDowngrade(reportedBasicDowngradeFixture, {
+          expectedSubscriptionId: 'sub_example',
+          currentPriceId: 'price_current',
+          targetPriceId: 'price_basic',
+          targetPlanName: 'Basic Plan',
+          targetTier: 'basic',
+          expectedRenewalTimestamp: 1794566742,
+          nowSeconds: 1791900000,
+        })
+      ).toBe('reported_by_lookup');
+
+      // Full schedule verification when schedule phases confirm target priceId and renewal date
+      expect(
+        service.evaluateScheduledDowngrade(
+          {
+            ...reportedBasicDowngradeFixture,
+            schedule: {
+              id: 'sub_sched_example',
+              status: 'active',
+              phases: [
+                { start_date: 1791888342, end_date: 1794566742, items: [{ price: 'price_current' }] },
+                { start_date: 1794566742, items: [{ price: 'price_basic' }] },
+              ],
+            },
+          },
+          {
+            expectedSubscriptionId: 'sub_example',
+            currentPriceId: 'price_current',
+            targetPriceId: 'price_basic',
+            targetPlanName: 'Basic Plan',
+            targetTier: 'basic',
+            expectedRenewalTimestamp: 1794566742,
+            nowSeconds: 1791900000,
+          }
+        )
+      ).toBe('verified_schedule');
+
+      // Missing schedule ID -> unverified
+      expect(
+        service.evaluateScheduledDowngrade(
+          { ...reportedBasicDowngradeFixture, pendingScheduleId: '   ' },
+          {
+            expectedSubscriptionId: 'sub_example',
+            currentPriceId: 'price_current',
+            targetPriceId: 'price_basic',
+            targetPlanName: 'Basic Plan',
+            targetTier: 'basic',
+            expectedRenewalTimestamp: 1794566742,
+            nowSeconds: 1791900000,
+          }
+        )
+      ).toBe('unverified');
+
+      // Mismatched target or loose non-canonical substring -> unverified
+      expect(
+        service.evaluateScheduledDowngrade(
+          { ...reportedBasicDowngradeFixture, pendingPlanName: 'Starter Plan' },
+          {
+            expectedSubscriptionId: 'sub_example',
+            currentPriceId: 'price_current',
+            targetPriceId: 'price_basic',
+            targetPlanName: 'Basic Plan',
+            targetTier: 'basic',
+            expectedRenewalTimestamp: 1794566742,
+            nowSeconds: 1791900000,
+          }
+        )
+      ).toBe('unverified');
+      expect(
+        service.evaluateScheduledDowngrade(
+          { ...reportedBasicDowngradeFixture, pendingPlanName: 'Bas' },
+          {
+            expectedSubscriptionId: 'sub_example',
+            currentPriceId: 'price_current',
+            targetPriceId: 'price_basic',
+            targetPlanName: 'Basic Plan',
+            targetTier: 'basic',
+            expectedRenewalTimestamp: 1794566742,
+            nowSeconds: 1791900000,
+          }
+        )
+      ).toBe('unverified');
+
+      // Invalid/past date or different renewal date -> unverified
+      expect(
+        service.evaluateScheduledDowngrade(reportedBasicDowngradeFixture, {
+          expectedSubscriptionId: 'sub_example',
+          currentPriceId: 'price_current',
+          targetPriceId: 'price_basic',
+          targetPlanName: 'Basic Plan',
+          targetTier: 'basic',
+          expectedRenewalTimestamp: 1794566742,
+          nowSeconds: 1794566742,
+        })
+      ).toBe('unverified');
+      expect(
+        service.evaluateScheduledDowngrade(
+          { ...reportedBasicDowngradeFixture, pendingPeriodEnd: 1799999999 },
+          {
+            expectedSubscriptionId: 'sub_example',
+            currentPriceId: 'price_current',
+            targetPriceId: 'price_basic',
+            targetPlanName: 'Basic Plan',
+            targetTier: 'basic',
+            expectedRenewalTimestamp: 1794566742,
+            nowSeconds: 1791900000,
+          }
+        )
+      ).toBe('unverified');
+
+      // Contradictory schedule evidence -> unverified
+      expect(
+        service.evaluateScheduledDowngrade(
+          {
+            ...reportedBasicDowngradeFixture,
+            schedule: { id: 'sub_sched_example', status: 'canceled' },
+          },
+          {
+            expectedSubscriptionId: 'sub_example',
+            currentPriceId: 'price_current',
+            targetPriceId: 'price_basic',
+            targetPlanName: 'Basic Plan',
+            targetTier: 'basic',
+            expectedRenewalTimestamp: 1794566742,
+            nowSeconds: 1791900000,
+          }
+        )
+      ).toBe('unverified');
+    });
   });
 
   describe('setProviderTier', () => {

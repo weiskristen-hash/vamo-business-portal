@@ -1267,7 +1267,7 @@ export const esTranslations: Record<string, any> = {
       "RENEWS_ON": "Se renueva el",
 
       "SCHEDULED_CHANGE_TITLE": "Cambio de plan programado:",
-      "PENDING_DOWNGRADE_DESC": "La reducción a {{plan}} entrará en vigor el {{date}}.",
+      "PENDING_DOWNGRADE_DESC": "Tu información de facturación muestra el {{plan}} programado para el {{date}}. Tu plan actual seguirá activo hasta esa fecha.",
       "CANCEL_DOWNGRADE_BTN": "Cancelar reducción",
 
       "CURRENT_PLAN": "Plan actual",

@@ -161,37 +161,38 @@ describe('BillingComponent', () => {
       hasVerifiedRenewalSchedule: vi.fn((schedule: any, targetPriceId: string, expectedRenewal: number) =>
         StripeService.prototype.hasVerifiedRenewalSchedule(schedule, targetPriceId, expectedRenewal)
       ),
+      hasContradictoryScheduleEvidence: vi.fn(
+        (schedule: any, pendingScheduleId: string, pendingPeriodEnd: number, currentPriceId: string, targetPriceId?: string) =>
+          StripeService.prototype.hasContradictoryScheduleEvidence.call(
+            stripeServiceSpy,
+            schedule,
+            pendingScheduleId,
+            pendingPeriodEnd,
+            currentPriceId,
+            targetPriceId
+          )
+      ),
+      hasLookupReportedScheduledChange: vi.fn((sub: any, options?: any) =>
+        StripeService.prototype.hasLookupReportedScheduledChange.call(stripeServiceSpy, sub, options)
+      ),
+      evaluateScheduledDowngrade: vi.fn((sub: any, options?: any) =>
+        StripeService.prototype.evaluateScheduledDowngrade.call(stripeServiceSpy, sub, options)
+      ),
       cancelSubscription: vi.fn().mockResolvedValue({}),
       releaseSchedule: vi.fn().mockResolvedValue({}),
       detachPaymentMethod: vi.fn().mockResolvedValue({}),
       setProviderTier: vi.fn().mockResolvedValue({}),
-      tierFromProductName: vi.fn((name: string) => {
-        if (!name) return null;
-        const n = name.toLowerCase();
-        if (n.includes('basic')) return 'basic';
-        if (n.includes('starter')) return 'starter';
-        if (n.includes('advanced')) return 'advanced';
-        return null;
-      }),
-      planTitleKey: vi.fn((name: string | null | undefined) => {
-        if (!name) return '';
-        const n = (name ?? '').toLowerCase();
-        if (n.includes('basic')) return 'PAYMENT.PLANS.BASIC.TITLE';
-        if (n.includes('starter')) return 'PAYMENT.PLANS.STARTER.TITLE';
-        if (n.includes('advanced')) return 'PAYMENT.PLANS.ADVANCED.TITLE';
-        return name;
-      }),
+      tierFromProductName: vi.fn((name: string | null | undefined) =>
+        StripeService.prototype.tierFromProductName(name)
+      ),
+      planTitleKey: vi.fn((name: string | null | undefined) =>
+        StripeService.prototype.planTitleKey.call(stripeServiceSpy, name)
+      ),
       getPlanTitle: vi.fn((name: string | null | undefined) => {
-        if (!name) return '';
-        const n = (name ?? '').toLowerCase();
-        let key = name;
-        if (n.includes('basic')) key = 'PAYMENT.PLANS.BASIC.TITLE';
-        else if (n.includes('starter')) key = 'PAYMENT.PLANS.STARTER.TITLE';
-        else if (n.includes('advanced')) key = 'PAYMENT.PLANS.ADVANCED.TITLE';
-        else return name;
+        if (!name || !name.trim()) return '';
+        const key = stripeServiceSpy.planTitleKey(name);
         const i18n = TestBed.inject(I18nService);
-        const trans = i18n.t(key);
-        return trans && !trans.startsWith('PAYMENT.') ? trans : name;
+        return i18n.t(key);
       }),
       formatPrice: vi.fn((amount: number) => `$${amount / 100}`),
       cleanup: vi.fn(),
@@ -533,47 +534,232 @@ describe('BillingComponent', () => {
       expect(component.successMessage()).toContain('Your downgrade to Starter Plan is scheduled');
     });
 
-    it('6. missing schedule evidence or pending fields alone shows the unverified state and preserves selectedPlan', async () => {
-      component.postsUsed.set(1);
-      component.openChangePlan();
-      component.selectedPlan.set(mockPlans[0]);
+    it('6. reported Basic downgrade fixture clears Verification pending warning, keeps Advanced active, and shows EN/ES dated summary across submission, Refresh billing, and reopening Billing', async () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('en');
 
-      // 6a. Directus pending fields present WITHOUT verified schedule object
-      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
-        ...mockSubscription,
-        pendingPlanName: 'Starter Plan',
-        pendingPeriodEnd: 1702500000,
-        pendingScheduleId: 'sub_sched_disconnected',
-        schedule: null,
-      });
+      const activeAdvancedSubscription: StripeSubscription = {
+        subscriptionId: 'sub_example',
+        subscriptionItemId: 'si_example',
+        status: 'active',
+        cancelAtPeriodEnd: false,
+        currentPeriodStart: 1791888342,
+        currentPeriodEnd: 1794566742,
+        plan: {
+          priceId: 'price_current',
+          productName: 'Advanced Plan',
+          amount: 9900,
+          currency: 'usd',
+          interval: 'month',
+        },
+      };
+
+      const reportedBasicDowngradeSubscription: StripeSubscription = {
+        ...activeAdvancedSubscription,
+        pendingPlanName: 'Basic Plan',
+        pendingPeriodEnd: 1794566742,
+        pendingScheduleId: 'sub_sched_example',
+      };
+
+      component.subscription.set(activeAdvancedSubscription);
+      component.postsUsed.set(2);
+      component.postLimit.set(8);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[1]); // Basic Plan
+      fixture.detectChanges();
+
+      stripeServiceSpy.changeSubscriptionPlan.mockResolvedValueOnce({ status: 'unverified' });
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(reportedBasicDowngradeSubscription);
 
       await component.confirmChangePlan();
+      fixture.detectChanges();
 
+      const expectedEnDate = component.formatDate(1794566742);
+      const expectedEnSummary = `Your billing information shows Basic Plan scheduled for ${expectedEnDate}. Your current plan stays active until then.`;
+
+      // Clears warning, closes/resets change-plan confirmation panel, keeps Advanced active, never updates provider tier early
+      expect(component.planChangeUnverified()).toBe(false);
+      expect(component.errorMessage()).toBeNull();
+      expect(component.showChangePlanSection()).toBe(false);
+      expect(component.selectedPlan()).toBeNull();
       expect(stripeServiceSpy.setProviderTier).not.toHaveBeenCalled();
-      expect(component.successMessage()).toBeNull();
+      expect(component.subscription()?.plan.productName).toBe('Advanced Plan');
+      expect(component.postLimit()).toBe(8);
+      expect(component.isPendingPlan(mockPlans[1])).toBe(true);
+
+      const bannerEl: HTMLElement = fixture.nativeElement.querySelector('.pending-downgrade-banner');
+      expect(bannerEl).toBeTruthy();
+      expect(bannerEl.textContent).toContain(expectedEnSummary);
+      expect(fixture.nativeElement.querySelector('.plan-change-unverified-box')).toBeNull();
+
+      // Spanish summary renders translated plan title and localized date
+      i18n.setLang('es');
+      fixture.detectChanges();
+      const expectedEsDate = component.formatDate(1794566742);
+      const expectedEsSummary = `Tu información de facturación muestra el Plan Básico programado para el ${expectedEsDate}. Tu plan actual seguirá activo hasta esa fecha.`;
+      expect(bannerEl.textContent).toContain(expectedEsSummary);
+      expect(component.successMessage()).toBe(expectedEsSummary);
+      i18n.setLang('en');
+      fixture.detectChanges();
+
+      // Refresh billing performs reads only and resolves the same reported state when initially unverified
+      component.subscription.set(activeAdvancedSubscription);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[1]);
+      stripeServiceSpy.changeSubscriptionPlan.mockClear();
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(activeAdvancedSubscription);
+      await component.confirmChangePlan();
       expect(component.planChangeUnverified()).toBe(true);
-      expect(component.selectedPlan()).toEqual(mockPlans[0]);
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledTimes(1);
+
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(reportedBasicDowngradeSubscription);
+      await component.refreshBilling();
+      fixture.detectChanges();
+
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledTimes(1); // read-only refresh
+      expect(component.planChangeUnverified()).toBe(false);
+      expect(component.errorMessage()).toBeNull();
+      expect(component.showChangePlanSection()).toBe(false);
+      expect(component.selectedPlan()).toBeNull();
+      expect(fixture.nativeElement.querySelector('.pending-downgrade-banner')?.textContent).toContain(
+        expectedEnSummary
+      );
+
+      // Reopening Billing (loadInitialData) shows consistent Scheduled status and disables selecting/confirming Basic Plan
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(reportedBasicDowngradeSubscription);
+      await component.loadInitialData();
+      component.openChangePlan();
+      fixture.detectChanges();
+
+      expect(component.planChangeUnverified()).toBe(false);
+      expect(component.isPendingPlan(mockPlans[1])).toBe(true);
+      expect(fixture.nativeElement.querySelector('.badge-scheduled')?.textContent?.trim()).toBe('Scheduled');
+
+      // Selecting or reconfirming the same scheduled target cannot call the mutation
+      stripeServiceSpy.changeSubscriptionPlan.mockClear();
+      component.selectPlan(mockPlans[1]);
+      expect(component.selectedPlan()).toBeNull();
+      component.selectedPlan.set(mockPlans[1]); // even if forced on component state
+      fixture.detectChanges();
+      expect(
+        fixture.nativeElement.querySelector('.checkout-panel button.btn-primary')
+      ).toBeNull();
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+    });
+
+    it('6b. missing schedule ID, mismatched target, invalid/past date, different renewal date, or contradictory schedule evidence retains unverified state and prevents blind resubmission', async () => {
+      const activeAdvancedSubscription: StripeSubscription = {
+        subscriptionId: 'sub_example',
+        subscriptionItemId: 'si_example',
+        status: 'active',
+        cancelAtPeriodEnd: false,
+        currentPeriodStart: 1791888342,
+        currentPeriodEnd: 1794566742,
+        plan: {
+          priceId: 'price_current',
+          productName: 'Advanced Plan',
+          amount: 9900,
+          currency: 'usd',
+          interval: 'month',
+        },
+      };
+
+      component.subscription.set(activeAdvancedSubscription);
+      component.postsUsed.set(1);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[1]); // Basic Plan
+
+      // Missing pendingScheduleId -> unverified
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
+        ...activeAdvancedSubscription,
+        pendingPlanName: 'Basic Plan',
+        pendingPeriodEnd: 1794566742,
+        pendingScheduleId: '',
+      });
+      await component.confirmChangePlan();
+      fixture.detectChanges();
+
+      expect(component.planChangeUnverified()).toBe(true);
+      expect(component.selectedPlan()).toEqual(mockPlans[1]);
       expect(component.errorMessage()).toBe(
         'We couldn’t verify the plan change yet. Refresh billing to check its status.'
       );
+      expect(fixture.nativeElement.querySelector('.pending-downgrade-banner')).toBeNull();
+      expect(component.isPendingPlan(mockPlans[1])).toBe(false);
 
-      // 6b. Schedule with wrong renewal date or wrong target priceId remains unverified
+      // Unknown mutation outcome cannot be blindly resubmitted; Confirm Plan Change is disabled and handler blocks repeat calls
+      stripeServiceSpy.changeSubscriptionPlan.mockClear();
+      const confirmBtn: HTMLButtonElement = fixture.nativeElement.querySelector(
+        '.checkout-panel .checkout-actions .btn-primary'
+      );
+      expect(confirmBtn.disabled).toBe(true);
+      component.selectPlan(mockPlans[1]); // clicking same target keeps unverified state
+      expect(component.planChangeUnverified()).toBe(true);
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+
+      // Mismatched target (Starter Plan instead of Basic Plan) on Refresh -> remains unverified
       stripeServiceSpy.getSubscription.mockResolvedValueOnce({
-        ...mockSubscription,
+        ...activeAdvancedSubscription,
+        pendingPlanName: 'Starter Plan',
+        pendingPeriodEnd: 1794566742,
+        pendingScheduleId: 'sub_sched_example',
+      });
+      await component.refreshBilling();
+      expect(component.planChangeUnverified()).toBe(true);
+
+      // Invalid/past date -> remains unverified
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
+        ...activeAdvancedSubscription,
+        currentPeriodEnd: 1702500000,
+        pendingPlanName: 'Basic Plan',
+        pendingPeriodEnd: 1702500000,
+        pendingScheduleId: 'sub_sched_example',
+      });
+      await component.refreshBilling();
+      expect(component.planChangeUnverified()).toBe(true);
+
+      // Different renewal date (pendingPeriodEnd !== currentPeriodEnd) -> remains unverified
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
+        ...activeAdvancedSubscription,
+        pendingPlanName: 'Basic Plan',
+        pendingPeriodEnd: 1799999999,
+        pendingScheduleId: 'sub_sched_example',
+      });
+      await component.refreshBilling();
+      expect(component.planChangeUnverified()).toBe(true);
+
+      // Contradictory schedule evidence (wrong renewal date or wrong target priceId in schedule phases) -> remains unverified
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
+        ...activeAdvancedSubscription,
+        pendingPlanName: 'Basic Plan',
+        pendingPeriodEnd: 1794566742,
+        pendingScheduleId: 'sub_sched_example',
         schedule: {
-          id: 'sub_sched_wrong_date',
+          id: 'sub_sched_example',
           status: 'active',
           phases: [
-            { start_date: 1700000000, end_date: 1709999999, items: [{ price: mockPlans[1].id }] },
-            { start_date: 1709999999, items: [{ price: mockPlans[0].id }] },
+            { start_date: 1791888342, end_date: 1799999999, items: [{ price: 'price_current' }] },
+            { start_date: 1799999999, items: [{ price: mockPlans[0].id }] },
           ],
         },
       });
       await component.refreshBilling();
-
-      expect(component.successMessage()).toBeNull();
       expect(component.planChangeUnverified()).toBe(true);
+      expect(component.selectedPlan()).toEqual(mockPlans[1]);
+
+      // Selecting a different target clears unverified state and allows beginning a deliberate new change
+      component.selectPlan(mockPlans[0]); // Starter Plan
       expect(component.selectedPlan()).toEqual(mockPlans[0]);
+      expect(component.planChangeUnverified()).toBe(false);
+      expect(component.errorMessage()).toBeNull();
+
+      // Cancel/close while verification is pending closes panel without implying a Stripe schedule was canceled
+      component.planChangeUnverified.set(true);
+      component.closeChangePlan();
+      expect(stripeServiceSpy.releaseSchedule).not.toHaveBeenCalled();
+      expect(component.successMessage()).toBeNull();
     });
 
     it('7. refreshBilling checks authoritative state without repeating the mutation', async () => {
