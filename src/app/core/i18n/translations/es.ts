@@ -1319,6 +1319,8 @@ export const esTranslations: Record<string, any> = {
       "USE_NEW_CARD": "Usar una tarjeta nueva",
       "EXP_DATE": "Vence {{month}}/{{year}}",
       "EXPIRES": "Vence {{month}}/{{year}}",
+      "PLAN_CHANGE_PAYMENT_METHOD_NOTICE": "Este cambio de plan usará tu método de pago actual registrado.",
+      "PLAN_CHANGE_UNVERIFIED_BADGE": "Verificación pendiente",
 
       "SAVED_METHODS_TITLE": "Métodos de pago guardados",
       "BTN_REMOVE": "Eliminar",
@@ -1331,6 +1333,7 @@ export const esTranslations: Record<string, any> = {
       "BTN_CONTINUE_PAYMENT": "Continuar al pago",
       "BTN_UPDATING_PLAN": "Actualizando plan…",
       "BTN_CONFIRM_PLAN_CHANGE": "Confirmar cambio de plan",
+      "BTN_REFRESH_BILLING": "Actualizar facturación",
 
       "HISTORY_TITLE": "Facturas y recibos",
       "HISTORY_LOADING": "Cargando facturas…",
@@ -1350,6 +1353,10 @@ export const esTranslations: Record<string, any> = {
       "CANCEL_MODAL_CONFIRM": "Confirmar cancelación",
       "CANCEL_MODAL_CANCELING": "Cancelando…",
       "CLOSE_DIALOG": "Cerrar diálogo de cancelación",
+
+      "ERROR_ACTION_REQUIRED": "Se requiere autenticación bancaria adicional para completar este cambio. Tu plan aún no ha sido actualizado.",
+      "ERROR_PAYMENT_PENDING": "Tu pago aún está pendiente de confirmación. Tu plan no se actualizará hasta que se confirme el pago.",
+      "ERROR_PLAN_CHANGE_UNVERIFIED": "Todavía no pudimos confirmar el cambio de plan. Actualiza la sección de facturación para revisar su estado.",
 
       "SUCCESS_ACTIVE": "¡Éxito! Tu cuenta ya está activa en el plan {{plan}}.",
       "SUCCESS_UPGRADED": "Tu plan se ha actualizado a {{plan}}.",

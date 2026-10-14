@@ -45,13 +45,27 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   <div *ngIf="errorMessage()" class="alert alert-danger" role="alert">
     <span class="alert-icon">⚠️</span>
     <span class="alert-text">{{ errorMessage() }}</span>
-    <button type="button" class="alert-close" (click)="errorMessage.set(null)" [attr.aria-label]="'PORTAL.BILLING.DISMISS' | translate">✕</button>
+    <button type="button" class="alert-close" (click)="errorMessage.set(null); activeErrorPayload.set(null)" [attr.aria-label]="'PORTAL.BILLING.DISMISS' | translate">✕</button>
   </div>
 
   <div *ngIf="successMessage()" class="alert alert-success" role="alert">
     <span class="alert-icon">✓</span>
     <span class="alert-text">{{ successMessage() }}</span>
     <button type="button" class="alert-close" (click)="successMessage.set(null); activeSuccessPayload.set(null)" [attr.aria-label]="'PORTAL.BILLING.DISMISS' | translate">✕</button>
+  </div>
+
+  <!-- Subscription Read Failure Banner (separate from "no subscription") -->
+  <div *ngIf="subscriptionLoadError() && !planChangeUnverified()" class="alert alert-warning subscription-read-error-banner" role="status">
+    <span class="alert-icon">⚠️</span>
+    <span class="alert-text">{{ 'PORTAL.ERRORS.LOAD_FAILED' | translate }}</span>
+    <button
+      type="button"
+      class="btn btn-secondary btn-sm refresh-billing-btn"
+      [disabled]="isLoading()"
+      (click)="refreshBilling()"
+    >
+      {{ 'PORTAL.BILLING.BTN_REFRESH_BILLING' | translate }}
+    </button>
   </div>
 
   <!-- Loading State -->
@@ -186,7 +200,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
     <!-- ── CHANGE PLAN SECTION OR NEW SUBSCRIPTION SELECTION ─────────── -->
     <section
-      *ngIf="subscription() === null || showChangePlanSection()"
+      *ngIf="(subscription() === null && !subscriptionLoadError()) || showChangePlanSection()"
       class="plans-selection-section"
       aria-labelledby="plans-heading"
     >
@@ -334,15 +348,36 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
           <span *ngIf="couponError()" class="form-error">{{ couponError() }}</span>
         </div>
 
-        <!-- Saved Payment Method Selection (if any exist) -->
-        <div *ngIf="savedMethods().length > 0 && !paymentActive()" class="saved-methods-selection">
+        <!-- Current Payment Method Notice (for plan changes on existing subscriptions) -->
+        <p *ngIf="subscription() !== null" class="plan-change-payment-notice" role="note">
+          {{ 'PORTAL.BILLING.PLAN_CHANGE_PAYMENT_METHOD_NOTICE' | translate }}
+        </p>
+
+        <!-- Pending / Unverified Plan Change State -->
+        <div *ngIf="planChangeUnverified()" class="plan-change-unverified-box" role="status">
+          <div class="unverified-header">
+            <span class="badge badge-unverified">{{ 'PORTAL.BILLING.PLAN_CHANGE_UNVERIFIED_BADGE' | translate }}</span>
+            <span class="unverified-text">{{ 'PORTAL.BILLING.ERROR_PLAN_CHANGE_UNVERIFIED' | translate }}</span>
+          </div>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm refresh-billing-btn"
+            [disabled]="isLoading() || isProcessingPayment()"
+            (click)="refreshBilling()"
+          >
+            {{ 'PORTAL.BILLING.BTN_REFRESH_BILLING' | translate }}
+          </button>
+        </div>
+
+        <!-- Saved Payment Methods Selection (if available for new subscriptions) -->
+        <div *ngIf="!paymentActive() && subscription() === null && savedMethods().length > 0" class="saved-methods-selection">
           <label class="section-label">{{ 'PORTAL.BILLING.SELECT_PAYMENT_METHOD' | translate }}</label>
           <div class="saved-methods-radios">
             <div
               *ngFor="let pm of savedMethods()"
               class="saved-card-radio-item"
               [class.saved-card-radio-item--selected]="selectedSavedMethod()?.id === pm.id"
-              (click)="selectedSavedMethod.set(selectedSavedMethod()?.id === pm.id ? null : pm)"
+              (click)="selectSavedMethod(pm)"
             >
               <input
                 type="radio"
@@ -356,10 +391,10 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             </div>
             <div
               class="saved-card-radio-item"
-              [class.saved-card-radio-item--selected]="selectedSavedMethod() === null"
+              [class.saved-card-radio-item--selected]="!selectedSavedMethod()"
               (click)="selectedSavedMethod.set(null)"
             >
-              <input type="radio" name="savedMethodChoice" [checked]="selectedSavedMethod() === null" [attr.aria-label]="'PORTAL.BILLING.USE_NEW_CARD' | translate" />
+              <input type="radio" name="savedMethodChoice" [checked]="!selectedSavedMethod()" [attr.aria-label]="'PORTAL.BILLING.USE_NEW_CARD' | translate" />
               <span>{{ 'PORTAL.BILLING.USE_NEW_CARD' | translate }}</span>
             </div>
           </div>
@@ -414,13 +449,13 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               [disabled]="isLoading()"
               (click)="confirmChangePlan()"
             >
-              {{ isLoading() ? ('PORTAL.BILLING.BTN_UPDATING_PLAN' | translate) : ('PORTAL.BILLING.BTN_CONFIRM_PLAN_CHANGE' | translate) }}
+              {{ (isLoading() ? 'PORTAL.BILLING.BTN_UPDATING_PLAN' : 'PORTAL.BILLING.BTN_CONFIRM_PLAN_CHANGE') | translate }}
             </button>
 
             <button
               type="button"
               class="btn btn-secondary"
-              (click)="selectedPlan.set(null); showChangePlanSection.set(false)"
+              (click)="closeChangePlan()"
             >
               {{ 'PORTAL.COMMON.CANCEL' | translate }}
             </button>
@@ -1033,6 +1068,11 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
     color: #92400e;
   }
 
+  &.badge-unverified {
+    background: rgba(245, 158, 11, 0.18);
+    color: #92400e;
+  }
+
   &.badge-success {
     background: rgba(16, 185, 129, 0.15);
     color: #065f46;
@@ -1064,6 +1104,39 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
       font-size: 0.9rem;
       color: var(--vamo-text-muted);
       margin: 0;
+    }
+  }
+
+  .plan-change-payment-notice {
+    font-size: 0.875rem;
+    color: var(--vamo-text);
+    background: var(--vamo-surface-subtle);
+    border: 1px solid var(--vamo-border);
+    border-radius: 8px;
+    padding: 0.65rem 0.9rem;
+    margin: 0;
+    line-height: 1.45;
+  }
+
+  .plan-change-unverified-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    background: var(--vamo-warning-bg);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    color: #92400e;
+
+    .unverified-header {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+      flex: 1;
     }
   }
 }
@@ -1179,7 +1252,8 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 /* Stripe Mount Box */
 .payment-elements-container {
   max-width: 520px;
-  background: #1c1c2e;
+  background: #ffffff;
+  border: 1px solid var(--vamo-border);
   padding: 1.25rem;
   border-radius: 12px;
 }
@@ -1524,8 +1598,16 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   // Core State Signals
   subscription = signal<StripeSubscription | null | undefined>(undefined);
+  subscriptionLoadError = signal(false);
   plans = signal<StripePlan[]>([]);
   selectedPlan = signal<StripePlan | null>(null);
+  planChangeUnverified = signal(false);
+  pendingPlanChangeTarget = signal<{
+    plan: StripePlan;
+    isUpgrade: boolean;
+    previousPriceId: string;
+    expectedRenewalEnd: number;
+  } | null>(null);
   isLoading = signal(false);
   errorMessage = signal<string | null>(null);
   successMessage = signal<string | null>(null);
@@ -1540,7 +1622,7 @@ export class BillingComponent implements OnInit, OnDestroy {
   showChangePlanSection = signal(false);
   showCancelConfirmModal = signal(false);
 
-  // Saved Payment Methods
+  // Saved Payment Methods (initial checkout & Saved Payment Methods section)
   savedMethods = signal<SavedPaymentMethod[]>([]);
   selectedSavedMethod = signal<SavedPaymentMethod | null>(null);
   deletingMethodId = signal<string | null>(null);
@@ -1563,9 +1645,12 @@ export class BillingComponent implements OnInit, OnDestroy {
   paymentRequiresSetup = signal(false);
   isProcessingPayment = signal(false);
   activeSuccessPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
+  activeErrorPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
 
   private stripeInstance: Stripe | null = null;
   private stripeElements: StripeElements | null = null;
+  private planChangeInFlight = false;
+  private paymentSubmissionInFlight = false;
 
   constructor() {
     effect(() => {
@@ -1578,6 +1663,10 @@ export class BillingComponent implements OnInit, OnDestroy {
         }
         this.successMessage.set(this.i18n.t(payload.key, params));
       }
+      const errPayload = this.activeErrorPayload();
+      if (errPayload) {
+        this.errorMessage.set(this.i18n.t(errPayload.key, errPayload.params));
+      }
     });
     effect(() => {
       const secret = this.clientSecret();
@@ -1586,6 +1675,16 @@ export class BillingComponent implements OnInit, OnDestroy {
         setTimeout(() => this.mountPaymentElement(secret), 100);
       }
     });
+  }
+
+  private setTranslatedError(key: string, params?: Record<string, any>): void {
+    this.activeErrorPayload.set({ key, params });
+    this.errorMessage.set(this.i18n.t(key, params));
+  }
+
+  private clearError(): void {
+    this.activeErrorPayload.set(null);
+    this.errorMessage.set(null);
   }
 
   planTitleKey(name: string | null | undefined): string {
@@ -1621,7 +1720,7 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   async loadInitialData(): Promise<void> {
     this.isLoading.set(true);
-    this.errorMessage.set(null);
+    this.clearError();
     try {
       const user = await this.authService.waitForInitialAuth();
       if (!user?.email) {
@@ -1636,6 +1735,7 @@ export class BillingComponent implements OnInit, OnDestroy {
         this.loadBillingHistory(),
       ]);
     } catch (err) {
+      this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'load'));
     } finally {
       this.isLoading.set(false);
@@ -1643,6 +1743,7 @@ export class BillingComponent implements OnInit, OnDestroy {
   }
 
   async loadSubscription(email: string): Promise<void> {
+    this.subscriptionLoadError.set(false);
     try {
       const sub = await this.stripeService.getSubscription(email);
       this.subscription.set(sub);
@@ -1652,8 +1753,10 @@ export class BillingComponent implements OnInit, OnDestroy {
         this.prefillPromoCodeIfEligible();
       }
     } catch {
-      this.subscription.set(null);
-      this.prefillPromoCodeIfEligible();
+      this.subscriptionLoadError.set(true);
+      if (this.subscription() === undefined) {
+        this.subscription.set(null);
+      }
     }
   }
 
@@ -1663,7 +1766,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       this.plans.set(plans);
     } catch {
       this.plans.set([]);
-      this.errorMessage.set(this.i18n.t('PORTAL.BILLING.EMPTY_PLANS'));
+      this.setTranslatedError('PORTAL.BILLING.EMPTY_PLANS');
     }
   }
 
@@ -1750,23 +1853,31 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (this.isCurrentPlan(plan) || this.isPendingPlan(plan)) return;
     const nextPlan = this.selectedPlan()?.id === plan.id ? null : plan;
     this.selectedPlan.set(nextPlan);
-    this.errorMessage.set(null);
+    this.planChangeUnverified.set(false);
+    this.pendingPlanChangeTarget.set(null);
+    this.clearError();
     if (nextPlan) {
       this.prefillPromoCodeIfEligible();
     }
   }
 
+  selectSavedMethod(pm: SavedPaymentMethod): void {
+    this.selectedSavedMethod.set(this.selectedSavedMethod()?.id === pm.id ? null : pm);
+  }
+
   async proceedToPayment(): Promise<void> {
+    if (this.paymentSubmissionInFlight || this.isProcessingPayment()) return;
     const plan = this.selectedPlan();
     const user = this.authService.currentUser;
     if (!plan || !user?.email) return;
     if (this.plans().length === 0) {
-      this.errorMessage.set(this.i18n.t('PORTAL.BILLING.EMPTY_PLANS'));
+      this.setTranslatedError('PORTAL.BILLING.EMPTY_PLANS');
       return;
     }
 
+    this.paymentSubmissionInFlight = true;
     this.isProcessingPayment.set(true);
-    this.errorMessage.set(null);
+    this.clearError();
     try {
       const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email;
       const promoId = this.promoResult()?.promoCodeId;
@@ -1785,6 +1896,7 @@ export class BillingComponent implements OnInit, OnDestroy {
           ? await this.stripeService.confirmSetupWithSavedMethod(result.clientSecret, saved.id)
           : await this.stripeService.confirmWithSavedMethod(result.clientSecret, saved.id);
         if (error) {
+          this.activeErrorPayload.set(null);
           this.errorMessage.set(this.errorService.toCustomerMessage(error, 'save'));
           return;
         }
@@ -1795,9 +1907,11 @@ export class BillingComponent implements OnInit, OnDestroy {
         this.paymentActive.set(true);
       }
     } catch (err: any) {
+      this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'save'));
     } finally {
       this.isProcessingPayment.set(false);
+      this.paymentSubmissionInFlight = false;
     }
   }
 
@@ -1811,20 +1925,24 @@ export class BillingComponent implements OnInit, OnDestroy {
       this.stripeElements = elements;
       this.stripeReady.set(true);
     } catch (err: any) {
+      this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'load'));
     }
   }
 
   async confirmPayment(): Promise<void> {
+    if (this.paymentSubmissionInFlight || this.isProcessingPayment()) return;
     if (!this.stripeInstance || !this.stripeElements) return;
+    this.paymentSubmissionInFlight = true;
     this.isProcessingPayment.set(true);
-    this.errorMessage.set(null);
+    this.clearError();
     try {
       const { error } = this.paymentRequiresSetup()
         ? await this.stripeService.confirmSetup(this.stripeInstance, this.stripeElements)
         : await this.stripeService.confirmPayment(this.stripeInstance, this.stripeElements);
 
       if (error) {
+        this.activeErrorPayload.set(null);
         this.errorMessage.set(this.errorService.toCustomerMessage(error, 'save'));
       } else {
         const plan = this.selectedPlan();
@@ -1833,9 +1951,11 @@ export class BillingComponent implements OnInit, OnDestroy {
         }
       }
     } catch (err: any) {
+      this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'save'));
     } finally {
       this.isProcessingPayment.set(false);
+      this.paymentSubmissionInFlight = false;
     }
   }
 
@@ -1850,11 +1970,27 @@ export class BillingComponent implements OnInit, OnDestroy {
   }
 
   private async finalizeSubscriptionSuccess(plan: StripePlan): Promise<void> {
-    await this.stripeService.setProviderTier(plan.tier).catch(() => {});
     this.paymentActive.set(false);
     this.clientSecret.set(null);
     this.paymentRequiresSetup.set(false);
     this.stripeReady.set(false);
+
+    // Reload authoritative state before updating tier or navigating back to draft
+    const user = this.authService.currentUser;
+    if (user?.email) {
+      await this.loadSubscription(user.email);
+      await this.loadBillingHistory();
+      await this.loadSavedMethods();
+    }
+
+    const isSubscriptionActive =
+      !this.subscriptionLoadError() && ['active', 'trialing'].includes(this.subscription()?.status ?? '');
+    if (!isSubscriptionActive) {
+      this.setTranslatedError('PORTAL.BILLING.ERROR_PAYMENT_PENDING');
+      return;
+    }
+
+    await this.stripeService.setProviderTier(plan.tier).catch(() => {});
     this.selectedPlan.set(null);
     this.selectedSavedMethod.set(null);
     this.showChangePlanSection.set(false);
@@ -1863,24 +1999,14 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.activeSuccessPayload.set({ key: 'PORTAL.BILLING.SUCCESS_ACTIVE', params: { planKey, plan: planTitle } });
     this.successMessage.set(this.i18n.t('PORTAL.BILLING.SUCCESS_ACTIVE', { plan: planTitle }));
 
-    // Reload state
-    const user = this.authService.currentUser;
-    if (user?.email) {
-      await this.loadSubscription(user.email);
-      await this.loadBillingHistory();
-      await this.loadSavedMethods();
-    }
-    const isConfirmedActive = !user?.email || ['active', 'trialing'].includes(this.subscription()?.status ?? '');
-    if (isConfirmedActive) {
-      clearSavedPromoCode();
-      this.promoDismissedInCheckout = false;
-      this.promoResult.set(null);
-      this.couponCode.set('');
-      this.couponError.set(null);
-    }
+    clearSavedPromoCode();
+    this.promoDismissedInCheckout = false;
+    this.promoResult.set(null);
+    this.couponCode.set('');
+    this.couponError.set(null);
     // Resume only after the API confirms the subscription. The editor rechecks
     // quota when the user chooses Publish; checkout never publishes for them.
-    if (this.returnEventId && ['active', 'trialing'].includes(this.subscription()?.status ?? '')) {
+    if (this.returnEventId && isSubscriptionActive) {
       await this.returnToDraft();
     }
   }
@@ -1889,18 +2015,29 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   openChangePlan(): void {
     this.showChangePlanSection.set(true);
-    this.errorMessage.set(null);
+    this.selectedSavedMethod.set(null);
+    this.planChangeUnverified.set(false);
+    this.pendingPlanChangeTarget.set(null);
+    this.clearError();
     this.successMessage.set(null);
   }
 
   closeChangePlan(): void {
+    if (this.paymentActive()) {
+      this.cancelPayment();
+    }
     this.showChangePlanSection.set(false);
     this.selectedPlan.set(null);
+    this.selectedSavedMethod.set(null);
+    this.planChangeUnverified.set(false);
+    this.pendingPlanChangeTarget.set(null);
     this.downgradeWarning.set(null);
     this.bypassDowngradeCheck = false;
+    this.clearError();
   }
 
   async confirmChangePlan(): Promise<void> {
+    if (this.planChangeInFlight || this.isLoading() || this.isProcessingPayment()) return;
     const sub = this.subscription();
     const newPlan = this.selectedPlan();
     if (!sub || !newPlan) return;
@@ -1917,10 +2054,22 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.bypassDowngradeCheck = false;
     this.downgradeWarning.set(null);
 
+    this.planChangeInFlight = true;
     this.isLoading.set(true);
-    this.errorMessage.set(null);
+    this.planChangeUnverified.set(false);
+    this.clearError();
+    this.successMessage.set(null);
+
+    const targetContext = {
+      plan: newPlan,
+      isUpgrade,
+      previousPriceId: sub.plan.priceId,
+      expectedRenewalEnd: sub.currentPeriodEnd,
+    };
+    this.pendingPlanChangeTarget.set(targetContext);
+
     try {
-      await this.stripeService.changeSubscriptionPlan(
+      const result = await this.stripeService.changeSubscriptionPlan(
         sub.subscriptionId,
         sub.subscriptionItemId,
         newPlan.id,
@@ -1928,37 +2077,187 @@ export class BillingComponent implements OnInit, OnDestroy {
         newPlan.name,
         sub.currentPeriodStart,
         sub.currentPeriodEnd,
-        sub.plan.priceId
+        sub.plan.priceId,
       );
 
-      // If upgrade, sync immediately
-      if (isUpgrade) {
-        await this.stripeService.setProviderTier(newPlan.tier).catch(() => {});
+      const status = result?.status;
+      if (status === 'requires_action') {
+        this.pendingPlanChangeTarget.set(null);
+        if (result.message) {
+          this.activeErrorPayload.set(null);
+          this.errorMessage.set(result.message);
+        } else {
+          this.setTranslatedError('PORTAL.BILLING.ERROR_ACTION_REQUIRED');
+        }
+        return;
+      }
+      if (status === 'pending_payment') {
+        this.pendingPlanChangeTarget.set(null);
+        if (result.message) {
+          this.activeErrorPayload.set(null);
+          this.errorMessage.set(result.message);
+        } else {
+          this.setTranslatedError('PORTAL.BILLING.ERROR_PAYMENT_PENDING');
+        }
+        return;
+      }
+      if (status === 'failed') {
+        this.pendingPlanChangeTarget.set(null);
+        this.activeErrorPayload.set(null);
+        this.errorMessage.set(
+          this.errorService.toCustomerMessage(result.message || new Error('Plan change failed'), 'save')
+        );
+        return;
       }
 
-      this.showChangePlanSection.set(false);
-      this.selectedPlan.set(null);
-      const planKey = this.planTitleKey(newPlan.name);
-      const planTitle = this.getPlanTitle(newPlan.name);
-      const msgKey = isUpgrade
-        ? 'PORTAL.BILLING.SUCCESS_UPGRADED'
-        : 'PORTAL.BILLING.SUCCESS_DOWNGRADE_SCHEDULED';
-      this.activeSuccessPayload.set({ key: msgKey, params: { planKey, plan: planTitle } });
-      this.successMessage.set(
-        isUpgrade
-          ? this.i18n.t('PORTAL.BILLING.SUCCESS_UPGRADED', { plan: planTitle })
-          : this.i18n.t('PORTAL.BILLING.SUCCESS_DOWNGRADE_SCHEDULED', { plan: planTitle })
-      );
-
+      // Re-fetch authoritative subscription/schedule state before reporting completion or updating tier
       const user = this.authService.currentUser;
       if (user?.email) {
         await this.loadSubscription(user.email);
       }
+
+      await this.verifyAndApplyPlanChange(targetContext);
     } catch (err: any) {
+      this.pendingPlanChangeTarget.set(null);
+      this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'save'));
     } finally {
       this.isLoading.set(false);
+      this.planChangeInFlight = false;
     }
+  }
+
+  async refreshBilling(): Promise<void> {
+    if (this.planChangeInFlight || this.isLoading() || this.isProcessingPayment()) return;
+    const user = this.authService.currentUser;
+    if (!user?.email) return;
+
+    this.isLoading.set(true);
+    this.clearError();
+    try {
+      await Promise.all([
+        this.loadSubscription(user.email),
+        this.loadBillingHistory(),
+      ]);
+
+      const pendingTarget = this.pendingPlanChangeTarget();
+      if (pendingTarget) {
+        await this.verifyAndApplyPlanChange(pendingTarget);
+      }
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  private checkVerifiedSchedule(
+    schedule: StripeSubscription['schedule'],
+    targetPriceId: string,
+    expectedRenewalEnd: number,
+  ): boolean {
+    if (typeof this.stripeService.hasVerifiedRenewalSchedule === 'function') {
+      return this.stripeService.hasVerifiedRenewalSchedule(schedule, targetPriceId, expectedRenewalEnd);
+    }
+    return StripeService.prototype.hasVerifiedRenewalSchedule.call(
+      this.stripeService,
+      schedule,
+      targetPriceId,
+      expectedRenewalEnd,
+    );
+  }
+
+  private async verifyAndApplyPlanChange(target: {
+    plan: StripePlan;
+    isUpgrade: boolean;
+    previousPriceId: string;
+    expectedRenewalEnd: number;
+  }): Promise<boolean> {
+    const refreshed = this.subscription();
+    if (this.subscriptionLoadError() || !refreshed) {
+      this.planChangeUnverified.set(true);
+      this.setTranslatedError('PORTAL.BILLING.ERROR_PLAN_CHANGE_UNVERIFIED');
+      return false;
+    }
+
+    if (target.isUpgrade) {
+      if (refreshed.paymentIntentStatus === 'requires_action') {
+        this.planChangeUnverified.set(false);
+        this.pendingPlanChangeTarget.set(null);
+        this.setTranslatedError('PORTAL.BILLING.ERROR_ACTION_REQUIRED');
+        return false;
+      }
+
+      const hasPendingOrFailedPayment =
+        ['past_due', 'unpaid', 'incomplete', 'incomplete_expired'].includes(refreshed.status) ||
+        ['open', 'uncollectible', 'draft', 'void'].includes(refreshed.latestInvoiceStatus ?? '') ||
+        ['requires_payment_method', 'requires_confirmation', 'processing', 'canceled'].includes(
+          refreshed.paymentIntentStatus ?? ''
+        ) ||
+        Boolean(refreshed.pendingUpdate);
+
+      if (hasPendingOrFailedPayment) {
+        this.planChangeUnverified.set(false);
+        this.pendingPlanChangeTarget.set(null);
+        this.setTranslatedError('PORTAL.BILLING.ERROR_PAYMENT_PENDING');
+        return false;
+      }
+
+      const isRefreshedActive = ['active', 'trialing'].includes(refreshed.status);
+      const isTargetPriceVerified = refreshed.plan?.priceId === target.plan.id;
+      if (!isRefreshedActive || !isTargetPriceVerified) {
+        this.planChangeUnverified.set(true);
+        this.setTranslatedError('PORTAL.BILLING.ERROR_PLAN_CHANGE_UNVERIFIED');
+        return false;
+      }
+
+      await this.stripeService.setProviderTier(target.plan.tier).catch(() => {});
+    } else {
+      // Downgrades must keep the current plan active and have an authoritative schedule
+      // confirming both target priceId and renewal timing. Never rely solely on Directus
+      // pending fields and never accept immediate downgrade as a fallback.
+      const isCurrentPlanStillActive =
+        ['active', 'trialing'].includes(refreshed.status) &&
+        refreshed.plan?.priceId === target.previousPriceId;
+      const isScheduleVerified = this.checkVerifiedSchedule(
+        refreshed.schedule,
+        target.plan.id,
+        target.expectedRenewalEnd,
+      );
+
+      if (!isCurrentPlanStillActive || !isScheduleVerified) {
+        this.planChangeUnverified.set(true);
+        this.setTranslatedError('PORTAL.BILLING.ERROR_PLAN_CHANGE_UNVERIFIED');
+        return false;
+      }
+
+      if (!refreshed.pendingPlanName || !refreshed.pendingPeriodEnd) {
+        this.subscription.set({
+          ...refreshed,
+          pendingPlanName: refreshed.pendingPlanName ?? target.plan.name,
+          pendingPeriodEnd: refreshed.pendingPeriodEnd ?? target.expectedRenewalEnd,
+          pendingScheduleId: refreshed.pendingScheduleId ?? refreshed.schedule?.id ?? null,
+        });
+      }
+    }
+
+    this.planChangeUnverified.set(false);
+    this.pendingPlanChangeTarget.set(null);
+    this.clearError();
+    this.showChangePlanSection.set(false);
+    this.selectedPlan.set(null);
+    this.selectedSavedMethod.set(null);
+
+    const planKey = this.planTitleKey(target.plan.name);
+    const planTitle = this.getPlanTitle(target.plan.name);
+    const msgKey = target.isUpgrade
+      ? 'PORTAL.BILLING.SUCCESS_UPGRADED'
+      : 'PORTAL.BILLING.SUCCESS_DOWNGRADE_SCHEDULED';
+    this.activeSuccessPayload.set({ key: msgKey, params: { planKey, plan: planTitle } });
+    this.successMessage.set(
+      target.isUpgrade
+        ? this.i18n.t('PORTAL.BILLING.SUCCESS_UPGRADED', { plan: planTitle })
+        : this.i18n.t('PORTAL.BILLING.SUCCESS_DOWNGRADE_SCHEDULED', { plan: planTitle })
+    );
+    return true;
   }
 
   confirmDowngradeAnyway(): void {
@@ -1975,7 +2274,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     const sub = this.subscription();
     if (!sub?.pendingScheduleId) return;
     this.isLoading.set(true);
-    this.errorMessage.set(null);
+    this.clearError();
     try {
       await this.stripeService.releaseSchedule(sub.pendingScheduleId);
       this.successMessage.set(this.i18n.t('PORTAL.BILLING.SUCCESS_DOWNGRADE_CANCELED'));
@@ -1984,6 +2283,7 @@ export class BillingComponent implements OnInit, OnDestroy {
         await this.loadSubscription(user.email);
       }
     } catch (err: any) {
+      this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'save'));
     } finally {
       this.isLoading.set(false);
@@ -2004,7 +2304,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     const sub = this.subscription();
     if (!sub) return;
     this.isLoading.set(true);
-    this.errorMessage.set(null);
+    this.clearError();
     try {
       await this.stripeService.cancelSubscription(sub.subscriptionId, true);
       this.showCancelConfirmModal.set(false);
@@ -2016,6 +2316,7 @@ export class BillingComponent implements OnInit, OnDestroy {
         await this.loadSubscription(user.email);
       }
     } catch (err: any) {
+      this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'save'));
     } finally {
       this.isLoading.set(false);
@@ -2026,7 +2327,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     const sub = this.subscription();
     if (!sub) return;
     this.isLoading.set(true);
-    this.errorMessage.set(null);
+    this.clearError();
     try {
       await this.stripeService.cancelSubscription(sub.subscriptionId, false);
       this.successMessage.set(this.i18n.t('PORTAL.BILLING.SUCCESS_REACTIVATED'));
@@ -2035,6 +2336,7 @@ export class BillingComponent implements OnInit, OnDestroy {
         await this.loadSubscription(user.email);
       }
     } catch (err: any) {
+      this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'save'));
     } finally {
       this.isLoading.set(false);
@@ -2045,7 +2347,7 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   async deletePaymentMethod(pm: SavedPaymentMethod): Promise<void> {
     this.deletingMethodId.set(pm.id);
-    this.errorMessage.set(null);
+    this.clearError();
     try {
       await this.stripeService.detachPaymentMethod(pm.id);
       this.savedMethods.update((list) => list.filter((m) => m.id !== pm.id));
@@ -2053,6 +2355,7 @@ export class BillingComponent implements OnInit, OnDestroy {
         this.selectedSavedMethod.set(null);
       }
     } catch (err: any) {
+      this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'delete'));
     } finally {
       this.deletingMethodId.set(null);
@@ -2086,7 +2389,11 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   isPendingPlan(plan: StripePlan): boolean {
     const sub = this.subscription();
-    if (!sub?.pendingPlanName) return false;
+    if (!sub) return false;
+    if (this.checkVerifiedSchedule(sub.schedule, plan.id, sub.currentPeriodEnd)) {
+      return true;
+    }
+    if (!sub.pendingPlanName) return false;
     return plan.name.toLowerCase() === sub.pendingPlanName.toLowerCase();
   }
 }

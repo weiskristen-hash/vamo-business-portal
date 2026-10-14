@@ -295,11 +295,11 @@ describe('StripeService', () => {
       });
     });
 
-    it('should call change plan flow with proration metadata', async () => {
+    it('should call change plan flow with compatible payload only and return unverified on empty HTTP 200 response', async () => {
       runtimeConfig.updateConfig({ stripeChangeSubscriptionFlow: 'flow-change' });
 
       const postSpy = vi.spyOn(service, 'flowPost').mockResolvedValueOnce({});
-      await service.changeSubscriptionPlan(
+      const res = await service.changeSubscriptionPlan(
         'sub_1',
         'si_1',
         'price_adv',
@@ -320,6 +320,113 @@ describe('StripeService', () => {
         currentPeriodEnd: 1702500000,
         currentPriceId: 'price_basic',
       });
+      const sentPayload = postSpy.mock.calls[0][1] as Record<string, unknown>;
+      expect(Object.keys(sentPayload).sort()).toEqual([
+        'currentPeriodEnd',
+        'currentPeriodStart',
+        'currentPriceId',
+        'isUpgrade',
+        'newPlanName',
+        'newPriceId',
+        'subscriptionId',
+        'subscriptionItemId',
+      ]);
+      expect(res.status).toBe('unverified');
+    });
+
+    it('should treat null or disconnected change_result responses as unverified rather than confirmed', async () => {
+      runtimeConfig.updateConfig({ stripeChangeSubscriptionFlow: 'flow-change' });
+      const postSpy = vi.spyOn(service, 'flowPost');
+
+      postSpy.mockResolvedValueOnce(null);
+      const nullRes = await service.changeSubscriptionPlan(
+        'sub_1', 'si_1', 'price_adv', true, 'Advanced Plan', 1700000000, 1702500000, 'price_basic'
+      );
+      expect(nullRes.status).toBe('unverified');
+
+      postSpy.mockResolvedValueOnce({ change_result: null });
+      const disconnectedRes = await service.changeSubscriptionPlan(
+        'sub_1', 'si_1', 'price_starter', false, 'Starter Plan', 1700000000, 1702500000, 'price_basic'
+      );
+      expect(disconnectedRes.status).toBe('unverified');
+    });
+
+    it('should normalize requires_action, pending_payment, confirmed upgrade, and scheduled downgrade responses', async () => {
+      runtimeConfig.updateConfig({ stripeChangeSubscriptionFlow: 'flow-change' });
+      const postSpy = vi.spyOn(service, 'flowPost');
+
+      postSpy.mockResolvedValueOnce({
+        change_result: { status: 'requires_action', clientSecret: 'pi_3ds_secret' },
+      });
+      const actionRes = await service.changeSubscriptionPlan(
+        'sub_1', 'si_1', 'price_adv', true, 'Advanced Plan', 1700000000, 1702500000, 'price_basic'
+      );
+      expect(actionRes.status).toBe('requires_action');
+      expect(actionRes.clientSecret).toBe('pi_3ds_secret');
+
+      postSpy.mockResolvedValueOnce({
+        change_result: { status: 'incomplete' },
+      });
+      const pendingRes = await service.changeSubscriptionPlan(
+        'sub_1', 'si_1', 'price_adv', true, 'Advanced Plan', 1700000000, 1702500000, 'price_basic'
+      );
+      expect(pendingRes.status).toBe('pending_payment');
+
+      // Pending fields alone without verified schedule phases/timing must return unverified
+      postSpy.mockResolvedValueOnce({
+        change_result: { scheduleId: 'sub_sched_42', pendingPlanName: 'Starter Plan' },
+      });
+      const unverifiedDowngrade = await service.changeSubscriptionPlan(
+        'sub_1', 'si_1', 'price_starter', false, 'Starter Plan', 1700000000, 1702500000, 'price_basic'
+      );
+      expect(unverifiedDowngrade.status).toBe('unverified');
+
+      // Schedule confirming target priceId and renewal timing returns scheduled
+      postSpy.mockResolvedValueOnce({
+        change_result: {
+          id: 'sub_sched_42',
+          object: 'subscription_schedule',
+          status: 'active',
+          phases: [
+            { start_date: 1700000000, end_date: 1702500000, items: [{ price: 'price_basic' }] },
+            { start_date: 1702500000, items: [{ price: 'price_starter' }] },
+          ],
+        },
+      });
+      const schedRes = await service.changeSubscriptionPlan(
+        'sub_1', 'si_1', 'price_starter', false, 'Starter Plan', 1700000000, 1702500000, 'price_basic'
+      );
+      expect(schedRes.status).toBe('scheduled');
+      expect(schedRes.scheduleId).toBe('sub_sched_42');
+    });
+
+    it('should deduplicate concurrent identical changeSubscriptionPlan calls', async () => {
+      runtimeConfig.updateConfig({ stripeChangeSubscriptionFlow: 'flow-change' });
+      let resolveFlow!: (value: any) => void;
+      const postSpy = vi.spyOn(service, 'flowPost').mockReturnValueOnce(
+        new Promise((res) => {
+          resolveFlow = res;
+        })
+      );
+
+      const p1 = service.changeSubscriptionPlan(
+        'sub_1', 'si_1', 'price_adv', true, 'Advanced Plan', 1700000000, 1702500000, 'price_basic'
+      );
+      const p2 = service.changeSubscriptionPlan(
+        'sub_1', 'si_1', 'price_adv', true, 'Advanced Plan', 1700000000, 1702500000, 'price_basic'
+      );
+
+      expect(postSpy).toHaveBeenCalledTimes(1);
+      resolveFlow({
+        change_result: {
+          status: 'active',
+          priceId: 'price_adv',
+          paymentIntentStatus: 'succeeded',
+        },
+      });
+      const [r1, r2] = await Promise.all([p1, p2]);
+      expect(r1.status).toBe('confirmed');
+      expect(r2.status).toBe('confirmed');
     });
   });
 

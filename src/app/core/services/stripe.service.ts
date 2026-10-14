@@ -7,6 +7,39 @@ import { I18nService } from '../i18n/i18n.service';
 import { readItems } from '@directus/sdk';
 import { directusClient } from '../directus/directus-client';
 
+export interface StripeSubscriptionSchedulePhase {
+  startDate?: number | null;
+  endDate?: number | null;
+  start_date?: number | null;
+  end_date?: number | null;
+  priceId?: string | null;
+  price?: string | { id?: string } | null;
+  items?: Array<{
+    price?: string | { id?: string } | null;
+    priceId?: string | null;
+  }>;
+}
+
+export interface StripeSubscriptionSchedule {
+  id?: string | null;
+  status?: string | null;
+  targetPriceId?: string | null;
+  priceId?: string | null;
+  renewalDate?: number | null;
+  effectiveAt?: number | null;
+  startDate?: number | null;
+  start_date?: number | null;
+  nextPhase?: {
+    priceId?: string | null;
+    price?: string | { id?: string } | null;
+    startDate?: number | null;
+    start_date?: number | null;
+    endDate?: number | null;
+    end_date?: number | null;
+  } | null;
+  phases?: StripeSubscriptionSchedulePhase[] | null;
+}
+
 export interface StripeSubscription {
   subscriptionId: string;
   subscriptionItemId: string;
@@ -22,8 +55,13 @@ export interface StripeSubscription {
     interval: string;
   };
   pendingPlanName?: string | null;
+  pendingPriceId?: string | null;
   pendingPeriodEnd?: number | null;
   pendingScheduleId?: string | null;
+  schedule?: StripeSubscriptionSchedule | null;
+  latestInvoiceStatus?: string | null;
+  paymentIntentStatus?: string | null;
+  pendingUpdate?: unknown;
 }
 
 export interface BillingHistoryItem {
@@ -88,6 +126,27 @@ export interface BoostAvailabilitySlot {
 export interface BoostAvailability {
   mainBanner: BoostAvailabilitySlot;
   whatsHot: BoostAvailabilitySlot;
+}
+
+export type PlanChangeOutcomeStatus =
+  | 'confirmed'
+  | 'scheduled'
+  | 'unverified'
+  | 'pending_payment'
+  | 'requires_action'
+  | 'failed';
+
+export interface PlanChangeResult {
+  status: PlanChangeOutcomeStatus;
+  subscriptionId?: string;
+  priceId?: string;
+  planName?: string;
+  scheduleId?: string | null;
+  pendingPlanName?: string | null;
+  pendingPeriodEnd?: number | null;
+  clientSecret?: string | null;
+  paymentIntentStatus?: string | null;
+  message?: string;
 }
 
 export const CANONICAL_TIER_FEATURES: Record<'starter' | 'basic' | 'advanced', { maxPosts: number; features: string[] }> = {
@@ -488,7 +547,11 @@ export class StripeService {
       throw new Error('Subscription lookup is not configured.');
     }
     const data = await this.flowPost(flowId, { email });
-    return data?.subscription ?? null;
+    const sub = data?.subscription ?? null;
+    if (sub && data?.schedule && sub.schedule === undefined) {
+      return { ...sub, schedule: data.schedule };
+    }
+    return sub;
   }
 
   async getPlanLimits(): Promise<{ productName: string; max_posts: number }[]> {
@@ -514,6 +577,8 @@ export class StripeService {
     });
   }
 
+  private inFlightPlanChanges = new Map<string, Promise<PlanChangeResult>>();
+
   async changeSubscriptionPlan(
     subscriptionId: string,
     subscriptionItemId: string,
@@ -523,12 +588,19 @@ export class StripeService {
     currentPeriodStart: number,
     currentPeriodEnd: number,
     currentPriceId: string,
-  ): Promise<void> {
+  ): Promise<PlanChangeResult> {
     const flowId = runtimeConfig.stripeChangeSubscriptionFlow;
     if (!flowId) {
       throw new Error('Change subscription flow is not configured.');
     }
-    await this.flowPost(flowId, {
+
+    const lockKey = `${subscriptionId}:${subscriptionItemId}:${newPriceId}:${isUpgrade ? 'upgrade' : 'downgrade'}:${currentPeriodEnd}`;
+    const existing = this.inFlightPlanChanges.get(lockKey);
+    if (existing) {
+      return existing;
+    }
+
+    const payload = {
       subscriptionId,
       subscriptionItemId,
       newPriceId,
@@ -537,7 +609,221 @@ export class StripeService {
       currentPeriodStart,
       currentPeriodEnd,
       currentPriceId,
-    });
+    };
+
+    const execution = (async (): Promise<PlanChangeResult> => {
+      const raw = await this.flowPost(flowId, payload);
+      return this.normalizePlanChangeResponse(
+        raw,
+        isUpgrade,
+        subscriptionId,
+        newPriceId,
+        newPlanName,
+        currentPeriodEnd,
+      );
+    })();
+
+    this.inFlightPlanChanges.set(lockKey, execution);
+    try {
+      return await execution;
+    } finally {
+      this.inFlightPlanChanges.delete(lockKey);
+    }
+  }
+
+  hasVerifiedRenewalSchedule(
+    schedule: StripeSubscriptionSchedule | null | undefined,
+    targetPriceId: string,
+    expectedRenewalTimestamp: number,
+  ): boolean {
+    if (
+      !schedule ||
+      typeof schedule !== 'object' ||
+      !targetPriceId ||
+      !Number.isFinite(expectedRenewalTimestamp) ||
+      expectedRenewalTimestamp <= 0
+    ) {
+      return false;
+    }
+
+    if (
+      schedule.status &&
+      ['canceled', 'released', 'completed'].includes(String(schedule.status).toLowerCase())
+    ) {
+      return false;
+    }
+
+    if (Array.isArray(schedule.phases)) {
+      const matchesPhase = schedule.phases.some((phase) => {
+        const phaseStart = phase?.start_date ?? phase?.startDate;
+        if (phaseStart !== expectedRenewalTimestamp) return false;
+        const directPhasePrice =
+          phase?.priceId ??
+          (typeof phase?.price === 'string' ? phase.price : phase?.price?.id);
+        if (directPhasePrice === targetPriceId) return true;
+        if (Array.isArray(phase?.items)) {
+          return phase.items.some((item) => {
+            const itemPrice =
+              item?.priceId ??
+              (typeof item?.price === 'string' ? item.price : item?.price?.id);
+            return itemPrice === targetPriceId;
+          });
+        }
+        return false;
+      });
+      if (matchesPhase) return true;
+    }
+
+    if (schedule.nextPhase && typeof schedule.nextPhase === 'object') {
+      const nextStart = schedule.nextPhase.startDate ?? schedule.nextPhase.start_date;
+      const nextPrice =
+        schedule.nextPhase.priceId ??
+        (typeof schedule.nextPhase.price === 'string'
+          ? schedule.nextPhase.price
+          : schedule.nextPhase.price?.id);
+      if (nextStart === expectedRenewalTimestamp && nextPrice === targetPriceId) {
+        return true;
+      }
+    }
+
+    const directStart =
+      schedule.renewalDate ??
+      schedule.effectiveAt ??
+      schedule.startDate ??
+      schedule.start_date;
+    const directPrice = schedule.targetPriceId ?? schedule.priceId;
+    if (directStart === expectedRenewalTimestamp && directPrice === targetPriceId) {
+      return true;
+    }
+
+    return false;
+  }
+
+  normalizePlanChangeResponse(
+    raw: any,
+    isUpgrade: boolean,
+    subscriptionId: string,
+    newPriceId: string,
+    newPlanName: string,
+    currentPeriodEnd: number,
+  ): PlanChangeResult {
+    const body = raw?.change_result ?? raw?.extract_result ?? raw?.result ?? raw?.data ?? raw;
+    if (!body || typeof body !== 'object' || Object.keys(body).length === 0) {
+      return { status: 'unverified' };
+    }
+
+    if (body?.stripeError || body?.error || body?.status === 'failed') {
+      return {
+        status: 'failed',
+        message:
+          typeof body?.error === 'string'
+            ? body.error
+            : (body?.error?.message ?? body?.stripeError ?? body?.message),
+      };
+    }
+
+    const piStatus =
+      body?.paymentIntentStatus ??
+      body?.latest_invoice?.payment_intent?.status ??
+      body?.payment_intent?.status ??
+      null;
+    const clientSecret =
+      body?.clientSecret ??
+      body?.latest_invoice?.payment_intent?.client_secret ??
+      body?.payment_intent?.client_secret ??
+      null;
+
+    if (
+      body?.status === 'requires_action' ||
+      body?.requiresAction === true ||
+      piStatus === 'requires_action'
+    ) {
+      return {
+        status: 'requires_action',
+        clientSecret,
+        paymentIntentStatus: 'requires_action',
+        message: body?.message,
+      };
+    }
+
+    const subStatus =
+      body?.subscriptionStatus ?? body?.subscription?.status ?? body?.status ?? null;
+    const invStatus =
+      body?.invoiceStatus ?? body?.latestInvoiceStatus ?? body?.latest_invoice?.status ?? null;
+    const pendingUpdate =
+      body?.pendingUpdate ?? body?.pending_update ?? body?.subscription?.pending_update ?? null;
+
+    if (
+      subStatus === 'pending_payment' ||
+      subStatus === 'incomplete' ||
+      subStatus === 'incomplete_expired' ||
+      subStatus === 'past_due' ||
+      subStatus === 'unpaid' ||
+      body?.paymentPending === true ||
+      Boolean(pendingUpdate) ||
+      piStatus === 'processing' ||
+      piStatus === 'requires_payment_method' ||
+      piStatus === 'requires_confirmation' ||
+      piStatus === 'canceled' ||
+      (isUpgrade && invStatus && invStatus !== 'paid' && piStatus !== 'succeeded')
+    ) {
+      return {
+        status: 'pending_payment',
+        clientSecret,
+        paymentIntentStatus: piStatus,
+        message: body?.message,
+      };
+    }
+
+    if (!isUpgrade) {
+      const scheduleCandidate: StripeSubscriptionSchedule | null =
+        body?.schedule ??
+        (body?.object === 'subscription_schedule' || Array.isArray(body?.phases) || body?.nextPhase
+          ? body
+          : null);
+      if (this.hasVerifiedRenewalSchedule(scheduleCandidate, newPriceId, currentPeriodEnd)) {
+        return {
+          status: 'scheduled',
+          scheduleId:
+            scheduleCandidate?.id ??
+            body?.scheduleId ??
+            body?.pendingScheduleId ??
+            (typeof body?.id === 'string' && body.id.startsWith('sub_sched_') ? body.id : null),
+          priceId: newPriceId,
+          pendingPlanName: body?.pendingPlanName ?? newPlanName,
+          pendingPeriodEnd: currentPeriodEnd,
+        };
+      }
+      return { status: 'unverified' };
+    }
+
+    const observedPriceId =
+      body?.priceId ??
+      body?.plan?.priceId ??
+      body?.subscription?.plan?.priceId ??
+      body?.items?.data?.[0]?.price?.id ??
+      body?.subscription?.items?.data?.[0]?.price?.id ??
+      null;
+    const isSubActive = subStatus === 'active' || subStatus === 'trialing';
+    const isPaymentConfirmed =
+      piStatus === 'succeeded' ||
+      invStatus === 'paid' ||
+      body?.paymentVerified === true ||
+      (body?.status === 'confirmed' && !invStatus && !piStatus);
+
+    if (observedPriceId === newPriceId && isSubActive && isPaymentConfirmed) {
+      return {
+        status: 'confirmed',
+        subscriptionId:
+          body?.subscriptionId ??
+          body?.subscription?.id ??
+          (typeof body?.id === 'string' && body.id.startsWith('sub_') ? body.id : subscriptionId),
+        priceId: newPriceId,
+        planName: body?.planName ?? newPlanName,
+      };
+    }
+
+    return { status: 'unverified' };
   }
 
   async releaseSchedule(scheduleId: string): Promise<void> {
