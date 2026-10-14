@@ -1521,11 +1521,12 @@ describe('ListingEditorComponent', () => {
       expect(component.hasPreviewImage()).toBe(true);
       expect(fixture.nativeElement.querySelector('.phone-image-empty-state')).toBeNull();
 
-      const imageWrap = fixture.nativeElement.querySelector('.phone-card-image-wrap') as HTMLElement;
-      const coverImg = fixture.nativeElement.querySelector('.phone-cover-img') as HTMLImageElement;
+      let imageWrap = fixture.nativeElement.querySelector('.phone-card-image-wrap') as HTMLElement;
+      let coverImg = fixture.nativeElement.querySelector('.phone-cover-img') as HTMLImageElement;
       expect(coverImg).toBeTruthy();
       expect(coverImg.getAttribute('src')).toBe('https://api.vamo-app.com/assets/photo-first.jpg');
       expect(imageWrap.classList.contains('placement-image-event_details')).toBe(true);
+      expect(fixture.nativeElement.querySelector('.phone-view-event-details')).toBeTruthy();
 
       // Switch to What's Hot
       const whatsHotBtn = fixture.nativeElement.querySelector(
@@ -1534,7 +1535,10 @@ describe('ListingEditorComponent', () => {
       whatsHotBtn.click();
       fixture.detectChanges();
 
+      imageWrap = fixture.nativeElement.querySelector('.phone-card-image-wrap') as HTMLElement;
+      coverImg = fixture.nativeElement.querySelector('.phone-cover-img') as HTMLImageElement;
       expect(component.previewPlacement).toBe('whats_hot');
+      expect(fixture.nativeElement.querySelector('.phone-view-whats-hot')).toBeTruthy();
       expect(imageWrap.classList.contains('placement-image-whats_hot')).toBe(true);
       expect(coverImg.getAttribute('src')).toBe('https://api.vamo-app.com/assets/photo-first.jpg');
       expect(component.isDirty).toBe(false);
@@ -1546,7 +1550,10 @@ describe('ListingEditorComponent', () => {
       mainBannerBtn.click();
       fixture.detectChanges();
 
+      imageWrap = fixture.nativeElement.querySelector('.phone-card-image-wrap') as HTMLElement;
+      coverImg = fixture.nativeElement.querySelector('.phone-cover-img') as HTMLImageElement;
       expect(component.previewPlacement).toBe('main_banner');
+      expect(fixture.nativeElement.querySelector('.phone-view-main-banner')).toBeTruthy();
       expect(imageWrap.classList.contains('placement-image-main_banner')).toBe(true);
       expect(coverImg.getAttribute('src')).toBe('https://api.vamo-app.com/assets/photo-first.jpg');
       expect(component.isDirty).toBe(false);
@@ -1557,28 +1564,105 @@ describe('ListingEditorComponent', () => {
       photoCards[1].click();
       fixture.detectChanges();
 
+      coverImg = fixture.nativeElement.querySelector('.phone-cover-img') as HTMLImageElement;
       expect(coverImg.getAttribute('src')).toBe('https://api.vamo-app.com/assets/photo-second.jpg');
       expect(component.existingImages.map((i) => i.junctionId)).toEqual([11, 12]);
       expect(component.isDirty).toBe(false);
     });
 
-    it('scales the entire simulated phone frame proportionally when the preview stage is narrower than 358px', () => {
-      expect(component.simulatedPhoneViewportWidth).toBe(330);
-      expect(component.simulatedPhoneFrameWidth).toBe(358);
-      expect(component.phoneScale).toBe(1);
+    it('renders distinct mobile app structures for Event Details, What’s Hot, and Main Banner placements', () => {
+      component.existingImages = [
+        { junctionId: 21, url: 'https://api.vamo-app.com/assets/beach-party.jpg' },
+      ];
+      component.draft.name = 'Sunset Rooftop Sessions';
+      component.draft.description = 'First paragraph of event details.\n\nSecond paragraph after blank line.';
+      component.draft.address = 'Calle Pedro Clisante, Sosúa';
+      component.draft.price = '1500';
+      component.draft.hasPromotion = true;
+      component.draft.promoText = '2x1 cocktails before 8 PM';
+      component.draft.mode = 'recurring';
+      component.draft.recurring = { days: ['fri', 'sat'] };
+      component.draft.from = '20:00';
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
 
-      // Simulate a narrow mobile stage width (e.g. 286.4px = 0.8x of 358px)
-      component.updatePhonePreviewScale(286.4);
+      // 1. Event Details mode: full-width hero, meta rows, 3 consumer action buttons, description glass card, promotion glass card
+      expect(component.previewPlacement).toBe('event_details');
+      expect(fixture.nativeElement.querySelector('.phone-view-event-details')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.phone-details-actions')).toBeTruthy();
+      expect(fixture.nativeElement.querySelectorAll('.action-icon-btn').length).toBe(3);
+      expect(fixture.nativeElement.querySelector('.phone-desc')?.textContent).toBe(
+        'First paragraph of event details.\n\nSecond paragraph after blank line.'
+      );
+      expect(fixture.nativeElement.querySelector('.phone-promo-glass-card .phone-promo-body')?.textContent?.trim()).toBe(
+        '2x1 cocktails before 8 PM'
+      );
+      // No hero placement badges unless the event actually has banner/what's hot placement
+      expect(fixture.nativeElement.querySelector('.phone-hero-badges')).toBeNull();
+
+      component.originalEvent = { id: 'evt-1', is_main_banner: true, is_whats_hot: true } as any;
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      const heroBadges = fixture.nativeElement.querySelectorAll('.hero-badge');
+      expect(heroBadges.length).toBe(1);
+      expect(heroBadges[0].textContent).toContain('Fully Featured');
+
+      // 2. What’s Hot mode: home-screen horizontal card with pink title, yellow promo badge, and no full event description body
+      component.setPreviewPlacement('whats_hot');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.phone-view-whats-hot')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.phone-whats-hot-card')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.whats-hot-promo-badge')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.whats-hot-card-title')?.textContent?.trim()).toBe(
+        'Sunset Rooftop Sessions'
+      );
+      expect(fixture.nativeElement.querySelector('.phone-desc')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.phone-details-actions')).toBeNull();
+
+      // 3. Main Banner mode: home-screen full-width hero banner with bottom overlay, recurring + promo icons, and no full event description body
+      component.setPreviewPlacement('main_banner');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.phone-view-main-banner')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.phone-banner-overlay')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.phone-banner-title')?.textContent?.trim()).toBe(
+        'Sunset Rooftop Sessions'
+      );
+      expect(fixture.nativeElement.querySelector('.phone-banner-repeat-icon')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.phone-banner-promo-icon')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.phone-desc')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.phone-details-actions')).toBeNull();
+    });
+
+    it('scales the simulated phone frame uniformly by both width and height so the full phone fits in view', () => {
+      expect(component.simulatedPhoneViewportWidth).toBe(330);
+      expect(component.simulatedPhoneViewportHeight).toBe(560);
+      expect(component.simulatedPhoneFrameWidth).toBe(358);
+      expect(component.simulatedPhoneFrameHeight).toBe(624);
+
+      // Width-constrained case (286.4px width = 0.8x of 358px, plenty of height)
+      component.updatePhonePreviewScale(286.4, 800);
       fixture.detectChanges();
 
       expect(component.phoneScale).toBeCloseTo(0.8, 3);
+      expect(component.phoneStageWidthPx).toBe(Math.ceil(358 * component.phoneScale));
+      expect(component.phoneStageHeightPx).toBe(Math.ceil(624 * component.phoneScale));
       const phoneFrame = fixture.nativeElement.querySelector('.phone-frame') as HTMLElement;
       expect(phoneFrame.style.transform).toContain('scale(0.8)');
 
-      // Restoring full width resets scale to 1
-      component.updatePhonePreviewScale(358);
+      // Height-constrained case (full 358px width, but only 468px vertical space = 0.75x of 624px)
+      component.updatePhonePreviewScale(358, 468);
+      fixture.detectChanges();
+
+      expect(component.phoneScale).toBeCloseTo(0.75, 3);
+      expect(component.phoneStageWidthPx).toBe(Math.ceil(358 * 0.75));
+      expect(component.phoneStageHeightPx).toBe(468);
+
+      // Restoring full width and height resets scale to 1
+      component.updatePhonePreviewScale(358, 700);
       fixture.detectChanges();
       expect(component.phoneScale).toBe(1);
+      expect(component.phoneStageWidthPx).toBe(358);
+      expect(component.phoneStageHeightPx).toBe(624);
     });
   });
 

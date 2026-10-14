@@ -837,93 +837,329 @@ export interface ExistingImage {
               [style.height.px]="phoneStageHeightPx"
             >
               <div
-                #phoneFrameEl
-                class="phone-frame"
-                [style.transform]="phoneScale < 1 ? 'scale(' + phoneScale + ')' : null"
+                class="phone-scale-box"
+                [style.width.px]="phoneStageWidthPx"
+                [style.height.px]="phoneStageHeightPx"
               >
-                <!-- Phone Status Bar Mockup -->
-                <div class="phone-status-bar">
-                  <span>9:41</span>
-                  <span class="status-icons">📶 🔋</span>
-                </div>
+                <div
+                  #phoneFrameEl
+                  class="phone-frame"
+                  [style.transform]="phoneScale < 1 ? 'scale(' + phoneScale + ')' : null"
+                >
+                  <!-- Phone Status Bar Mockup (outside scrollable screen) -->
+                  <div class="phone-status-bar">
+                    <span>9:41</span>
+                    <span class="status-icons">📶 🔋</span>
+                  </div>
 
-                <!-- Phone Content Area -->
-                <div class="phone-content" [attr.data-placement]="previewPlacement">
-                  <!-- Cover Image Card -->
-                  <div class="phone-card" [ngClass]="'placement-' + previewPlacement">
+                  <!-- Fixed-Height Scrollable Mobile Screen (330 × 560 CSS px) -->
+                  <div
+                    #phoneScreenEl
+                    class="phone-content phone-screen"
+                    [attr.data-placement]="previewPlacement"
+                  >
+                    <!-- =========================================================
+                         MODE 1: EVENT DETAILS (matches event-info.component)
+                         ========================================================= -->
                     <div
-                      class="phone-card-image-wrap"
-                      [ngClass]="'placement-image-' + previewPlacement"
+                      *ngIf="previewPlacement === 'event_details'"
+                      class="phone-view phone-view-event-details placement-event_details"
                     >
-                      <img
-                        *ngIf="hasPreviewImage()"
-                        [src]="getPreviewImageUrl()"
-                        [alt]="'PORTAL.EVENT_EDITOR.PREVIEW.COVER_ALT' | translate"
-                        class="phone-cover-img"
-                      />
-                      <div *ngIf="!hasPreviewImage()" class="phone-image-empty-state">
-                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                          <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                          <polyline points="21 15 16 10 5 21"></polyline>
-                        </svg>
-                        <span class="empty-state-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.NO_IMAGE_TITLE' | translate }}</span>
-                        <span class="empty-state-hint">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.NO_IMAGE_HINT' | translate }}</span>
-                      </div>
-                      <div class="phone-overlay-badges">
-                        <span class="phone-category-pill">
-                          {{ getCategoryEmoji(draft.category) }} {{ getCategoryLabel(draft.category) }}
-                        </span>
-                        <span class="phone-price-pill">
-                          {{ formatPreviewPrice() }}
-                        </span>
+                      <!-- Full-width Hero Image (330 × 288 CSS px) -->
+                      <div class="phone-card-image-wrap placement-image-event_details">
+                        <img
+                          *ngIf="hasPreviewImage()"
+                          [src]="getPreviewImageUrl()"
+                          [alt]="'PORTAL.EVENT_EDITOR.PREVIEW.COVER_ALT' | translate"
+                          class="phone-cover-img"
+                        />
+                        <div *ngIf="!hasPreviewImage()" class="phone-image-empty-state">
+                          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                            <polyline points="21 15 16 10 5 21"></polyline>
+                          </svg>
+                          <span class="empty-state-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.NO_IMAGE_TITLE' | translate }}</span>
+                          <span class="empty-state-hint">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.NO_IMAGE_HINT' | translate }}</span>
+                        </div>
+
+                        <div class="phone-hero-gradient" aria-hidden="true"></div>
+
+                        <!-- Actual Placement Hero Badge (only when event actually has active placement) -->
+                        <div
+                          *ngIf="hasActualBannerPlacement() || hasActualWhatsHotPlacement()"
+                          class="phone-hero-badges"
+                        >
+                          <span
+                            *ngIf="hasActualBannerPlacement() && hasActualWhatsHotPlacement()"
+                            class="hero-badge hero-badge--both"
+                          >⚡ Fully Featured</span>
+                          <span
+                            *ngIf="hasActualBannerPlacement() && !hasActualWhatsHotPlacement()"
+                            class="hero-badge hero-badge--banner"
+                          >📢 {{ 'PORTAL.EVENT_EDITOR.PREVIEW.MODE_MAIN_BANNER' | translate }}</span>
+                          <span
+                            *ngIf="!hasActualBannerPlacement() && hasActualWhatsHotPlacement()"
+                            class="hero-badge hero-badge--hot"
+                          >🔥 {{ 'PORTAL.EVENT_EDITOR.PREVIEW.MODE_WHATS_HOT' | translate }}</span>
+                        </div>
                       </div>
 
-                      <div *ngIf="draft.promoText && draft.hasPromotion" class="phone-promo-tag">
-                        🎁 {{ draft.promoText }}
+                      <!-- Event Details Content Column -->
+                      <div class="phone-details-body">
+                        <!-- Title -->
+                        <h4 class="phone-details-title phone-title">
+                          {{ draft.name || ('PORTAL.EVENT_EDITOR.PREVIEW.UNTITLED' | translate) }}
+                        </h4>
+
+                        <!-- Meta Info List -->
+                        <div class="phone-details-meta-list">
+                          <!-- Single Event Date + Time -->
+                          <div *ngIf="draft.mode !== 'recurring'" class="phone-details-meta-row phone-details-meta-row--top">
+                            <svg class="phone-meta-icon" width="18" height="18" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linejoin="round" aria-hidden="true">
+                              <rect x="48" y="80" width="416" height="384" rx="48"></rect>
+                              <path d="M128 48v32M384 48v32M464 160H48" stroke-linecap="round"></path>
+                            </svg>
+                            <div class="phone-details-meta-stack">
+                              <div class="phone-details-meta-primary">{{ formatEventDetailsDate() }}</div>
+                              <div class="phone-details-meta-secondary">{{ formatEventDetailsTime() }}</div>
+                            </div>
+                          </div>
+
+                          <!-- Recurring Schedule + Time -->
+                          <div *ngIf="draft.mode === 'recurring'" class="phone-details-meta-row phone-details-meta-row--top">
+                            <svg class="phone-meta-icon" width="18" height="18" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M320 120l48 48-48 48"></path>
+                              <path d="M352 168H144a80.24 80.24 0 00-80 80v16M192 392l-48-48 48-48"></path>
+                              <path d="M160 344h208a80.24 80.24 0 0080-80v-16"></path>
+                            </svg>
+                            <div class="phone-details-meta-stack">
+                              <div class="phone-details-meta-recurring">{{ formatPreviewSchedule() }}</div>
+                              <div class="phone-details-meta-secondary">{{ formatEventDetailsTime() }}</div>
+                            </div>
+                          </div>
+
+                          <!-- Location / Address -->
+                          <div *ngIf="draft.address" class="phone-details-meta-row">
+                            <svg class="phone-meta-icon" width="18" height="18" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M256 48c-79.5 0-144 61.39-144 137 0 87 96 224.87 131.25 272.49a15.77 15.77 0 0025.5 0C304 409.89 400 272.07 400 185c0-75.61-64.5-137-144-137z"></path>
+                              <circle cx="256" cy="192" r="48"></circle>
+                            </svg>
+                            <span class="phone-details-meta-text">{{ draft.address }}</span>
+                          </div>
+
+                          <!-- Price -->
+                          <div class="phone-details-meta-row">
+                            <svg class="phone-meta-icon" width="18" height="18" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M435.25 48h-122.9a14.46 14.46 0 00-10.2 4.2L56.45 297.9a28.85 28.85 0 000 40.7l117 117a28.85 28.85 0 0040.7 0L459.75 210a14.46 14.46 0 004.2-10.2v-123a28.66 28.66 0 00-28.7-28.8z"></path>
+                              <circle cx="384" cy="128" r="24" fill="currentColor" stroke="none"></circle>
+                            </svg>
+                            <span class="phone-details-meta-text">{{ formatEventDetailsPrice() }}</span>
+                          </div>
+
+                          <!-- Business / Provider Link -->
+                          <div *ngIf="providerName" class="phone-details-meta-row">
+                            <svg class="phone-meta-icon" width="18" height="18" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M448 448V240M64 240v208M382.47 48H129.53a32 32 0 00-27.43 15.54L48 152h416l-54.1-88.46A32 32 0 00382.47 48z"></path>
+                              <path d="M464 152c0 35.35-28.65 64-64 64s-64-28.65-64-64c0 35.35-28.65 64-64 64s-64-28.65-64-64c0 35.35-28.65 64-64 64s-64-28.65-64-64M48 448h416"></path>
+                            </svg>
+                            <span class="phone-details-meta-provider">{{ providerName }}</span>
+                          </div>
+                        </div>
+
+                        <!-- Consumer Action Buttons (presentation only) -->
+                        <div class="phone-details-actions" role="group" aria-label="Consumer actions preview">
+                          <button type="button" class="action-icon-btn" tabindex="-1">
+                            <div class="action-icon-circle">
+                              <svg width="22" height="22" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M352.92 80C288 80 256 144 256 144s-32-64-96.92-64c-52.76 0-94.54 44.14-95.08 96.81-1.1 109.33 86.73 187.08 183 252.42a16 16 0 0018 0c96.26-65.34 184.09-143.09 183-252.42-.54-52.67-42.32-96.81-95.08-96.81z"></path>
+                              </svg>
+                            </div>
+                            <span class="action-icon-label">{{ 'EVENTS.FAVORITE_BTN' | translate }}</span>
+                          </button>
+
+                          <button type="button" class="action-icon-btn" tabindex="-1">
+                            <div class="action-icon-circle">
+                              <svg width="22" height="22" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="128" cy="256" r="48"></circle>
+                                <circle cx="384" cy="112" r="48"></circle>
+                                <circle cx="384" cy="400" r="48"></circle>
+                                <path d="M169.83 279.53l172.34 96.94M342.17 135.53l-172.34 96.94"></path>
+                              </svg>
+                            </div>
+                            <span class="action-icon-label">{{ 'EVENTS.SHARE_BTN' | translate }}</span>
+                          </button>
+
+                          <button type="button" class="action-icon-btn" tabindex="-1">
+                            <div class="action-icon-circle">
+                              <svg width="22" height="22" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linejoin="round" aria-hidden="true">
+                                <rect x="48" y="80" width="416" height="384" rx="48"></rect>
+                                <path d="M128 48v32M384 48v32M464 160H48" stroke-linecap="round"></path>
+                              </svg>
+                            </div>
+                            <span class="action-icon-label">{{ 'EVENTS.ADD_TO_CALENDAR' | translate }}</span>
+                          </button>
+                        </div>
+
+                        <!-- Description Glass Card -->
+                        <div *ngIf="draft.description" class="phone-glass-card">
+                          <p class="phone-glass-heading">{{ 'COMMON.DESCRIPTION' | translate }}</p>
+                          <p class="phone-desc">{{ draft.description }}</p>
+                        </div>
+
+                        <!-- Promotion Glass Card -->
+                        <div *ngIf="draft.hasPromotion && draft.promoText" class="phone-glass-card phone-promo-glass-card">
+                          <div class="phone-promo-header">
+                            <svg width="14" height="14" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M256 104v56h56a56 56 0 10-56-56zM256 104v56h-56a56 56 0 1156-56z"></path>
+                              <rect x="64" y="160" width="384" height="80" rx="32"></rect>
+                              <path d="M416 240v176a48 48 0 01-48 48H144a48 48 0 01-48-48V240M256 160v304"></path>
+                            </svg>
+                            <span>{{ 'EVENTS.PROMOTION.LABEL' | translate }}</span>
+                          </div>
+                          <p class="phone-promo-body">{{ draft.promoText }}</p>
+                        </div>
                       </div>
                     </div>
 
-                    <div class="phone-card-body">
-                      <div class="phone-mode-row">
-                        <span class="phone-mode-tag">
-                          {{ draft.mode === 'recurring' ? ('PORTAL.EVENT_EDITOR.PREVIEW.RECURRING_TAG' | translate) : ('PORTAL.EVENT_EDITOR.PREVIEW.EVENT_TAG' | translate) }}
+                    <!-- =========================================================
+                         MODE 2: WHAT'S HOT (matches home.page + app-event-card)
+                         ========================================================= -->
+                    <div
+                      *ngIf="previewPlacement === 'whats_hot'"
+                      class="phone-view phone-view-whats-hot placement-whats_hot"
+                    >
+                      <!-- Home Screen Filter Bar Context -->
+                      <div class="phone-home-filter-bar" aria-hidden="true">
+                        <span class="home-filter-pill home-area-pill">
+                          <svg width="11" height="11" viewBox="0 0 512 512" fill="none" stroke="#fe397f" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M256 48c-79.5 0-144 61.39-144 137 0 87 96 224.87 131.25 272.49a15.77 15.77 0 0025.5 0C304 409.89 400 272.07 400 185c0-75.61-64.5-137-144-137z"></path>
+                            <circle cx="256" cy="192" r="48"></circle>
+                          </svg>
+                          <span class="home-area-pill-text">{{ getSelectedAreaName() }}</span>
                         </span>
-                        <span class="phone-provider-name">
-                          {{ providerName }}
+                        <span class="home-filter-pill">{{ 'SEARCH.FILTER_DATE' | translate }}</span>
+                        <span class="home-filter-pill">{{ 'SEARCH.FILTER_CATEGORY' | translate }}</span>
+                      </div>
+
+                      <!-- What's Hot Horizontal Section -->
+                      <div class="phone-whats-hot-section">
+                        <h3 class="phone-home-section-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.MODE_WHATS_HOT' | translate }}</h3>
+                        <div class="phone-whats-hot-row">
+                          <!-- Compact 220px Event Card -->
+                          <div class="phone-whats-hot-card">
+                            <div class="phone-card-image-wrap placement-image-whats_hot">
+                              <img
+                                *ngIf="hasPreviewImage()"
+                                [src]="getPreviewImageUrl()"
+                                [alt]="'PORTAL.EVENT_EDITOR.PREVIEW.COVER_ALT' | translate"
+                                class="phone-cover-img"
+                              />
+                              <div *ngIf="!hasPreviewImage()" class="phone-image-empty-state phone-image-empty-state--compact">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                  <polyline points="21 15 16 10 5 21"></polyline>
+                                </svg>
+                                <span class="empty-state-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.NO_IMAGE_TITLE' | translate }}</span>
+                                <span class="empty-state-hint">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.NO_IMAGE_HINT' | translate }}</span>
+                              </div>
+
+                              <!-- Yellow Circular Promotion Pricetag Badge (bottom-left) -->
+                              <div *ngIf="draft.hasPromotion" class="whats-hot-promo-badge">
+                                <svg width="16" height="16" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="36" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                  <path d="M435.25 48h-122.9a14.46 14.46 0 00-10.2 4.2L56.45 297.9a28.85 28.85 0 000 40.7l117 117a28.85 28.85 0 0040.7 0L459.75 210a14.46 14.46 0 004.2-10.2v-123a28.66 28.66 0 00-28.7-28.8z"></path>
+                                  <circle cx="384" cy="128" r="24" fill="currentColor" stroke="none"></circle>
+                                </svg>
+                              </div>
+                            </div>
+
+                            <div class="whats-hot-card-body">
+                              <p class="whats-hot-card-title phone-title">
+                                {{ draft.name || ('PORTAL.EVENT_EDITOR.PREVIEW.UNTITLED' | translate) }}
+                              </p>
+                              <p class="whats-hot-card-meta">
+                                <span class="whats-hot-meta-text">{{ formatHomeCardMeta() }}</span>
+                                <svg *ngIf="draft.mode === 'recurring'" class="whats-hot-repeat-icon" width="12" height="12" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="36" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                  <path d="M320 120l48 48-48 48"></path>
+                                  <path d="M352 168H144a80.24 80.24 0 00-80 80v16M192 392l-48-48 48-48"></path>
+                                  <path d="M160 344h208a80.24 80.24 0 0080-80v-16"></path>
+                                </svg>
+                              </p>
+                              <p *ngIf="providerName || draft.address" class="whats-hot-card-location">
+                                {{ providerName || draft.address }}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- =========================================================
+                         MODE 3: MAIN BANNER (matches home.page top banner slide)
+                         ========================================================= -->
+                    <div
+                      *ngIf="previewPlacement === 'main_banner'"
+                      class="phone-view phone-view-main-banner placement-main_banner"
+                    >
+                      <!-- Home Screen Filter Bar Context -->
+                      <div class="phone-home-filter-bar" aria-hidden="true">
+                        <span class="home-filter-pill home-area-pill">
+                          <svg width="11" height="11" viewBox="0 0 512 512" fill="none" stroke="#fe397f" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M256 48c-79.5 0-144 61.39-144 137 0 87 96 224.87 131.25 272.49a15.77 15.77 0 0025.5 0C304 409.89 400 272.07 400 185c0-75.61-64.5-137-144-137z"></path>
+                            <circle cx="256" cy="192" r="48"></circle>
+                          </svg>
+                          <span class="home-area-pill-text">{{ getSelectedAreaName() }}</span>
                         </span>
+                        <span class="home-filter-pill">{{ 'SEARCH.FILTER_DATE' | translate }}</span>
+                        <span class="home-filter-pill">{{ 'SEARCH.FILTER_CATEGORY' | translate }}</span>
                       </div>
 
-                      <h4 class="phone-title">
-                        {{ draft.name || ('PORTAL.EVENT_EDITOR.PREVIEW.UNTITLED' | translate) }}
-                      </h4>
+                      <!-- Full-Width Main Banner Hero (330 × 288 CSS px) -->
+                      <div class="phone-card-image-wrap placement-image-main_banner">
+                        <img
+                          *ngIf="hasPreviewImage()"
+                          [src]="getPreviewImageUrl()"
+                          [alt]="'PORTAL.EVENT_EDITOR.PREVIEW.COVER_ALT' | translate"
+                          class="phone-cover-img"
+                        />
+                        <div *ngIf="!hasPreviewImage()" class="phone-image-empty-state">
+                          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                            <polyline points="21 15 16 10 5 21"></polyline>
+                          </svg>
+                          <span class="empty-state-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.NO_IMAGE_TITLE' | translate }}</span>
+                          <span class="empty-state-hint">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.NO_IMAGE_HINT' | translate }}</span>
+                        </div>
 
-                      <div class="phone-meta-row">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <rect x="3" y="4" width="18" height="18" rx="2"></rect>
-                          <line x1="16" y1="2" x2="16" y2="6"></line>
-                          <line x1="8" y1="2" x2="8" y2="6"></line>
-                        </svg>
-                        <span>{{ formatPreviewSchedule() }}</span>
+                        <div class="phone-banner-gradient" aria-hidden="true"></div>
+
+                        <!-- Bottom Overlay Text Block -->
+                        <div class="phone-banner-overlay">
+                          <div class="phone-banner-title-row">
+                            <p class="phone-banner-title phone-title">
+                              {{ draft.name || ('PORTAL.EVENT_EDITOR.PREVIEW.UNTITLED' | translate) }}
+                            </p>
+                            <svg *ngIf="draft.mode === 'recurring'" class="phone-banner-inline-icon phone-banner-repeat-icon" width="15" height="15" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="36" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M320 120l48 48-48 48"></path>
+                              <path d="M352 168H144a80.24 80.24 0 00-80 80v16M192 392l-48-48 48-48"></path>
+                              <path d="M160 344h208a80.24 80.24 0 0080-80v-16"></path>
+                            </svg>
+                            <svg *ngIf="draft.hasPromotion" class="phone-banner-inline-icon phone-banner-promo-icon" width="15" height="15" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="36" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M435.25 48h-122.9a14.46 14.46 0 00-10.2 4.2L56.45 297.9a28.85 28.85 0 000 40.7l117 117a28.85 28.85 0 0040.7 0L459.75 210a14.46 14.46 0 004.2-10.2v-123a28.66 28.66 0 00-28.7-28.8z"></path>
+                              <circle cx="384" cy="128" r="24" fill="currentColor" stroke="none"></circle>
+                            </svg>
+                          </div>
+                          <p class="phone-banner-meta">{{ formatHomeCardMeta() }}</p>
+                          <p *ngIf="providerName" class="phone-banner-provider">{{ providerName }}</p>
+                        </div>
                       </div>
 
-                      <div class="phone-meta-row" *ngIf="formatPreviewTime()">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <circle cx="12" cy="12" r="10"></circle>
-                          <polyline points="12 6 12 12 16 14"></polyline>
-                        </svg>
-                        <span>{{ formatPreviewTime() }}</span>
+                      <!-- Subtle Home Screen Context Below Banner -->
+                      <div class="phone-home-section-peek" aria-hidden="true">
+                        <h3 class="phone-home-section-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.MODE_WHATS_HOT' | translate }}</h3>
                       </div>
-
-                      <div class="phone-meta-row" *ngIf="draft.address">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                          <circle cx="12" cy="10" r="3"></circle>
-                        </svg>
-                        <span class="truncate">{{ draft.address }}</span>
-                      </div>
-
-                      <p class="phone-desc" *ngIf="draft.description">{{ draft.description }}</p>
                     </div>
                   </div>
                 </div>
@@ -1746,7 +1982,7 @@ export interface ExistingImage {
     /* Right Preview Column (Sticky Mockup) */
     .editor-preview-col {
       position: sticky;
-      top: 24px;
+      top: 16px;
       min-width: 0;
       max-width: 100%;
     }
@@ -1755,7 +1991,7 @@ export interface ExistingImage {
       background: var(--vamo-surface);
       border: 1px solid var(--vamo-border);
       border-radius: var(--vamo-radius-xl);
-      padding: 20px;
+      padding: 14px 16px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
       min-width: 0;
       max-width: 100%;
@@ -1767,7 +2003,7 @@ export interface ExistingImage {
       align-items: flex-start;
       justify-content: space-between;
       gap: 8px;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
 
     .preview-header-titles {
@@ -1777,7 +2013,7 @@ export interface ExistingImage {
     }
 
     .preview-title {
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.04em;
@@ -1785,13 +2021,13 @@ export interface ExistingImage {
     }
 
     .preview-approx-note {
-      font-size: 0.72rem;
+      font-size: 0.7rem;
       color: var(--vamo-text-muted);
-      line-height: 1.3;
+      line-height: 1.25;
     }
 
     .live-pill {
-      font-size: 0.7rem;
+      font-size: 0.68rem;
       font-weight: 700;
       background: #dcfce7;
       color: #166534;
@@ -1805,12 +2041,12 @@ export interface ExistingImage {
     .preview-placement-bar {
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      margin-bottom: 14px;
+      gap: 5px;
+      margin-bottom: 10px;
     }
 
     .preview-placement-label {
-      font-size: 0.76rem;
+      font-size: 0.74rem;
       font-weight: 600;
       color: var(--vamo-text-muted);
     }
@@ -1828,9 +2064,9 @@ export interface ExistingImage {
     .preview-placement-btn {
       border: none;
       background: transparent;
-      padding: 6px 6px;
+      padding: 5px 6px;
       border-radius: calc(var(--vamo-radius-md) - 3px);
-      font-size: 0.74rem;
+      font-size: 0.73rem;
       font-weight: 600;
       color: var(--vamo-text-muted);
       cursor: pointer;
@@ -1852,278 +2088,81 @@ export interface ExistingImage {
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
     }
 
-    /* Proportional Scaling Stage & Phone Frame Mockup */
-    .phone-preview-stage {
-      width: 100%;
-      min-width: 0;
-      contain: inline-size;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      overflow: hidden;
-    }
-
-    .phone-frame {
-      width: 358px;
-      min-width: 358px;
-      max-width: 358px;
-      box-sizing: border-box;
-      margin: 0 auto;
-      background: #0f172a;
-      border-radius: 28px;
-      padding: 12px 10px 18px;
-      box-shadow: 0 16px 32px -8px rgba(15, 23, 42, 0.35);
-      border: 4px solid #1e293b;
-      transform-origin: top center;
-      flex-shrink: 0;
-    }
-
-    .phone-status-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 0.72rem;
-      font-weight: 600;
-      color: rgba(255, 255, 255, 0.6);
-      padding: 4px 12px 10px;
-    }
-
-    /* Simulated mobile viewport: explicit 330 CSS px width */
-    .phone-content {
-      width: 330px;
-      min-width: 330px;
-      max-width: 330px;
-      box-sizing: border-box;
-      background: #f8fafc;
-      border-radius: 20px;
-      overflow: hidden;
-    }
-
-    .phone-card {
-      display: flex;
-      flex-direction: column;
-      background: #ffffff;
-    }
-
-    .phone-card-image-wrap {
-      position: relative;
-      box-sizing: border-box;
-      background: #1e293b;
-      overflow: hidden;
-    }
-
-    /* Event Details: full content width (330px - 24px horizontal padding = 306px) × 288 CSS px */
-    .phone-card-image-wrap.placement-image-event_details {
-      width: calc(100% - 24px);
-      height: 288px;
-      margin: 12px 12px 0;
-      border-radius: 12px;
-    }
-
-    /* Main Banner: full phone viewport width (330px) × 288 CSS px */
-    .phone-card-image-wrap.placement-image-main_banner {
-      width: 100%;
-      height: 288px;
-      margin: 0;
-      border-radius: 0;
-    }
-
-    /* What's Hot: simulated card image at 220 × 140 CSS px */
-    .phone-card-image-wrap.placement-image-whats_hot {
-      width: 220px;
-      height: 140px;
-      margin: 12px auto 0;
-      border-radius: 12px;
-    }
-
-    .phone-card-image-wrap.placement-image-whats_hot .phone-overlay-badges {
-      top: 6px;
-      left: 6px;
-      right: 6px;
-      gap: 4px;
-    }
-
-    .phone-card-image-wrap.placement-image-whats_hot .phone-category-pill {
-      font-size: 0.58rem;
-      padding: 2px 6px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 132px;
-    }
-
-    .phone-card-image-wrap.placement-image-whats_hot .phone-price-pill {
-      font-size: 0.6rem;
-      padding: 2px 6px;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    .phone-card-image-wrap.placement-image-whats_hot .phone-promo-tag {
-      bottom: 6px;
-      left: 6px;
-      right: 6px;
-      font-size: 0.58rem;
-      padding: 2px 6px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .phone-cover-img {
-      display: block;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      object-position: center;
-    }
-
-    .phone-image-empty-state {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      padding: 16px;
-      box-sizing: border-box;
-      text-align: center;
-      color: #94a3b8;
-      background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
-    }
-
-    .phone-image-empty-state .empty-state-title {
-      font-size: 0.76rem;
-      font-weight: 600;
-      color: #e2e8f0;
-    }
-
-    .phone-image-empty-state .empty-state-hint {
-      font-size: 0.68rem;
-      color: #94a3b8;
-      line-height: 1.3;
-    }
-
-    .phone-overlay-badges {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      right: 10px;
-      display: flex;
-      justify-content: space-between;
-      gap: 6px;
-    }
-
-    .phone-category-pill {
-      background: rgba(15, 23, 42, 0.8);
-      color: #ffffff;
-      font-size: 0.68rem;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 9999px;
-      backdrop-filter: blur(4px);
-    }
-
-    .phone-price-pill {
-      background: #ffffff;
-      color: #0f172a;
-      font-size: 0.7rem;
-      font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 9999px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-    }
-
-    .phone-promo-tag {
-      position: absolute;
-      bottom: 8px;
-      left: 10px;
-      background: var(--vamo-pink, #F93CAD);
-      color: #ffffff;
-      font-size: 0.68rem;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 9999px;
-    }
-
-    .phone-card-body {
-      padding: 14px 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .phone-mode-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 4px;
-    }
-
-    .phone-mode-tag {
-      font-size: 0.68rem;
-      font-weight: 600;
-      color: var(--vamo-purple, #8070C0);
-      background: var(--vamo-purple-light, rgba(128, 112, 192, 0.12));
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-
-    .phone-provider-name {
-      font-size: 0.7rem;
-      font-weight: 500;
-      color: #64748b;
-    }
-
-    .phone-title {
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: #0f172a;
-      margin: 2px 0 6px;
-      line-height: 1.25;
-    }
-
-    .phone-meta-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.72rem;
-      color: #64748b;
-    }
-
-    .phone-desc {
-      font-size: 0.75rem;
-      color: #475569;
-      margin: 6px 0 0;
-      line-height: 1.45;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      word-break: break-word;
-    }
-
-    .preview-footnote {
-      font-size: 0.76rem;
-      color: var(--vamo-text-muted);
-      text-align: center;
-      margin: 14px 0 0;
-      line-height: 1.35;
-    }
-
-    .spinner-inline {
-      display: inline-block;
-      width: 14px;
-      height: 14px;
-      border: 2px solid currentColor;
-      border-right-color: transparent;
-      border-radius: 50%;
-      animation: spin 0.75s linear infinite;
-      margin-right: 6px;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
+    .phone-preview-stage { width: 100%; min-width: 0; contain: inline-size; display: flex; justify-content: center; align-items: flex-start; overflow: hidden; }
+    .phone-scale-box { position: relative; width: 358px; height: 624px; margin: 0 auto; flex-shrink: 0; }
+    .phone-frame { width: 358px; min-width: 358px; max-width: 358px; height: 624px; min-height: 624px; max-height: 624px; box-sizing: border-box; margin: 0; background: #0f172a; border-radius: 28px; padding: 12px 10px 18px; box-shadow: 0 16px 32px -8px rgba(15, 23, 42, 0.35); border: 4px solid #1e293b; transform-origin: top left; flex-shrink: 0; display: flex; flex-direction: column; }
+    .phone-status-bar { display: flex; justify-content: space-between; align-items: center; height: 26px; min-height: 26px; max-height: 26px; box-sizing: border-box; font-size: 0.72rem; font-weight: 600; color: rgba(255, 255, 255, 0.6); padding: 4px 12px 8px; line-height: 14px; flex-shrink: 0; }
+    .phone-content { width: 330px; min-width: 330px; max-width: 330px; height: 560px; min-height: 560px; max-height: 560px; box-sizing: border-box; background: linear-gradient(160deg, #0d0d1e 0%, #1a0812 60%, #0d0d1e 100%); color: #fff; border-radius: 20px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: none; -ms-overflow-style: none; flex-shrink: 0; }
+    .phone-content::-webkit-scrollbar, .phone-whats-hot-row::-webkit-scrollbar { display: none; }
+    .phone-view { display: flex; flex-direction: column; min-height: 100%; width: 100%; box-sizing: border-box; background: linear-gradient(160deg, #0d0d1e 0%, #1a0812 60%, #0d0d1e 100%); }
+    .phone-view-event-details { padding-bottom: 24px; }
+    .phone-card-image-wrap { position: relative; box-sizing: border-box; background: #16162a; overflow: hidden; flex-shrink: 0; }
+    .phone-card-image-wrap.placement-image-event_details, .phone-card-image-wrap.placement-image-main_banner { width: 100%; height: 288px; min-height: 288px; max-height: 288px; margin: 0; border-radius: 0; }
+    .phone-card-image-wrap.placement-image-whats_hot { width: 220px; min-width: 220px; max-width: 220px; height: 140px; min-height: 140px; max-height: 140px; margin: 0; border-radius: 0; }
+    .phone-cover-img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+    .phone-image-empty-state { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 16px; box-sizing: border-box; text-align: center; color: rgba(255, 255, 255, 0.55); background: linear-gradient(145deg, #12122a 0%, #241023 100%); }
+    .phone-image-empty-state .empty-state-title { font-size: 0.76rem; font-weight: 600; color: #fff; }
+    .phone-image-empty-state .empty-state-hint { font-size: 0.68rem; color: rgba(255, 255, 255, 0.6); line-height: 1.3; }
+    .phone-image-empty-state--compact { padding: 8px 10px; gap: 2px; }
+    .phone-image-empty-state--compact .empty-state-title { font-size: 0.68rem; }
+    .phone-image-empty-state--compact .empty-state-hint { font-size: 0.6rem; line-height: 1.2; }
+    .phone-hero-gradient { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.1) 50%, transparent 100%); pointer-events: none; }
+    .phone-hero-badges { position: absolute; bottom: 12px; left: 12px; display: flex; gap: 6px; pointer-events: none; z-index: 2; }
+    .hero-badge { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; letter-spacing: 0.02em; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+    .hero-badge--banner { background: rgba(254, 57, 127, 0.25); color: #fe397f; border: 1px solid rgba(254, 57, 127, 0.4); }
+    .hero-badge--hot { background: rgba(255, 140, 0, 0.25); color: #ff9f1c; border: 1px solid rgba(255, 140, 0, 0.4); }
+    .hero-badge--both { background: linear-gradient(135deg, rgba(254, 57, 127, 0.35), rgba(255, 140, 0, 0.35)); color: #fff; border: 1px solid rgba(254, 57, 127, 0.6); box-shadow: 0 2px 10px rgba(254, 57, 127, 0.3); }
+    .phone-details-body { display: flex; flex-direction: column; gap: 16px; padding: 16px 16px 0; box-sizing: border-box; }
+    .phone-details-title { font-size: 1.5rem; font-weight: 700; color: #fff; line-height: 1.25; margin: 0; overflow-wrap: anywhere; word-break: break-word; }
+    .phone-details-meta-list { display: flex; flex-direction: column; gap: 8px; }
+    .phone-details-meta-row { display: flex; align-items: center; gap: 10px; font-size: 14px; line-height: 1.35; }
+    .phone-details-meta-row--top { align-items: flex-start; }
+    .phone-details-meta-row--top .phone-meta-icon { margin-top: 2px; }
+    .phone-meta-icon { color: #fe397f; flex-shrink: 0; }
+    .phone-details-meta-stack { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .phone-details-meta-primary { color: #fff; font-weight: 500; }
+    .phone-details-meta-recurring { color: #fe397f; font-weight: 500; }
+    .phone-details-meta-secondary { color: rgba(255, 255, 255, 0.5); }
+    .phone-details-meta-text { color: rgba(255, 255, 255, 0.75); min-width: 0; overflow-wrap: anywhere; }
+    .phone-details-meta-provider { color: rgba(255, 255, 255, 0.75); text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .phone-details-actions { display: flex; justify-content: space-around; align-items: center; padding: 8px 0; }
+    .action-icon-btn { display: flex; flex-direction: column; align-items: center; gap: 6px; background: transparent; border: none; cursor: default; padding: 4px 12px; }
+    .action-icon-circle { width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid rgba(254, 57, 127, 0.5); background: rgba(254, 57, 127, 0.1); display: flex; align-items: center; justify-content: center; color: #fff; }
+    .action-icon-label { font-size: 11px; font-weight: 500; color: rgba(255, 255, 255, 0.65); letter-spacing: 0.02em; }
+    .phone-glass-card { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 18px; padding: 16px; box-sizing: border-box; }
+    .phone-glass-heading { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 8px; }
+    .phone-desc { font-size: 14px; color: rgba(255, 255, 255, 0.85); margin: 0; line-height: 1.625; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+    .phone-promo-glass-card { border-color: rgba(254, 57, 127, 0.2); }
+    .phone-promo-header { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: rgba(254, 57, 127, 0.7); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+    .phone-promo-body { font-size: 15px; font-weight: 700; color: #fff; margin: 0; line-height: 1.35; overflow-wrap: anywhere; }
+    .phone-home-filter-bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; overflow: hidden; flex-shrink: 0; }
+    .home-filter-pill { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.75); font-size: 12px; font-weight: 500; white-space: nowrap; flex-shrink: 0; }
+    .home-area-pill { border-color: rgba(254, 57, 127, 0.7); background: rgba(254, 57, 127, 0.15); color: #fff; max-width: 145px; }
+    .home-area-pill-text, .whats-hot-card-title, .whats-hot-meta-text, .whats-hot-card-location, .phone-banner-title, .phone-banner-meta, .phone-banner-provider { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .phone-home-section-title { font-size: 18px; font-weight: 700; color: #fff; padding: 0 16px; margin: 0 0 12px; line-height: 1.3; }
+    .phone-whats-hot-section { padding: 8px 0 16px; }
+    .phone-whats-hot-row { display: flex; padding: 0 16px 8px; gap: 16px; overflow-x: auto; scrollbar-width: none; }
+    .phone-whats-hot-card { width: 220px; min-width: 220px; max-width: 220px; border-radius: 18px; overflow: hidden; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); display: flex; flex-direction: column; flex-shrink: 0; box-sizing: border-box; }
+    .whats-hot-promo-badge { position: absolute; bottom: 8px; left: 8px; width: 34px; height: 34px; border-radius: 50%; background: rgba(234, 179, 8, 0.95); border: 2px solid rgba(255, 255, 255, 0.5); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; color: #fff; z-index: 2; }
+    .whats-hot-card-body { padding: 12px 12px 14px; display: flex; flex-direction: column; flex: 1; box-sizing: border-box; min-width: 0; }
+    .whats-hot-card-title { font-size: 13px; font-weight: 700; color: #fe397f; line-height: 1.3; margin: 0 0 2px; }
+    .whats-hot-card-meta { font-size: 11px; font-weight: 500; color: rgba(255, 255, 255, 0.75); margin: 4px 0 0; display: flex; align-items: center; gap: 4px; min-width: 0; }
+    .whats-hot-meta-text { min-width: 0; }
+    .whats-hot-repeat-icon { color: rgba(255, 255, 255, 0.5); flex-shrink: 0; }
+    .whats-hot-card-location { font-size: 11px; color: rgba(255, 255, 255, 0.6); margin: 3px 0 0; }
+    .phone-banner-gradient { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.2) 55%, transparent 100%); pointer-events: none; }
+    .phone-banner-overlay { position: absolute; bottom: 16px; left: 16px; right: 16px; color: #fff; z-index: 2; display: flex; flex-direction: column; min-width: 0; }
+    .phone-banner-title-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; min-width: 0; }
+    .phone-banner-title { font-size: 16px; font-weight: 700; color: #fff; line-height: 1.3; margin: 0; min-width: 0; }
+    .phone-banner-inline-icon { flex-shrink: 0; }
+    .phone-banner-repeat-icon { color: rgba(255, 255, 255, 0.8); }
+    .phone-banner-promo-icon { color: #facc15; }
+    .phone-banner-meta { font-size: 14px; color: rgba(255, 255, 255, 0.8); line-height: 1.35; margin: 0; }
+    .phone-banner-provider { font-size: 12px; color: rgba(255, 255, 255, 0.6); line-height: 1.35; margin: 2px 0 0; }
+    .phone-home-section-peek { padding-top: 16px; }
+    .preview-footnote { font-size: 0.72rem; color: var(--vamo-text-muted); text-align: center; margin: 10px 0 0; line-height: 1.3; }
+    .spinner-inline { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.75s linear infinite; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* Modal Backdrop and Dialog */
     .modal-backdrop {
@@ -2226,6 +2265,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   @ViewChild('mapContainer', { static: false }) mapContainer?: ElementRef<HTMLDivElement>;
   @ViewChild('phonePreviewStage', { static: false }) phonePreviewStage?: ElementRef<HTMLDivElement>;
   @ViewChild('phoneFrameEl', { static: false }) phoneFrameEl?: ElementRef<HTMLDivElement>;
+  @ViewChild('phoneScreenEl', { static: false }) phoneScreenEl?: ElementRef<HTMLDivElement>;
 
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -2336,9 +2376,13 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   previewPlacement: 'event_details' | 'whats_hot' | 'main_banner' = 'event_details';
   selectedPreviewImageUrl: string | null = null;
   readonly simulatedPhoneFrameWidth = 358;
+  readonly simulatedPhoneFrameHeight = 624;
   readonly simulatedPhoneViewportWidth = 330;
+  readonly simulatedPhoneViewportHeight = 560;
   phoneScale = 1;
-  phoneStageHeightPx: number | null = null;
+  phoneStageWidthPx: number | null = 358;
+  phoneStageHeightPx: number | null = 624;
+  private lastObservedStageWidth = 0;
   private previewResizeObserver: ResizeObserver | null = null;
   private readonly onWindowResizeBound = () => this.updatePhonePreviewScale();
 
@@ -3289,8 +3333,25 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
   setPreviewPlacement(mode: 'event_details' | 'whats_hot' | 'main_banner'): void {
     this.previewPlacement = mode;
+    const screenEl = this.phoneScreenEl?.nativeElement;
+    if (screenEl) {
+      screenEl.scrollTop = 0;
+    }
     this.cdr.markForCheck();
     setTimeout(() => this.updatePhonePreviewScale(), 0);
+  }
+
+  hasActualBannerPlacement(): boolean {
+    return Boolean(this.originalEvent?.is_main_banner || this.draft?.is_main_banner);
+  }
+
+  hasActualWhatsHotPlacement(): boolean {
+    return Boolean(this.originalEvent?.is_whats_hot || this.draft?.is_whats_hot);
+  }
+
+  getSelectedAreaName(): string {
+    const found = this.availableAreas.find((a) => a.id === this.selectedAreaId);
+    return found?.name || 'Las Terrenas';
   }
 
   selectPreviewImage(url: string): void {
@@ -3330,27 +3391,69 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     }
     const stageEl = this.phonePreviewStage?.nativeElement;
     if (!stageEl) return;
+    this.lastObservedStageWidth = stageEl.clientWidth || 0;
     this.previewResizeObserver = new ResizeObserver(() => {
-      this.updatePhonePreviewScale();
+      const currentWidth = stageEl.clientWidth || 0;
+      if (currentWidth !== this.lastObservedStageWidth) {
+        this.lastObservedStageWidth = currentWidth;
+        this.updatePhonePreviewScale();
+      }
     });
     this.previewResizeObserver.observe(stageEl);
   }
 
-  updatePhonePreviewScale(overrideStageWidth?: number): void {
+  updatePhonePreviewScale(overrideStageWidth?: number, overrideAvailableHeight?: number): void {
     const stageEl = this.phonePreviewStage?.nativeElement;
-    const frameEl = this.phoneFrameEl?.nativeElement;
     const measuredWidth = typeof overrideStageWidth === 'number'
       ? overrideStageWidth
       : (stageEl?.clientWidth || 0);
 
-    if (measuredWidth > 0 && measuredWidth < this.simulatedPhoneFrameWidth) {
-      const nextScale = Number(Math.max(0.5, measuredWidth / this.simulatedPhoneFrameWidth).toFixed(4));
+    const widthScale = measuredWidth > 0
+      ? measuredWidth / this.simulatedPhoneFrameWidth
+      : 1;
+
+    let heightScale = 1;
+    if (typeof overrideAvailableHeight === 'number' && overrideAvailableHeight > 0) {
+      heightScale = overrideAvailableHeight / this.simulatedPhoneFrameHeight;
+    } else if (
+      typeof overrideStageWidth !== 'number' &&
+      typeof window !== 'undefined' &&
+      window.innerWidth > 1024 &&
+      window.innerHeight > 0 &&
+      measuredWidth > 0
+    ) {
+      const cardEl = stageEl?.closest('.preview-card-sticky') as HTMLElement | null;
+      const shellContentEl = stageEl?.closest('.shell-content') as HTMLElement | null;
+      const nonStageChrome = (cardEl && stageEl && cardEl.offsetHeight > stageEl.offsetHeight)
+        ? (cardEl.offsetHeight - stageEl.offsetHeight)
+        : 168;
+
+      let topOffset = 160;
+      if (cardEl) {
+        const rect = cardEl.getBoundingClientRect();
+        if (rect.height > 0) {
+          const scrollTop = shellContentEl ? shellContentEl.scrollTop : (window.scrollY || 0);
+          const initialTop = rect.top + scrollTop;
+          topOffset = Math.min(200, Math.max(24, initialTop));
+        }
+      }
+
+      const bottomMargin = 16;
+      const availableHeight = Math.max(260, window.innerHeight - topOffset - bottomMargin - nonStageChrome);
+      heightScale = availableHeight / this.simulatedPhoneFrameHeight;
+    }
+
+    const rawScale = Math.min(1, widthScale, heightScale);
+    const nextScale = Number(Math.max(0.45, rawScale).toFixed(4));
+
+    if (nextScale < 1) {
       this.phoneScale = nextScale;
-      const frameHeight = frameEl?.offsetHeight || 0;
-      this.phoneStageHeightPx = frameHeight > 0 ? Math.ceil(frameHeight * nextScale) : null;
+      this.phoneStageWidthPx = Math.ceil(this.simulatedPhoneFrameWidth * nextScale);
+      this.phoneStageHeightPx = Math.ceil(this.simulatedPhoneFrameHeight * nextScale);
     } else {
       this.phoneScale = 1;
-      this.phoneStageHeightPx = null;
+      this.phoneStageWidthPx = this.simulatedPhoneFrameWidth;
+      this.phoneStageHeightPx = this.simulatedPhoneFrameHeight;
     }
     this.cdr.markForCheck();
   }
@@ -3362,6 +3465,95 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       return `${this.draft.currency || 'USD'} $${Number(this.draft.price).toFixed(2)}`;
     }
     return this.i18n.t('PORTAL.LISTINGS.FREE');
+  }
+
+  formatEventDetailsPrice(): string {
+    if (this.draft.isFree) return this.i18n.t('EVENTS.PRICING.FREE');
+    if (this.draft.contactForPrice) return this.i18n.t('EVENTS.PRICING.CONTACT');
+    if (this.draft.price && Number(this.draft.price) > 0) {
+      const symbol = this.draft.currency === 'DOP' ? 'RD$' : '$';
+      return `${symbol}${Number(this.draft.price).toFixed(2)}`;
+    }
+    return this.i18n.t('EVENTS.PRICING.FREE');
+  }
+
+  formatEventDetailsDate(): string {
+    if (!this.draft.startDate) return this.i18n.t('PORTAL.LISTINGS.DATE_TBA');
+    const locale = this.i18n.dateLocale();
+    try {
+      if (this.multiDay && this.draft.endDate) {
+        const start = parseLocalDate(this.draft.startDate).toLocaleDateString(locale, {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+        });
+        const end = parseLocalDate(this.draft.endDate).toLocaleDateString(locale, {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        });
+        return `${start} → ${end}`;
+      }
+      return parseLocalDate(this.draft.startDate).toLocaleDateString(locale, {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+    } catch {
+      return this.draft.startDate;
+    }
+  }
+
+  formatEventDetailsTime(): string {
+    if (this.draft.allDay) return this.i18n.t('EVENTS.ALL_DAY');
+    if (!this.draft.from) return '';
+    if (this.draft.openEnd || !this.draft.to) {
+      return `${this.draft.from} – ${this.i18n.t('EVENTS.OPEN_END')}`;
+    }
+    return `${this.draft.from} – ${this.draft.to}`;
+  }
+
+  formatHomeCardMeta(): string {
+    let datePart = '';
+    if (this.draft.mode === 'recurring') {
+      const days = (this.draft.recurring as any)?.days;
+      if (Array.isArray(days) && days.length > 0) {
+        datePart = days.map((d: string) => {
+          const shortKey = 'EVENTS.RECURRING.DAYS.' + d.toLowerCase();
+          const translatedShort = this.i18n.t(shortKey);
+          if (translatedShort && !translatedShort.startsWith('EVENTS.')) {
+            return translatedShort;
+          }
+          return d.charAt(0).toUpperCase() + d.slice(1);
+        }).join(', ');
+      } else {
+        datePart = this.i18n.t('PORTAL.LISTINGS.MODE_RECURRING');
+      }
+    } else if (!this.draft.startDate) {
+      datePart = this.i18n.t('PORTAL.LISTINGS.DATE_TBA');
+    } else {
+      try {
+        datePart = parseLocalDate(this.draft.startDate).toLocaleDateString(this.i18n.dateLocale(), {
+          month: 'short',
+          day: 'numeric',
+        });
+      } catch {
+        datePart = this.draft.startDate;
+      }
+    }
+
+    let timePart = '';
+    if (this.draft.allDay) {
+      timePart = ` · ${this.i18n.t('EVENTS.ALL_DAY')}`;
+    } else if (this.draft.from && !this.draft.openEnd && this.draft.to) {
+      timePart = ` · ${this.draft.from} – ${this.draft.to}`;
+    } else if (this.draft.from) {
+      timePart = ` · ${this.draft.from}`;
+    }
+
+    return `${datePart}${timePart}`;
   }
 
   formatPreviewSchedule(): string {
