@@ -12,6 +12,15 @@ import {
   BillingHistoryItem,
   SavedPaymentMethod,
 } from '../../core/services/stripe.service';
+import {
+  capturePromoCode,
+  clearSavedPromoCode,
+  getSavedPromoCode,
+  sanitizePromoCode,
+  MAX_PROMO_CODE_LENGTH,
+} from '../../core/utils/promo-code.util';
+import { LoginComponent } from '../auth/login/login.component';
+import { OnboardingComponent } from '../auth/onboarding/onboarding.component';
 
 describe('BillingComponent', () => {
   let component: BillingComponent;
@@ -110,10 +119,12 @@ describe('BillingComponent', () => {
   ];
 
   beforeEach(async () => {
+    clearSavedPromoCode();
     billingParams = {};
     authServiceSpy = {
       waitForInitialAuth: vi.fn().mockResolvedValue(mockUser),
       currentUser: mockUser,
+      sanitizeReturnUrl: vi.fn((url: any) => url || '/app/overview'),
     };
 
     businessServiceSpy = {
@@ -187,7 +198,17 @@ describe('BillingComponent', () => {
       imports: [BillingComponent],
       providers: [
         provideRouter([]),
-        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: (key: string) => billingParams[key] ?? null } } } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              get queryParams() {
+                return billingParams;
+              },
+              queryParamMap: { get: (key: string) => billingParams[key] ?? null },
+            },
+          },
+        },
         { provide: AuthService, useValue: authServiceSpy },
         { provide: BusinessService, useValue: businessServiceSpy },
         { provide: StripeService, useValue: stripeServiceSpy },
@@ -599,4 +620,124 @@ describe('BillingComponent', () => {
     });
   });
 
+  describe('Promo Link Capture & Checkout Prefill', () => {
+    it('trims, strips control characters, and caps promo code length in sessionStorage', () => {
+      const overlong = '  FOUNDERS90_' + 'X'.repeat(80) + '\u0000\n ';
+      const saved = capturePromoCode(overlong);
+      expect(saved).toBeTruthy();
+      expect(saved!.startsWith('FOUNDERS90_')).toBe(true);
+      expect(saved!.length).toBe(MAX_PROMO_CODE_LENGTH);
+      expect(getSavedPromoCode()).toBe(saved);
+
+      expect(sanitizePromoCode('   ')).toBeNull();
+      // Empty parameter on subsequent route does not overwrite existing saved promo code
+      expect(capturePromoCode(null)).toBeNull();
+      expect(getSavedPromoCode()).toBe(saved);
+    });
+
+    it('captures ?promo=FOUNDERS90 on /register (OnboardingComponent) and /login (LoginComponent) and persists across reloads', async () => {
+      authServiceSpy.currentUser = null;
+      billingParams = { promo: '  FOUNDERS90  ' };
+      const onboardingFixture = TestBed.createComponent(OnboardingComponent);
+      await onboardingFixture.componentInstance.ngOnInit();
+      expect(getSavedPromoCode()).toBe('FOUNDERS90');
+
+      clearSavedPromoCode();
+      billingParams = { promo: 'FOUNDERS90' };
+      const loginFixture = TestBed.createComponent(LoginComponent);
+      loginFixture.componentInstance.ngOnInit();
+      expect(getSavedPromoCode()).toBe('FOUNDERS90');
+    });
+
+    it('prefills checkout coupon field for a user with no subscription without claiming the discount is applied', async () => {
+      capturePromoCode('FOUNDERS90');
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(null);
+
+      await component.loadSubscription(mockUser.email);
+      component.selectPlan(mockPlans[0]);
+      fixture.detectChanges();
+
+      expect(component.couponCode()).toBe('FOUNDERS90');
+      expect(component.promoResult()).toBeNull();
+      expect(stripeServiceSpy.validatePromoCode).not.toHaveBeenCalled();
+
+      // Proceeding without clicking Apply does not send an unvalidated promoCodeId
+      await component.proceedToPayment();
+      expect(stripeServiceSpy.createSubscription).toHaveBeenCalledWith(
+        'sofia@restaurant.com',
+        'Sofia Hernandez',
+        mockPlans[0].id,
+        undefined
+      );
+    });
+
+    it('never overwrites a coupon the customer has already entered or applied', async () => {
+      capturePromoCode('FOUNDERS90');
+      stripeServiceSpy.getSubscription.mockResolvedValue(null);
+
+      component.couponCode.set('CUSTOM50');
+      await component.loadSubscription(mockUser.email);
+      component.selectPlan(mockPlans[0]);
+      expect(component.couponCode()).toBe('CUSTOM50');
+
+      component.couponCode.set('');
+      component.promoResult.set({ valid: true, name: 'APPLIED10', promoCodeId: 'promo_10' });
+      component.selectPlan(mockPlans[1]);
+      expect(component.couponCode()).toBe('');
+      expect(component.promoResult()?.name).toBe('APPLIED10');
+    });
+
+    it('allows editing or removing the prefilled code and prevents silent restoration during the same checkout', async () => {
+      capturePromoCode('FOUNDERS90');
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(null);
+
+      await component.loadSubscription(mockUser.email);
+      component.selectPlan(mockPlans[0]);
+      expect(component.couponCode()).toBe('FOUNDERS90');
+
+      // Remove code via removePromoCode()
+      component.removePromoCode();
+      expect(component.couponCode()).toBe('');
+
+      // Selecting another plan during the same checkout must not silently restore FOUNDERS90
+      component.selectPlan(mockPlans[1]);
+      expect(component.couponCode()).toBe('');
+    });
+
+    it('retains saved promo code on failed checkout and clears it only after confirmed successful checkout', async () => {
+      capturePromoCode('FOUNDERS90');
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(null);
+      await component.loadSubscription(mockUser.email);
+      component.selectPlan(mockPlans[0]);
+
+      stripeServiceSpy.validatePromoCode.mockResolvedValueOnce({
+        valid: true,
+        name: 'FOUNDERS90',
+        percentOff: 90,
+        promoCodeId: 'promo_founders90',
+      });
+      await component.applyPromoCode();
+      expect(component.promoResult()?.promoCodeId).toBe('promo_founders90');
+
+      // Failed checkout retains saved promo code
+      stripeServiceSpy.createSubscription.mockRejectedValueOnce(new Error('Card declined'));
+      await component.proceedToPayment();
+      expect(getSavedPromoCode()).toBe('FOUNDERS90');
+
+      // Confirmed checkout clears saved promo code
+      stripeServiceSpy.createSubscription.mockResolvedValueOnce({
+        clientSecret: null,
+        subscriptionId: 'sub_confirmed',
+        requiresSetup: false,
+      });
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(mockSubscription);
+      await component.proceedToPayment();
+
+      expect(getSavedPromoCode()).toBeNull();
+      expect(component.couponCode()).toBe('');
+      expect(component.promoResult()).toBeNull();
+    });
+  });
+
 });
+

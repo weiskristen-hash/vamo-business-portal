@@ -811,5 +811,15 @@ describe('AuthService', () => {
       expect(warningState).toBe(false);
       sub.unsubscribe();
     });
+
+    it('clears saved promotion code from sessionStorage on logout', async () => {
+      const { capturePromoCode, getSavedPromoCode } = await import('../utils/promo-code.util');
+      capturePromoCode('FOUNDERS90');
+      expect(getSavedPromoCode()).toBe('FOUNDERS90');
+
+      await service.logout();
+      expect(getSavedPromoCode()).toBeNull();
+    });
   });
 });
+

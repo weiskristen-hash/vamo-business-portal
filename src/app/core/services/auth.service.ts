@@ -9,6 +9,7 @@ import { createBrowserAuthStorage, createMemoryAuthStorage, BUSINESS_AUTH_STORAG
 import { VamoUser } from '../models/user.model';
 import { environment } from '../../../environments/environment';
 import { GoogleAuthService } from './google-auth.service';
+import { clearSavedPromoCode } from '../utils/promo-code.util';
 
 export type AuthState = 'loading' | 'authenticated' | 'unauthenticated';
 
@@ -694,6 +695,7 @@ export class AuthService implements OnDestroy {
   async logout(redirect: boolean = true): Promise<void> {
     this.clearRefreshTimer();
     this.restoreSessionNonce++;
+    clearSavedPromoCode();
 
     if (typeof window !== 'undefined' && window.sessionStorage) {
       try {

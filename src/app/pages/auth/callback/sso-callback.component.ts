@@ -2,6 +2,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
+import { capturePromoCode, extractPromoFromUrl } from '../../../core/utils/promo-code.util';
 
 @Component({
   selector: 'app-sso-callback',
@@ -98,6 +99,7 @@ export class SsoCallbackComponent implements OnInit {
 
   async ngOnInit(): Promise<void> {
     const params = this.route.snapshot.queryParams;
+    capturePromoCode(params['promo']);
     const errorParam = params['error'] || params['error_description'];
 
     if (errorParam) {
@@ -151,6 +153,8 @@ export class SsoCallbackComponent implements OnInit {
       } catch {
         // Ignore session storage error
       }
+
+      capturePromoCode(extractPromoFromUrl(returnUrl));
 
       const hasLinkedBusiness = !!(user.provider_link && user.provider_link.id);
 

@@ -16,6 +16,11 @@ import {
   PromoResult,
   getCanonicalTierFeatures,
 } from '../../core/services/stripe.service';
+import {
+  capturePromoCode,
+  clearSavedPromoCode,
+  getSavedPromoCode,
+} from '../../core/utils/promo-code.util';
 import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
 @Component({
@@ -305,9 +310,18 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               [placeholder]="'PORTAL.BILLING.COUPON_PLACEHOLDER' | translate"
               [attr.aria-label]="'PORTAL.BILLING.PROMO_TAG' | translate"
               [ngModel]="couponCode()"
-              (ngModelChange)="couponCode.set($event)"
+              (ngModelChange)="onCouponCodeChange($event)"
               [disabled]="couponLoading()"
             />
+            <button
+              *ngIf="couponCode().trim()"
+              type="button"
+              class="btn btn-ghost btn-sm coupon-clear-btn"
+              [disabled]="couponLoading()"
+              (click)="removePromoCode()"
+              [attr.aria-label]="'PORTAL.BILLING.PROMO_REMOVE' | translate"
+              [attr.title]="'PORTAL.BILLING.PROMO_REMOVE' | translate"
+            >✕</button>
             <button
               type="button"
               class="btn btn-secondary btn-sm"
@@ -1540,6 +1554,7 @@ export class BillingComponent implements OnInit, OnDestroy {
   promoResult = signal<PromoResult | null>(null);
   couponLoading = signal(false);
   couponError = signal<string | null>(null);
+  private promoDismissedInCheckout = false;
 
   // Inline Payment Element
   clientSecret = signal<string | null>(null);
@@ -1582,11 +1597,26 @@ export class BillingComponent implements OnInit, OnDestroy {
   }
 
   async ngOnInit(): Promise<void> {
+    const promoParam =
+      this.route.snapshot?.queryParamMap?.get('promo') ??
+      (this.route.snapshot as any)?.queryParams?.['promo'];
+    capturePromoCode(promoParam);
     await this.loadInitialData();
   }
 
   ngOnDestroy(): void {
     this.stripeService.cleanup();
+  }
+
+  private prefillPromoCodeIfEligible(): void {
+    if (this.promoDismissedInCheckout) return;
+    if (this.subscription() !== null && this.subscription() !== undefined) return;
+    if (this.promoResult() !== null) return;
+    if (this.couponCode().trim().length > 0) return;
+    const saved = getSavedPromoCode();
+    if (saved) {
+      this.couponCode.set(saved);
+    }
   }
 
   async loadInitialData(): Promise<void> {
@@ -1618,9 +1648,12 @@ export class BillingComponent implements OnInit, OnDestroy {
       this.subscription.set(sub);
       if (sub) {
         await this.loadPostUsage(sub);
+      } else {
+        this.prefillPromoCodeIfEligible();
       }
     } catch {
       this.subscription.set(null);
+      this.prefillPromoCodeIfEligible();
     }
   }
 
@@ -1676,6 +1709,14 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   // ─── Promotion Code ───────────────────────────────────────────────
 
+  onCouponCodeChange(value: string): void {
+    this.promoDismissedInCheckout = true;
+    this.couponCode.set(value ?? '');
+    if (this.couponError()) {
+      this.couponError.set(null);
+    }
+  }
+
   async applyPromoCode(): Promise<void> {
     const code = this.couponCode().trim();
     if (!code) return;
@@ -1697,6 +1738,7 @@ export class BillingComponent implements OnInit, OnDestroy {
   }
 
   removePromoCode(): void {
+    this.promoDismissedInCheckout = true;
     this.promoResult.set(null);
     this.couponCode.set('');
     this.couponError.set(null);
@@ -1706,8 +1748,12 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   selectPlan(plan: StripePlan): void {
     if (this.isCurrentPlan(plan) || this.isPendingPlan(plan)) return;
-    this.selectedPlan.set(this.selectedPlan()?.id === plan.id ? null : plan);
+    const nextPlan = this.selectedPlan()?.id === plan.id ? null : plan;
+    this.selectedPlan.set(nextPlan);
     this.errorMessage.set(null);
+    if (nextPlan) {
+      this.prefillPromoCodeIfEligible();
+    }
   }
 
   async proceedToPayment(): Promise<void> {
@@ -1823,6 +1869,14 @@ export class BillingComponent implements OnInit, OnDestroy {
       await this.loadSubscription(user.email);
       await this.loadBillingHistory();
       await this.loadSavedMethods();
+    }
+    const isConfirmedActive = !user?.email || ['active', 'trialing'].includes(this.subscription()?.status ?? '');
+    if (isConfirmedActive) {
+      clearSavedPromoCode();
+      this.promoDismissedInCheckout = false;
+      this.promoResult.set(null);
+      this.couponCode.set('');
+      this.couponError.set(null);
     }
     // Resume only after the API confirms the subscription. The editor rechecks
     // quota when the user chooses Publish; checkout never publishes for them.
