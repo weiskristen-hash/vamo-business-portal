@@ -157,7 +157,10 @@ describe('BillingComponent', () => {
       confirmSetup: vi.fn().mockResolvedValue({}),
       confirmWithSavedMethod: vi.fn().mockResolvedValue({}),
       confirmSetupWithSavedMethod: vi.fn().mockResolvedValue({}),
-      changeSubscriptionPlan: vi.fn().mockResolvedValue({}),
+      changeSubscriptionPlan: vi.fn().mockResolvedValue({ status: 'unverified' }),
+      hasVerifiedRenewalSchedule: vi.fn((schedule: any, targetPriceId: string, expectedRenewal: number) =>
+        StripeService.prototype.hasVerifiedRenewalSchedule(schedule, targetPriceId, expectedRenewal)
+      ),
       cancelSubscription: vi.fn().mockResolvedValue({}),
       releaseSchedule: vi.fn().mockResolvedValue({}),
       detachPaymentMethod: vi.fn().mockResolvedValue({}),
@@ -216,6 +219,7 @@ describe('BillingComponent', () => {
       ],
     }).compileComponents();
 
+    TestBed.inject(I18nService).setLang('en');
     fixture = TestBed.createComponent(BillingComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
@@ -238,6 +242,7 @@ describe('BillingComponent', () => {
     stripeServiceSpy.getSubscription.mockResolvedValue(null);
     await (component as any).finalizeSubscriptionSuccess(mockPlans[0]);
     expect(navigate).not.toHaveBeenCalled();
+    expect(stripeServiceSpy.setProviderTier).not.toHaveBeenCalled();
   });
 
   it('ignores malformed returnEventId instead of accepting an external redirect', () => {
@@ -299,6 +304,23 @@ describe('BillingComponent', () => {
   });
 
   describe('New Subscription & PaymentIntent / SetupIntent', () => {
+    it('should preserve saved-card and Use a new card choices for initial subscription checkout', async () => {
+      await fixture.whenStable();
+      component.subscription.set(null);
+      component.subscriptionLoadError.set(false);
+      component.selectedPlan.set(mockPlans[0]);
+      fixture.detectChanges();
+
+      const checkoutPanel: HTMLElement = fixture.nativeElement.querySelector('.checkout-panel');
+      expect(checkoutPanel).toBeTruthy();
+      expect(checkoutPanel.querySelector('.saved-methods-selection')).toBeTruthy();
+      const radioItems = checkoutPanel.querySelectorAll('.saved-card-radio-item');
+      expect(radioItems.length).toBe(2); // 1 saved Visa 4242 + "Use a new card"
+      expect(checkoutPanel.textContent).toContain('4242');
+      expect(checkoutPanel.textContent).toContain('Use a new card');
+      expect(checkoutPanel.querySelector('.plan-change-payment-notice')).toBeNull();
+    });
+
     it('should handle paid subscription path with PaymentIntent and mount element', async () => {
       component.subscription.set(null); // simulate new customer with no subscription
       component.selectedPlan.set(mockPlans[0]);
@@ -349,10 +371,68 @@ describe('BillingComponent', () => {
   });
 
   describe('Upgrade & Downgrade (Change Plan)', () => {
-    it('should execute upgrade immediately and sync provider tier', async () => {
+    const upgradedSubscription: StripeSubscription = {
+      ...mockSubscription,
+      plan: {
+        priceId: mockPlans[2].id,
+        productName: 'Advanced Plan',
+        amount: 8900,
+        currency: 'usd',
+        interval: 'month',
+      },
+    };
+
+    const verifiedScheduledDowngradeSubscription: StripeSubscription = {
+      ...mockSubscription,
+      pendingPlanName: 'Starter Plan',
+      pendingPeriodEnd: 1702500000,
+      pendingScheduleId: 'sub_sched_101',
+      schedule: {
+        id: 'sub_sched_101',
+        status: 'active',
+        phases: [
+          { start_date: 1700000000, end_date: 1702500000, items: [{ price: mockPlans[1].id }] },
+          { start_date: 1702500000, items: [{ price: mockPlans[0].id }] },
+        ],
+      },
+    };
+
+    it('1. existing subscribers see the current-method notice and no card selector in the change-plan panel', async () => {
+      await fixture.whenStable();
+      component.openChangePlan();
+      component.selectedPlan.set(mockPlans[2]);
+      fixture.detectChanges();
+
+      const checkoutPanel: HTMLElement = fixture.nativeElement.querySelector('.checkout-panel');
+      expect(checkoutPanel).toBeTruthy();
+      const notice = checkoutPanel.querySelector('.plan-change-payment-notice');
+      expect(notice?.textContent?.trim()).toBe(
+        'This plan change will use your current payment method on file.'
+      );
+      // Must not show saved-card radios, "Use a new card", or identify a specific saved card in the change-plan panel
+      expect(checkoutPanel.querySelector('.saved-methods-selection')).toBeNull();
+      expect(checkoutPanel.querySelectorAll('input[type="radio"]').length).toBe(0);
+      expect(checkoutPanel.textContent).not.toContain('Use a new card');
+      expect(checkoutPanel.textContent).not.toContain('4242');
+
+      // Confirm Plan Change and Cancel actions remain available
+      expect(checkoutPanel.textContent).toContain('Confirm Plan Change');
+      expect(checkoutPanel.textContent).toContain('Cancel');
+
+      // Separate Saved Payment Methods section remains intact outside checkout panel
+      const savedSection: HTMLElement = fixture.nativeElement.querySelector('.saved-methods-section');
+      expect(savedSection).toBeTruthy();
+      expect(savedSection.textContent).toContain('4242');
+    });
+
+    it('2. verified upgrade produces success, sends compatible payload, and updates provider tier', async () => {
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(upgradedSubscription);
+      component.openChangePlan();
       component.selectedPlan.set(mockPlans[2]); // Advanced plan ($89 > $49)
+
       await component.confirmChangePlan();
 
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledTimes(1);
       expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledWith(
         'sub_123',
         'si_456',
@@ -363,11 +443,166 @@ describe('BillingComponent', () => {
         1702500000,
         mockSubscription.plan.priceId
       );
+      expect(stripeServiceSpy.changeSubscriptionPlan.mock.calls[0].length).toBe(8);
       expect(stripeServiceSpy.setProviderTier).toHaveBeenCalledWith('advanced');
+      expect(component.planChangeUnverified()).toBe(false);
+      expect(component.selectedPlan()).toBeNull();
+      expect(component.showChangePlanSection()).toBe(false);
       expect(component.successMessage()).toContain('upgraded to Advanced Plan');
     });
 
-    it('should warn when downgrading if active post count exceeds new plan limit', async () => {
+    it('3. empty response without verified subscription change does not produce success or update provider tier', async () => {
+      // changeSubscriptionPlan returns { status: 'unverified' } on empty HTTP 200 response,
+      // and re-fetched subscription still shows Basic Plan
+      stripeServiceSpy.changeSubscriptionPlan.mockResolvedValueOnce({ status: 'unverified' });
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(mockSubscription);
+      component.openChangePlan();
+      component.selectedPlan.set(mockPlans[2]);
+
+      await component.confirmChangePlan();
+      fixture.detectChanges();
+
+      expect(stripeServiceSpy.setProviderTier).not.toHaveBeenCalled();
+      expect(component.successMessage()).toBeNull();
+      expect(component.planChangeUnverified()).toBe(true);
+      expect(component.selectedPlan()).toEqual(mockPlans[2]);
+      expect(component.showChangePlanSection()).toBe(true);
+      expect(component.errorMessage()).toBe(
+        'We couldn’t verify the plan change yet. Refresh billing to check its status.'
+      );
+      const refreshBtn = fixture.nativeElement.querySelector('.checkout-panel .refresh-billing-btn');
+      expect(refreshBtn?.textContent?.trim()).toBe('Refresh billing');
+    });
+
+    it('4. pending or failed payment does not produce success or update provider tier', async () => {
+      component.openChangePlan();
+      component.selectedPlan.set(mockPlans[2]);
+
+      // 4a. Direct requires_action response
+      stripeServiceSpy.changeSubscriptionPlan.mockResolvedValueOnce({
+        status: 'requires_action',
+        clientSecret: 'pi_3ds_secret',
+      });
+      await component.confirmChangePlan();
+
+      expect(stripeServiceSpy.setProviderTier).not.toHaveBeenCalled();
+      expect(component.successMessage()).toBeNull();
+      expect(component.errorMessage()).toContain('Additional bank authentication is required');
+      expect(component.selectedPlan()).toEqual(mockPlans[2]);
+
+      // 4b. Re-fetched subscription has target priceId but unpaid/open invoice or past_due status
+      stripeServiceSpy.changeSubscriptionPlan.mockResolvedValueOnce({ status: 'unverified' });
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
+        ...upgradedSubscription,
+        status: 'past_due',
+        latestInvoiceStatus: 'open',
+      });
+      await component.confirmChangePlan();
+
+      expect(stripeServiceSpy.setProviderTier).not.toHaveBeenCalled();
+      expect(component.successMessage()).toBeNull();
+      expect(component.errorMessage()).toBe(
+        'Your payment is still pending confirmation. Your plan will not update until payment is confirmed.'
+      );
+      expect(component.selectedPlan()).toEqual(mockPlans[2]);
+    });
+
+    it('5. verified renewal-time downgrade produces scheduled confirmation and never calls setProviderTier', async () => {
+      component.postsUsed.set(1); // within Starter limit of 1
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(verifiedScheduledDowngradeSubscription);
+      component.openChangePlan();
+      component.selectedPlan.set(mockPlans[0]);
+
+      await component.confirmChangePlan();
+
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledWith(
+        'sub_123',
+        'si_456',
+        mockPlans[0].id,
+        false,
+        'Starter Plan',
+        1700000000,
+        1702500000,
+        mockSubscription.plan.priceId
+      );
+      expect(stripeServiceSpy.setProviderTier).not.toHaveBeenCalled();
+      expect(component.planChangeUnverified()).toBe(false);
+      expect(component.selectedPlan()).toBeNull();
+      expect(component.subscription()?.plan.productName).toBe('Basic Plan');
+      expect(component.subscription()?.pendingPlanName).toBe('Starter Plan');
+      expect(component.successMessage()).toContain('Your downgrade to Starter Plan is scheduled');
+    });
+
+    it('6. missing schedule evidence or pending fields alone shows the unverified state and preserves selectedPlan', async () => {
+      component.postsUsed.set(1);
+      component.openChangePlan();
+      component.selectedPlan.set(mockPlans[0]);
+
+      // 6a. Directus pending fields present WITHOUT verified schedule object
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
+        ...mockSubscription,
+        pendingPlanName: 'Starter Plan',
+        pendingPeriodEnd: 1702500000,
+        pendingScheduleId: 'sub_sched_disconnected',
+        schedule: null,
+      });
+
+      await component.confirmChangePlan();
+
+      expect(stripeServiceSpy.setProviderTier).not.toHaveBeenCalled();
+      expect(component.successMessage()).toBeNull();
+      expect(component.planChangeUnverified()).toBe(true);
+      expect(component.selectedPlan()).toEqual(mockPlans[0]);
+      expect(component.errorMessage()).toBe(
+        'We couldn’t verify the plan change yet. Refresh billing to check its status.'
+      );
+
+      // 6b. Schedule with wrong renewal date or wrong target priceId remains unverified
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
+        ...mockSubscription,
+        schedule: {
+          id: 'sub_sched_wrong_date',
+          status: 'active',
+          phases: [
+            { start_date: 1700000000, end_date: 1709999999, items: [{ price: mockPlans[1].id }] },
+            { start_date: 1709999999, items: [{ price: mockPlans[0].id }] },
+          ],
+        },
+      });
+      await component.refreshBilling();
+
+      expect(component.successMessage()).toBeNull();
+      expect(component.planChangeUnverified()).toBe(true);
+      expect(component.selectedPlan()).toEqual(mockPlans[0]);
+    });
+
+    it('7. refreshBilling checks authoritative state without repeating the mutation', async () => {
+      // Initial upgrade attempt returns unverified because read flow has not caught up yet
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(mockSubscription);
+      component.openChangePlan();
+      component.selectedPlan.set(mockPlans[2]);
+
+      await component.confirmChangePlan();
+
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledTimes(1);
+      expect(component.planChangeUnverified()).toBe(true);
+      expect(component.selectedPlan()).toEqual(mockPlans[2]);
+
+      // User clicks Refresh billing; read flow now returns verified upgraded subscription
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(upgradedSubscription);
+      await component.refreshBilling();
+
+      // Must NOT repeat changeSubscriptionPlan mutation
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.setProviderTier).toHaveBeenCalledWith('advanced');
+      expect(component.planChangeUnverified()).toBe(false);
+      expect(component.selectedPlan()).toBeNull();
+      expect(component.errorMessage()).toBeNull();
+      expect(component.successMessage()).toContain('upgraded to Advanced Plan');
+    });
+
+    it('8. should warn when downgrading if active post count exceeds new plan limit before executing downgrade', async () => {
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(verifiedScheduledDowngradeSubscription);
       component.postsUsed.set(3); // 3 active posts
       component.selectedPlan.set(mockPlans[0]); // Starter plan allows 1
 
@@ -389,6 +624,38 @@ describe('BillingComponent', () => {
         1702500000,
         mockSubscription.plan.priceId
       );
+      expect(stripeServiceSpy.setProviderTier).not.toHaveBeenCalled();
+    });
+
+    it('9. repeated clicks cannot submit duplicate plan changes while in flight', async () => {
+      let resolvePlanChange!: (val: any) => void;
+      stripeServiceSpy.changeSubscriptionPlan.mockReturnValueOnce(
+        new Promise((res) => {
+          resolvePlanChange = res;
+        })
+      );
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(upgradedSubscription);
+      component.openChangePlan();
+      component.selectedPlan.set(mockPlans[2]);
+
+      const firstCall = component.confirmChangePlan();
+      const secondCall = component.confirmChangePlan();
+
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledTimes(1);
+      resolvePlanChange({ status: 'unverified' });
+      await Promise.all([firstCall, secondCall]);
+    });
+
+    it('10. Cancel leaves the subscription unchanged and closes the change-plan panel', () => {
+      component.openChangePlan();
+      component.selectedPlan.set(mockPlans[2]);
+
+      component.closeChangePlan();
+
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+      expect(component.showChangePlanSection()).toBe(false);
+      expect(component.selectedPlan()).toBeNull();
+      expect(component.subscription()).toEqual(mockSubscription);
     });
 
     it('should allow canceling a scheduled downgrade via releaseSchedule', async () => {
@@ -472,15 +739,29 @@ describe('BillingComponent', () => {
       expect(component.errorMessage()).toBe("We couldn't load current plan pricing. Please try again.");
     });
 
-    it('should handle subscription load failure gracefully by setting null subscription without leaking backend error', async () => {
+    it('should handle subscription load failure separately from no-subscription state without leaking backend error', async () => {
+      // When initial load fails, subscriptionLoadError is true and new-subscription checkout is not shown as if user had no subscription
+      component.subscription.set(undefined);
       stripeServiceSpy.getSubscription.mockRejectedValueOnce(
         new Error('HTTP 500 Directus Flow a48e3dee-3d94-471b-804f-16ada69737cf crash on cus_12345')
       );
 
       await component.loadSubscription('sofia@restaurant.com');
+      fixture.detectChanges();
 
       expect(component.subscription()).toBeNull();
+      expect(component.subscriptionLoadError()).toBe(true);
       expect(component.errorMessage()).toBeNull();
+      expect(fixture.nativeElement.querySelector('.subscription-read-error-banner')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.plans-selection-section')).toBeNull();
+
+      // When a refresh fails while a subscription is already loaded, existing subscription is preserved
+      component.subscription.set(mockSubscription);
+      stripeServiceSpy.getSubscription.mockRejectedValueOnce(new Error('Network timeout'));
+      await component.loadSubscription('sofia@restaurant.com');
+
+      expect(component.subscriptionLoadError()).toBe(true);
+      expect(component.subscription()).toEqual(mockSubscription);
     });
 
     it('should handle payment methods load failure gracefully with empty array', async () => {
@@ -545,6 +826,7 @@ describe('BillingComponent', () => {
         interval: 'month',
         tier: 'starter',
         maxPosts: 1,
+        features: [],
       };
 
       i18n.setLang('en');
@@ -565,6 +847,7 @@ describe('BillingComponent', () => {
         interval: 'month',
         tier: 'starter',
         maxPosts: 1,
+        features: [],
       };
 
       i18n.setLang('en');
@@ -616,6 +899,63 @@ describe('BillingComponent', () => {
       );
       expect(mockPlans[0].id.startsWith('price_')).toBe(true);
       expect(mockPlans[0].tier).toBe('starter');
+      i18n.setLang('en');
+    });
+
+    it('11. renders exact EN/ES current-method and unverified notices while keeping plan-change payload values unchanged', async () => {
+      await fixture.whenStable();
+      const i18n = TestBed.inject(I18nService);
+
+      i18n.setLang('en');
+      component.openChangePlan();
+      component.selectedPlan.set(mockPlans[2]);
+      fixture.detectChanges();
+
+      expect(i18n.t('PORTAL.BILLING.PLAN_CHANGE_PAYMENT_METHOD_NOTICE')).toBe(
+        'This plan change will use your current payment method on file.'
+      );
+      expect(i18n.t('PORTAL.BILLING.ERROR_PLAN_CHANGE_UNVERIFIED')).toBe(
+        'We couldn’t verify the plan change yet. Refresh billing to check its status.'
+      );
+      expect(
+        fixture.nativeElement.querySelector('.plan-change-payment-notice')?.textContent?.trim()
+      ).toBe('This plan change will use your current payment method on file.');
+
+      // Trigger unverified state and verify EN -> ES switch updates copy dynamically
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(mockSubscription);
+      await component.confirmChangePlan();
+      fixture.detectChanges();
+
+      expect(component.errorMessage()).toBe(
+        'We couldn’t verify the plan change yet. Refresh billing to check its status.'
+      );
+
+      i18n.setLang('es');
+      fixture.detectChanges();
+
+      expect(i18n.t('PORTAL.BILLING.PLAN_CHANGE_PAYMENT_METHOD_NOTICE')).toBe(
+        'Este cambio de plan usará tu método de pago actual registrado.'
+      );
+      expect(i18n.t('PORTAL.BILLING.ERROR_PLAN_CHANGE_UNVERIFIED')).toBe(
+        'Todavía no pudimos confirmar el cambio de plan. Actualiza la sección de facturación para revisar su estado.'
+      );
+      expect(
+        fixture.nativeElement.querySelector('.plan-change-payment-notice')?.textContent?.trim()
+      ).toBe('Este cambio de plan usará tu método de pago actual registrado.');
+      expect(component.errorMessage()).toBe(
+        'Todavía no pudimos confirmar el cambio de plan. Actualiza la sección de facturación para revisar su estado.'
+      );
+
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledWith(
+        'sub_123',
+        'si_456',
+        'price_1TcqJ0GWvZAV5mbnaBgaMp4Y',
+        true,
+        'Advanced Plan',
+        1700000000,
+        1702500000,
+        'price_1TcqJhGWvZAV5mbnzpBnUhoX'
+      );
       i18n.setLang('en');
     });
   });

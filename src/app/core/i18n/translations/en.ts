@@ -1319,6 +1319,8 @@ export const enTranslations: Record<string, any> = {
       "USE_NEW_CARD": "Use a new card",
       "EXP_DATE": "Exp {{month}}/{{year}}",
       "EXPIRES": "Expires {{month}}/{{year}}",
+      "PLAN_CHANGE_PAYMENT_METHOD_NOTICE": "This plan change will use your current payment method on file.",
+      "PLAN_CHANGE_UNVERIFIED_BADGE": "Verification pending",
 
       "SAVED_METHODS_TITLE": "Saved Payment Methods",
       "BTN_REMOVE": "Remove",
@@ -1331,6 +1333,7 @@ export const enTranslations: Record<string, any> = {
       "BTN_CONTINUE_PAYMENT": "Continue to Payment",
       "BTN_UPDATING_PLAN": "Updating Plan…",
       "BTN_CONFIRM_PLAN_CHANGE": "Confirm Plan Change",
+      "BTN_REFRESH_BILLING": "Refresh billing",
 
       "HISTORY_TITLE": "Invoice & Billing Receipts",
       "HISTORY_LOADING": "Loading invoices…",
@@ -1350,6 +1353,10 @@ export const enTranslations: Record<string, any> = {
       "CANCEL_MODAL_CONFIRM": "Confirm Cancellation",
       "CANCEL_MODAL_CANCELING": "Canceling…",
       "CLOSE_DIALOG": "Close cancel dialog",
+
+      "ERROR_ACTION_REQUIRED": "Additional bank authentication is required to complete this change. Your plan has not been updated yet.",
+      "ERROR_PAYMENT_PENDING": "Your payment is still pending confirmation. Your plan will not update until payment is confirmed.",
+      "ERROR_PLAN_CHANGE_UNVERIFIED": "We couldn’t verify the plan change yet. Refresh billing to check its status.",
 
       "SUCCESS_ACTIVE": "Success! Your account is now active on the {{plan}}.",
       "SUCCESS_UPGRADED": "Your plan has been upgraded to {{plan}}.",
