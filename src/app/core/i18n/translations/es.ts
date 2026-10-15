@@ -1237,6 +1237,7 @@ export const esTranslations: Record<string, any> = {
         "PREVIEW_IMAGE_AS": "Vista previa de la imagen",
         "MODE_EVENT_DETAILS": "Detalles del evento",
         "MODE_WHATS_HOT": "What’s Hot",
+        "MODE_MAIN_FEED": "Feed principal",
         "MODE_MAIN_BANNER": "Banner principal",
         "APPROXIMATE_NOTE": "Vista previa móvil aproximada",
         "NO_IMAGE_TITLE": "Sin foto aún",
