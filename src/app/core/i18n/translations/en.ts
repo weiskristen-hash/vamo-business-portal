@@ -1237,6 +1237,7 @@ export const enTranslations: Record<string, any> = {
         "PREVIEW_IMAGE_AS": "Preview image as",
         "MODE_EVENT_DETAILS": "Event Details",
         "MODE_WHATS_HOT": "What’s Hot",
+        "MODE_MAIN_FEED": "Main Feed",
         "MODE_MAIN_BANNER": "Main Banner",
         "APPROXIMATE_NOTE": "Approximate mobile preview",
         "NO_IMAGE_TITLE": "No photo yet",
