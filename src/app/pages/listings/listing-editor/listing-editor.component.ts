@@ -816,7 +816,7 @@ export interface ExistingImage {
                   [attr.aria-pressed]="previewPlacement === 'whats_hot'"
                   (click)="setPreviewPlacement('whats_hot')"
                 >
-                  {{ 'PORTAL.EVENT_EDITOR.PREVIEW.MODE_WHATS_HOT' | translate }}
+                  {{ 'PORTAL.EVENT_EDITOR.PREVIEW.MODE_MAIN_FEED' | translate }}
                 </button>
                 <button
                   type="button"
@@ -1044,7 +1044,7 @@ export interface ExistingImage {
 
                       <!-- What's Hot Horizontal Section -->
                       <div class="phone-whats-hot-section">
-                        <h3 class="phone-home-section-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.MODE_WHATS_HOT' | translate }}</h3>
+                        <h3 class="phone-home-section-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.MODE_MAIN_FEED' | translate }}</h3>
                         <div class="phone-whats-hot-row">
                           <!-- Compact 220px Event Card -->
                           <div class="phone-whats-hot-card">
@@ -1158,7 +1158,7 @@ export interface ExistingImage {
 
                       <!-- Subtle Home Screen Context Below Banner -->
                       <div class="phone-home-section-peek" aria-hidden="true">
-                        <h3 class="phone-home-section-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.MODE_WHATS_HOT' | translate }}</h3>
+                        <h3 class="phone-home-section-title">{{ 'PORTAL.EVENT_EDITOR.PREVIEW.MODE_MAIN_FEED' | translate }}</h3>
                       </div>
                     </div>
                   </div>
