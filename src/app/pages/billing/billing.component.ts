@@ -465,27 +465,177 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
       </div>
     </section>
 
-    <!-- ── SAVED PAYMENT METHODS SECTION ─────────────────────────────── -->
-    <!-- ── SAVED PAYMENT METHODS SECTION ─────────────────────────────── -->
-    <section *ngIf="savedMethods().length > 0" class="saved-methods-section card">
-      <div class="card-header">
-        <h3 class="card-title">{{ 'PORTAL.BILLING.SAVED_METHODS_TITLE' | translate }}</h3>
+    <!-- ── PAYMENT METHODS SECTION ───────────────────────────────────── -->
+    <section class="saved-methods-section card" aria-labelledby="payment-methods-heading">
+      <div class="card-header payment-methods-header">
+        <h3 id="payment-methods-heading" class="card-title">{{ 'PORTAL.BILLING.PAYMENT_METHODS_TITLE' | translate }}</h3>
+        <button
+          *ngIf="!cardSetupOpen()"
+          type="button"
+          class="btn btn-primary btn-sm add-card-btn"
+          [disabled]="isOpeningCardSetup() || isSavingCard()"
+          (click)="openAddCard()"
+        >
+          {{ 'PORTAL.BILLING.BTN_ADD_CARD' | translate }}
+        </button>
       </div>
+
       <div class="card-body">
-        <div class="saved-cards-list">
+        <!-- Loading State -->
+        <div
+          *ngIf="savedMethodsLoading() && savedMethods().length === 0"
+          class="payment-methods-loading"
+          role="status"
+        >
+          <div class="spinner-sm"></div>
+          <span>{{ 'PORTAL.BILLING.PAYMENT_METHODS_LOADING' | translate }}</span>
+        </div>
+
+        <!-- Error State -->
+        <div
+          *ngIf="!savedMethodsLoading() && savedMethodsError() && savedMethods().length === 0"
+          class="payment-methods-error alert alert-warning"
+          role="alert"
+        >
+          <span class="alert-icon">⚠️</span>
+          <span class="alert-text">{{ 'PORTAL.BILLING.PAYMENT_METHODS_LOAD_ERROR' | translate }}</span>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm retry-payment-methods-btn"
+            (click)="loadSavedMethods()"
+          >
+            {{ 'PORTAL.COMMON.RETRY' | translate }}
+          </button>
+        </div>
+
+        <!-- Empty State -->
+        <div
+          *ngIf="!savedMethodsLoading() && !savedMethodsError() && savedMethods().length === 0"
+          class="empty-saved-cards"
+        >
+          <p class="empty-cards-title">{{ 'PORTAL.BILLING.NO_SAVED_CARDS_TITLE' | translate }}</p>
+          <p class="empty-cards-desc">{{ 'PORTAL.BILLING.NO_SAVED_CARDS_DESC' | translate }}</p>
+          <button
+            *ngIf="!cardSetupOpen()"
+            type="button"
+            class="btn btn-outline-primary btn-sm empty-add-card-btn"
+            [disabled]="isOpeningCardSetup() || isSavingCard()"
+            (click)="openAddCard()"
+          >
+            {{ 'PORTAL.BILLING.BTN_ADD_CARD' | translate }}
+          </button>
+        </div>
+
+        <!-- Saved Cards List -->
+        <div *ngIf="savedMethods().length > 0" class="saved-cards-list">
           <div *ngFor="let card of savedMethods()" class="saved-card-row">
             <div class="saved-card-meta">
               <span class="brand-badge">{{ card.brand | uppercase }}</span>
               <span class="card-digits font-mono">•••• •••• •••• {{ card.last4 }}</span>
               <span class="card-expiry">{{ 'PORTAL.BILLING.EXPIRES' | translate: { month: card.expMonth, year: card.expYear } }}</span>
+              <span
+                *ngIf="isVerifiedRenewalCard(card)"
+                class="badge badge-current renewal-card-badge"
+              >
+                {{ 'PORTAL.BILLING.BADGE_RENEWAL_CARD' | translate }}
+              </span>
             </div>
+
+            <div class="saved-card-actions">
+              <span
+                *ngIf="isRenewalCardRemovalBlocked(card)"
+                class="renewal-remove-blocked-hint"
+              >
+                {{ 'PORTAL.BILLING.RENEWAL_CARD_REMOVE_BLOCKED' | translate }}
+              </span>
+
+              <button
+                *ngIf="!isVerifiedRenewalCard(card)"
+                type="button"
+                class="btn btn-secondary btn-sm set-renewal-card-btn"
+                [disabled]="settingRenewalCardId() === card.id || deletingMethodId() === card.id"
+                (click)="setCardAsRenewal(card)"
+              >
+                {{
+                  settingRenewalCardId() === card.id
+                    ? ('PORTAL.BILLING.BTN_SETTING_RENEWAL' | translate)
+                    : pendingRenewalRetryCardId() === card.id
+                      ? ('PORTAL.BILLING.BTN_RETRY_RENEWAL_CARD' | translate)
+                      : ('PORTAL.BILLING.BTN_USE_FOR_RENEWALS' | translate)
+                }}
+              </button>
+
+              <button
+                type="button"
+                class="btn btn-outline-danger btn-sm remove-card-btn"
+                [disabled]="deletingMethodId() === card.id || isRenewalCardRemovalBlocked(card)"
+                [attr.title]="isRenewalCardRemovalBlocked(card) ? ('PORTAL.BILLING.RENEWAL_CARD_REMOVE_BLOCKED' | translate) : null"
+                (click)="deletePaymentMethod(card)"
+              >
+                {{ deletingMethodId() === card.id ? ('PORTAL.BILLING.BTN_REMOVING' | translate) : ('PORTAL.BILLING.BTN_REMOVE' | translate) }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scoped Inline Add-Card Panel -->
+        <div
+          *ngIf="cardSetupOpen()"
+          class="add-card-panel"
+          role="region"
+          aria-labelledby="add-card-panel-title"
+        >
+          <div class="add-card-panel-header">
+            <h4 id="add-card-panel-title" class="add-card-title">
+              {{ 'PORTAL.BILLING.ADD_CARD_TITLE' | translate }}
+            </h4>
+          </div>
+
+          <div *ngIf="cardSetupError()" class="alert alert-danger card-setup-error" role="alert">
+            <span class="alert-icon">⚠️</span>
+            <span class="alert-text">{{ cardSetupError() }}</span>
+          </div>
+
+          <div *ngIf="isOpeningCardSetup()" class="card-setup-loading" role="status">
+            <div class="spinner-sm"></div>
+            <span>{{ 'PORTAL.BILLING.CARD_SETUP_LOADING' | translate }}</span>
+          </div>
+
+          <div *ngIf="cardSetupClientSecret()" class="payment-elements-container card-setup-elements-container">
+            <div id="portal-card-setup-element" class="stripe-mount-box"></div>
+          </div>
+
+          <label class="card-setup-checkbox-label">
+            <input
+              type="checkbox"
+              class="card-setup-renewal-checkbox"
+              [ngModel]="useCardForRenewals()"
+              (ngModelChange)="useCardForRenewals.set(!!$event)"
+              [disabled]="isSavingCard() || isOpeningCardSetup()"
+            />
+            <span>{{ 'PORTAL.BILLING.USE_FOR_RENEWALS_LABEL' | translate }}</span>
+          </label>
+
+          <p class="card-setup-hold-notice">
+            {{ 'PORTAL.BILLING.CARD_SETUP_HOLD_NOTICE' | translate }}
+          </p>
+
+          <div class="card-setup-actions">
             <button
               type="button"
-              class="btn btn-outline-danger btn-sm"
-              [disabled]="deletingMethodId() === card.id"
-              (click)="deletePaymentMethod(card)"
+              class="btn btn-secondary cancel-card-setup-btn"
+              [disabled]="isSavingCard()"
+              (click)="cancelAddCard()"
             >
-              {{ deletingMethodId() === card.id ? ('PORTAL.BILLING.BTN_REMOVING' | translate) : ('PORTAL.BILLING.BTN_REMOVE' | translate) }}
+              {{ 'PORTAL.COMMON.CANCEL' | translate }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary save-card-btn"
+              [disabled]="!cardSetupReady() || isSavingCard() || isOpeningCardSetup()"
+              (click)="saveNewCard()"
+            >
+              {{ (isSavingCard() ? 'PORTAL.BILLING.BTN_SAVING_CARD' : 'PORTAL.BILLING.BTN_SAVE_CARD') | translate }}
             </button>
           </div>
         </div>
@@ -1273,6 +1423,50 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
 /* Saved Payment Methods Section */
 .saved-methods-section {
+  .payment-methods-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+
+    .card-title {
+      margin: 0;
+    }
+  }
+
+  .payment-methods-loading {
+    padding: 1.5rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    color: var(--vamo-text-muted);
+    font-size: 0.9rem;
+  }
+
+  .empty-saved-cards {
+    padding: 1.5rem 1rem;
+    text-align: center;
+    border: 1px dashed var(--vamo-border);
+    border-radius: 10px;
+    background: var(--vamo-surface-subtle);
+
+    .empty-cards-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--vamo-text);
+      margin: 0 0 0.35rem 0;
+    }
+
+    .empty-cards-desc {
+      font-size: 0.875rem;
+      color: var(--vamo-text-muted);
+      margin: 0 0 1rem 0;
+    }
+  }
+
   .saved-cards-list {
     display: flex;
     flex-direction: column;
@@ -1291,8 +1485,9 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
       .saved-card-meta {
         display: flex;
         align-items: center;
-        gap: 1rem;
+        gap: 0.75rem;
         font-size: 0.9rem;
+        flex-wrap: wrap;
 
         .brand-badge {
           background: var(--vamo-surface-subtle);
@@ -1312,6 +1507,79 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
           font-size: 0.85rem;
         }
       }
+
+      .saved-card-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+
+        .renewal-remove-blocked-hint {
+          font-size: 0.8rem;
+          color: var(--vamo-text-muted);
+        }
+      }
+    }
+  }
+
+  .add-card-panel {
+    margin-top: 1.25rem;
+    padding: 1.25rem;
+    border: 1px solid var(--vamo-border);
+    border-radius: 12px;
+    background: var(--vamo-surface-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+
+    .add-card-panel-header {
+      .add-card-title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: var(--vamo-text);
+        margin: 0;
+      }
+    }
+
+    .card-setup-loading {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1rem 0;
+      color: var(--vamo-text-muted);
+      font-size: 0.875rem;
+    }
+
+    .card-setup-checkbox-label {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      font-size: 0.9rem;
+      color: var(--vamo-text);
+      cursor: pointer;
+      user-select: none;
+
+      input[type="checkbox"] {
+        margin-top: 0.2rem;
+        width: 16px;
+        height: 16px;
+        accent-color: var(--vamo-primary);
+        cursor: pointer;
+      }
+    }
+
+    .card-setup-hold-notice {
+      font-size: 0.825rem;
+      color: var(--vamo-text-muted);
+      margin: 0;
+      line-height: 1.45;
+    }
+
+    .card-setup-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.75rem;
+      flex-wrap: wrap;
     }
   }
 }
@@ -1624,10 +1892,27 @@ export class BillingComponent implements OnInit, OnDestroy {
   showChangePlanSection = signal(false);
   showCancelConfirmModal = signal(false);
 
-  // Saved Payment Methods (initial checkout & Saved Payment Methods section)
+  // Saved Payment Methods (initial checkout & Payment Methods section)
   savedMethods = signal<SavedPaymentMethod[]>([]);
+  savedMethodsLoading = signal(false);
+  savedMethodsError = signal(false);
+  defaultPaymentMethodId = signal<string | null>(null);
+  defaultPaymentMethodVerified = signal(false);
   selectedSavedMethod = signal<SavedPaymentMethod | null>(null);
   deletingMethodId = signal<string | null>(null);
+  settingRenewalCardId = signal<string | null>(null);
+  pendingRenewalRetryCardId = signal<string | null>(null);
+
+  // Standalone Card Setup (isolated from subscription checkout)
+  cardSetupOpen = signal(false);
+  isOpeningCardSetup = signal(false);
+  isSavingCard = signal(false);
+  cardSetupReady = signal(false);
+  cardSetupClientSecret = signal<string | null>(null);
+  cardSetupIntentId = signal<string | null>(null);
+  useCardForRenewals = signal(false);
+  cardSetupError = signal<string | null>(null);
+  activeCardSetupErrorPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
 
   // Billing History
   billingHistory = signal<BillingHistoryItem[]>([]);
@@ -1640,7 +1925,7 @@ export class BillingComponent implements OnInit, OnDestroy {
   couponError = signal<string | null>(null);
   private promoDismissedInCheckout = false;
 
-  // Inline Payment Element
+  // Inline Payment Element (Subscription Checkout)
   clientSecret = signal<string | null>(null);
   stripeReady = signal(false);
   paymentActive = signal(false);
@@ -1651,8 +1936,12 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   private stripeInstance: Stripe | null = null;
   private stripeElements: StripeElements | null = null;
+  private cardSetupStripeInstance: Stripe | null = null;
+  private cardSetupStripeElements: StripeElements | null = null;
   private planChangeInFlight = false;
   private paymentSubmissionInFlight = false;
+  private cardSetupOpenInFlight = false;
+  private cardSetupSubmissionInFlight = false;
 
   constructor() {
     effect(() => {
@@ -1672,6 +1961,10 @@ export class BillingComponent implements OnInit, OnDestroy {
       if (errPayload) {
         this.errorMessage.set(this.i18n.t(errPayload.key, errPayload.params));
       }
+      const cardSetupErrPayload = this.activeCardSetupErrorPayload();
+      if (cardSetupErrPayload) {
+        this.cardSetupError.set(this.i18n.t(cardSetupErrPayload.key, cardSetupErrPayload.params));
+      }
     });
     effect(() => {
       const secret = this.clientSecret();
@@ -1682,6 +1975,11 @@ export class BillingComponent implements OnInit, OnDestroy {
     });
   }
 
+  private setTranslatedSuccess(key: string, params?: Record<string, any>): void {
+    this.activeSuccessPayload.set({ key, params });
+    this.successMessage.set(this.i18n.t(key, params));
+  }
+
   private setTranslatedError(key: string, params?: Record<string, any>): void {
     this.activeErrorPayload.set({ key, params });
     this.errorMessage.set(this.i18n.t(key, params));
@@ -1690,6 +1988,16 @@ export class BillingComponent implements OnInit, OnDestroy {
   private clearError(): void {
     this.activeErrorPayload.set(null);
     this.errorMessage.set(null);
+  }
+
+  private setTranslatedCardSetupError(key: string, params?: Record<string, any>): void {
+    this.activeCardSetupErrorPayload.set({ key, params });
+    this.cardSetupError.set(this.i18n.t(key, params));
+  }
+
+  private clearCardSetupError(): void {
+    this.activeCardSetupErrorPayload.set(null);
+    this.cardSetupError.set(null);
   }
 
   planTitleKey(name: string | null | undefined): string {
@@ -1706,10 +2014,14 @@ export class BillingComponent implements OnInit, OnDestroy {
       (this.route.snapshot as any)?.queryParams?.['promo'];
     capturePromoCode(promoParam);
     await this.loadInitialData();
+    await this.handleCardSetupRedirectIfPresent();
   }
 
   ngOnDestroy(): void {
     this.stripeService.cleanup();
+    if (typeof this.stripeService.cleanupCardSetup === 'function') {
+      this.stripeService.cleanupCardSetup();
+    }
   }
 
   private prefillPromoCodeIfEligible(): void {
@@ -1795,11 +2107,47 @@ export class BillingComponent implements OnInit, OnDestroy {
   }
 
   async loadSavedMethods(): Promise<void> {
+    this.savedMethodsLoading.set(true);
+    this.savedMethodsError.set(false);
     try {
-      const methods = await this.stripeService.getSavedPaymentMethods();
-      this.savedMethods.set(methods);
+      if (typeof this.stripeService.loadSavedPaymentMethods === 'function') {
+        const result = await this.stripeService.loadSavedPaymentMethods();
+        this.savedMethods.set(result.paymentMethods);
+        if (result.defaultVerified) {
+          this.defaultPaymentMethodId.set(result.defaultPaymentMethodId);
+          this.defaultPaymentMethodVerified.set(true);
+        } else {
+          const currentVerifiedId = this.defaultPaymentMethodVerified()
+            ? this.defaultPaymentMethodId()
+            : null;
+          if (currentVerifiedId && result.paymentMethods.some((m) => m.id === currentVerifiedId)) {
+            this.defaultPaymentMethodId.set(currentVerifiedId);
+            this.defaultPaymentMethodVerified.set(true);
+          } else {
+            this.defaultPaymentMethodId.set(null);
+            this.defaultPaymentMethodVerified.set(false);
+          }
+        }
+      } else {
+        const methods = await this.stripeService.getSavedPaymentMethods();
+        const itemDefault = methods.find((m) => m.isRenewalCard === true);
+        const hasVerifiedFlag = methods.some((m) => typeof m.isRenewalCard === 'boolean');
+        this.savedMethods.set(methods);
+        if (hasVerifiedFlag) {
+          this.defaultPaymentMethodId.set(itemDefault?.id ?? null);
+          this.defaultPaymentMethodVerified.set(true);
+        } else {
+          this.defaultPaymentMethodId.set(null);
+          this.defaultPaymentMethodVerified.set(false);
+        }
+      }
     } catch {
+      this.savedMethodsError.set(true);
       this.savedMethods.set([]);
+      this.defaultPaymentMethodId.set(null);
+      this.defaultPaymentMethodVerified.set(false);
+    } finally {
+      this.savedMethodsLoading.set(false);
     }
   }
 
@@ -2433,7 +2781,293 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   // ─── Payment Methods ─────────────────────────────────────────────
 
+  isVerifiedRenewalCard(pm: SavedPaymentMethod): boolean {
+    if (!pm?.id) return false;
+    if (this.defaultPaymentMethodVerified()) {
+      return this.defaultPaymentMethodId() === pm.id;
+    }
+    return pm.isRenewalCard === true;
+  }
+
+  private hasActiveSubscriptionForRenewalProtection(): boolean {
+    const sub = this.subscription();
+    if (!sub) return false;
+    return ['active', 'trialing', 'past_due'].includes(String(sub.status).toLowerCase());
+  }
+
+  isRenewalCardRemovalBlocked(pm: SavedPaymentMethod): boolean {
+    return this.hasActiveSubscriptionForRenewalProtection() && this.isVerifiedRenewalCard(pm);
+  }
+
+  async openAddCard(): Promise<void> {
+    if (this.cardSetupOpenInFlight || this.isOpeningCardSetup() || this.isSavingCard()) return;
+
+    this.cardSetupOpenInFlight = true;
+    this.isOpeningCardSetup.set(true);
+    this.cardSetupOpen.set(true);
+    this.useCardForRenewals.set(false);
+    this.cardSetupReady.set(false);
+    this.cardSetupClientSecret.set(null);
+    this.cardSetupIntentId.set(null);
+    this.clearCardSetupError();
+    this.clearError();
+    this.successMessage.set(null);
+    this.activeSuccessPayload.set(null);
+
+    try {
+      const setup = await this.stripeService.createCardSetupIntent();
+      if (!this.cardSetupOpen()) {
+        return;
+      }
+      this.cardSetupIntentId.set(setup.setupIntentId);
+      this.cardSetupClientSecret.set(setup.clientSecret);
+      await Promise.resolve();
+      await this.mountCardSetupElement(setup.clientSecret);
+    } catch {
+      this.setTranslatedCardSetupError('PORTAL.BILLING.ERROR_CARD_SETUP_FAILED');
+    } finally {
+      this.isOpeningCardSetup.set(false);
+      this.cardSetupOpenInFlight = false;
+    }
+  }
+
+  private async mountCardSetupElement(clientSecret: string): Promise<void> {
+    try {
+      const mountFn =
+        typeof this.stripeService.mountCardSetupElement === 'function'
+          ? this.stripeService.mountCardSetupElement.bind(this.stripeService)
+          : this.stripeService.mountPaymentElement.bind(this.stripeService);
+      const { stripe, elements } = await mountFn(clientSecret, 'portal-card-setup-element');
+      if (!this.cardSetupOpen()) {
+        if (typeof this.stripeService.cleanupCardSetup === 'function') {
+          this.stripeService.cleanupCardSetup();
+        }
+        return;
+      }
+      this.cardSetupStripeInstance = stripe;
+      this.cardSetupStripeElements = elements;
+      this.cardSetupReady.set(true);
+    } catch {
+      this.setTranslatedCardSetupError('PORTAL.BILLING.ERROR_CARD_SETUP_FAILED');
+    }
+  }
+
+  cancelAddCard(): void {
+    if (this.isSavingCard()) return;
+    this.closeAddCardPanel();
+  }
+
+  private closeAddCardPanel(): void {
+    this.cardSetupOpen.set(false);
+    this.isOpeningCardSetup.set(false);
+    this.cardSetupReady.set(false);
+    this.cardSetupClientSecret.set(null);
+    this.cardSetupIntentId.set(null);
+    this.useCardForRenewals.set(false);
+    this.clearCardSetupError();
+    this.cardSetupStripeInstance = null;
+    this.cardSetupStripeElements = null;
+    if (typeof this.stripeService.cleanupCardSetup === 'function') {
+      this.stripeService.cleanupCardSetup();
+    }
+  }
+
+  async saveNewCard(): Promise<void> {
+    if (
+      this.cardSetupSubmissionInFlight ||
+      this.isSavingCard() ||
+      this.isOpeningCardSetup() ||
+      !this.cardSetupReady()
+    ) {
+      return;
+    }
+    if (!this.cardSetupStripeInstance || !this.cardSetupStripeElements) return;
+
+    this.cardSetupSubmissionInFlight = true;
+    this.isSavingCard.set(true);
+    this.clearCardSetupError();
+    this.clearError();
+    this.successMessage.set(null);
+    this.activeSuccessPayload.set(null);
+
+    try {
+      const shouldSetRenewal = this.useCardForRenewals();
+      let returnUrl: string | undefined;
+      if (typeof window !== 'undefined' && window.location?.origin) {
+        const url = new URL('/app/billing', window.location.origin);
+        url.searchParams.set('card_setup', '1');
+        if (shouldSetRenewal) {
+          url.searchParams.set('use_for_renewals', '1');
+        }
+        returnUrl = url.toString();
+      }
+
+      const confirmRes: any = await this.stripeService.confirmSetup(
+        this.cardSetupStripeInstance,
+        this.cardSetupStripeElements,
+        returnUrl,
+      );
+
+      if (confirmRes?.error) {
+        this.activeCardSetupErrorPayload.set(null);
+        this.cardSetupError.set(this.errorService.toCustomerMessage(confirmRes.error, 'save'));
+        return;
+      }
+
+      const confirmedSetupIntentId =
+        (typeof confirmRes?.setupIntent?.id === 'string' && confirmRes.setupIntent.id.trim()) ||
+        this.cardSetupIntentId();
+
+      if (!confirmedSetupIntentId || !confirmedSetupIntentId.startsWith('seti_')) {
+        this.setTranslatedCardSetupError('PORTAL.BILLING.ERROR_CARD_SETUP_UNVERIFIED');
+        return;
+      }
+
+      await this.completeVerifiedCardSetup(confirmedSetupIntentId, shouldSetRenewal, true);
+    } catch {
+      this.setTranslatedCardSetupError('PORTAL.BILLING.ERROR_CARD_SETUP_FAILED');
+    } finally {
+      this.isSavingCard.set(false);
+      this.cardSetupSubmissionInFlight = false;
+    }
+  }
+
+  private async completeVerifiedCardSetup(
+    setupIntentId: string,
+    shouldSetRenewal: boolean,
+    fromInlinePanel: boolean,
+  ): Promise<void> {
+    let finalized: {
+      verified: boolean;
+      setupIntentId: string;
+      paymentMethodId: string;
+      paymentMethod?: SavedPaymentMethod;
+    };
+
+    try {
+      finalized = await this.stripeService.finalizeCardSetup(setupIntentId);
+      if (!finalized?.verified || !finalized?.paymentMethodId) {
+        throw new Error('SetupIntent verification incomplete.');
+      }
+    } catch {
+      if (fromInlinePanel) {
+        this.setTranslatedCardSetupError('PORTAL.BILLING.ERROR_CARD_SETUP_UNVERIFIED');
+      } else {
+        this.setTranslatedError('PORTAL.BILLING.ERROR_CARD_SETUP_UNVERIFIED');
+      }
+      return;
+    }
+
+    // Card setup is verified on the backend. Close the setup panel and refresh saved cards.
+    this.closeAddCardPanel();
+
+    if (finalized.paymentMethod) {
+      const newCard = finalized.paymentMethod;
+      this.savedMethods.update((list) => {
+        const exists = list.some((m) => m.id === newCard.id);
+        return exists ? list : [newCard, ...list];
+      });
+    }
+
+    await this.loadSavedMethods();
+    if (this.savedMethodsError() && finalized.paymentMethod) {
+      this.savedMethodsError.set(false);
+      this.savedMethods.set([finalized.paymentMethod]);
+    }
+
+    if (!shouldSetRenewal) {
+      this.pendingRenewalRetryCardId.set(null);
+      this.setTranslatedSuccess('PORTAL.BILLING.SUCCESS_CARD_SAVED');
+      return;
+    }
+
+    // Attempt to set the verified card as the renewal card
+    try {
+      const subId = this.subscription()?.subscriptionId ?? null;
+      const defaultRes = await this.stripeService.setDefaultPaymentMethod(
+        finalized.paymentMethodId,
+        subId,
+      );
+      if (!defaultRes?.updated) {
+        throw new Error('Default payment method update was not confirmed.');
+      }
+      this.pendingRenewalRetryCardId.set(null);
+      this.defaultPaymentMethodId.set(finalized.paymentMethodId);
+      this.defaultPaymentMethodVerified.set(true);
+      this.savedMethods.update((list) =>
+        list.map((m) => ({ ...m, isRenewalCard: m.id === finalized.paymentMethodId })),
+      );
+      await this.loadSavedMethods();
+      this.setTranslatedSuccess('PORTAL.BILLING.SUCCESS_CARD_SAVED_AND_RENEWAL');
+    } catch {
+      // Partial failure: keep the saved card, allow retrying default selection without repeating setup
+      this.pendingRenewalRetryCardId.set(finalized.paymentMethodId);
+      this.setTranslatedError('PORTAL.BILLING.WARN_CARD_SAVED_RENEWAL_FAILED');
+    }
+  }
+
+  private async handleCardSetupRedirectIfPresent(): Promise<void> {
+    const queryParamMap = this.route.snapshot?.queryParamMap;
+    const rawParams = (this.route.snapshot as any)?.queryParams ?? {};
+    const cardSetupFlag = queryParamMap?.get('card_setup') ?? rawParams['card_setup'] ?? null;
+    const setupIntentParam =
+      queryParamMap?.get('setup_intent') ?? rawParams['setup_intent'] ?? null;
+    const redirectStatus =
+      queryParamMap?.get('redirect_status') ?? rawParams['redirect_status'] ?? null;
+    const useForRenewalsParam =
+      queryParamMap?.get('use_for_renewals') ?? rawParams['use_for_renewals'] ?? null;
+
+    if (!cardSetupFlag && !setupIntentParam && !redirectStatus) {
+      return;
+    }
+
+    // Never trust redirect_status query param alone without verifying setup_intent on the backend
+    if (!setupIntentParam || typeof setupIntentParam !== 'string' || !setupIntentParam.startsWith('seti_')) {
+      if (cardSetupFlag || redirectStatus) {
+        this.setTranslatedError('PORTAL.BILLING.ERROR_CARD_SETUP_UNVERIFIED');
+      }
+      return;
+    }
+
+    const shouldSetRenewal = useForRenewalsParam === '1' || useForRenewalsParam === 'true';
+    await this.completeVerifiedCardSetup(setupIntentParam, shouldSetRenewal, false);
+  }
+
+  async setCardAsRenewal(pm: SavedPaymentMethod): Promise<void> {
+    if (!pm?.id || this.settingRenewalCardId() || this.deletingMethodId()) return;
+    this.settingRenewalCardId.set(pm.id);
+    this.clearError();
+    this.successMessage.set(null);
+    this.activeSuccessPayload.set(null);
+
+    try {
+      const subId = this.subscription()?.subscriptionId ?? null;
+      const res = await this.stripeService.setDefaultPaymentMethod(pm.id, subId);
+      if (!res?.updated) {
+        throw new Error('Could not update renewal card.');
+      }
+      this.pendingRenewalRetryCardId.set(null);
+      this.defaultPaymentMethodId.set(pm.id);
+      this.defaultPaymentMethodVerified.set(true);
+      this.savedMethods.update((list) =>
+        list.map((m) => ({ ...m, isRenewalCard: m.id === pm.id })),
+      );
+      await this.loadSavedMethods();
+      this.setTranslatedSuccess('PORTAL.BILLING.SUCCESS_RENEWAL_CARD_UPDATED');
+    } catch {
+      this.setTranslatedError('PORTAL.BILLING.ERROR_RENEWAL_UPDATE_FAILED');
+    } finally {
+      this.settingRenewalCardId.set(null);
+    }
+  }
+
   async deletePaymentMethod(pm: SavedPaymentMethod): Promise<void> {
+    if (!pm?.id || this.deletingMethodId()) return;
+    if (this.isRenewalCardRemovalBlocked(pm)) {
+      this.setTranslatedError('PORTAL.BILLING.RENEWAL_CARD_REMOVE_BLOCKED');
+      return;
+    }
+
     this.deletingMethodId.set(pm.id);
     this.clearError();
     try {
@@ -2442,9 +3076,19 @@ export class BillingComponent implements OnInit, OnDestroy {
       if (this.selectedSavedMethod()?.id === pm.id) {
         this.selectedSavedMethod.set(null);
       }
+      if (this.defaultPaymentMethodId() === pm.id) {
+        this.defaultPaymentMethodId.set(null);
+      }
+      if (this.pendingRenewalRetryCardId() === pm.id) {
+        this.pendingRenewalRetryCardId.set(null);
+      }
     } catch (err: any) {
-      this.activeErrorPayload.set(null);
-      this.errorMessage.set(this.errorService.toCustomerMessage(err, 'delete'));
+      if (err?.code === 'RENEWAL_CARD_PROTECTED') {
+        this.setTranslatedError('PORTAL.BILLING.RENEWAL_CARD_REMOVE_BLOCKED');
+      } else {
+        this.activeErrorPayload.set(null);
+        this.errorMessage.set(this.errorService.toCustomerMessage(err, 'delete'));
+      }
     } finally {
       this.deletingMethodId.set(null);
     }

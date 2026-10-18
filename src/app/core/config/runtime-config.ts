@@ -14,6 +14,9 @@ export interface RuntimeConfig {
   stripeReleaseScheduleFlow: string;
   stripeGetPaymentMethodsFlow: string;
   stripeDetachPaymentMethodFlow: string;
+  stripeCreateSetupIntentFlow: string;
+  stripeFinalizeSetupIntentFlow: string;
+  stripeSetDefaultPaymentMethodFlow: string;
   stripeGetBillingHistoryFlow: string;
   setProviderTierFlow: string;
   providerGetQuotaFlow: string;
@@ -55,6 +58,9 @@ let currentConfig: RuntimeConfig = {
   stripeReleaseScheduleFlow: windowConfig.stripeReleaseScheduleFlow || environment.STRIPE_RELEASE_SCHEDULE_FLOW || '',
   stripeGetPaymentMethodsFlow: windowConfig.stripeGetPaymentMethodsFlow || environment.STRIPE_GET_PAYMENT_METHODS_FLOW || '',
   stripeDetachPaymentMethodFlow: windowConfig.stripeDetachPaymentMethodFlow || environment.STRIPE_DETACH_PAYMENT_METHOD_FLOW || '',
+  stripeCreateSetupIntentFlow: windowConfig.stripeCreateSetupIntentFlow || (environment as any).STRIPE_CREATE_SETUP_INTENT_FLOW || '',
+  stripeFinalizeSetupIntentFlow: windowConfig.stripeFinalizeSetupIntentFlow || (environment as any).STRIPE_FINALIZE_SETUP_INTENT_FLOW || '',
+  stripeSetDefaultPaymentMethodFlow: windowConfig.stripeSetDefaultPaymentMethodFlow || (environment as any).STRIPE_SET_DEFAULT_PAYMENT_METHOD_FLOW || '',
   stripeGetBillingHistoryFlow: windowConfig.stripeGetBillingHistoryFlow || environment.STRIPE_GET_BILLING_HISTORY_FLOW || '',
   setProviderTierFlow: windowConfig.setProviderTierFlow || environment.SET_PROVIDER_TIER_FLOW || '',
   providerGetQuotaFlow: windowConfig.providerGetQuotaFlow || environment.PROVIDER_GET_QUOTA_FLOW || '',
@@ -110,6 +116,15 @@ export const runtimeConfig = {
   get stripeDetachPaymentMethodFlow(): string {
     return currentConfig.stripeDetachPaymentMethodFlow;
   },
+  get stripeCreateSetupIntentFlow(): string {
+    return currentConfig.stripeCreateSetupIntentFlow;
+  },
+  get stripeFinalizeSetupIntentFlow(): string {
+    return currentConfig.stripeFinalizeSetupIntentFlow;
+  },
+  get stripeSetDefaultPaymentMethodFlow(): string {
+    return currentConfig.stripeSetDefaultPaymentMethodFlow;
+  },
   get stripeGetBillingHistoryFlow(): string {
     return currentConfig.stripeGetBillingHistoryFlow;
   },
@@ -152,6 +167,9 @@ export const runtimeConfig = {
       stripeReleaseScheduleFlow: environment.STRIPE_RELEASE_SCHEDULE_FLOW || '',
       stripeGetPaymentMethodsFlow: environment.STRIPE_GET_PAYMENT_METHODS_FLOW || '',
       stripeDetachPaymentMethodFlow: environment.STRIPE_DETACH_PAYMENT_METHOD_FLOW || '',
+      stripeCreateSetupIntentFlow: (environment as any).STRIPE_CREATE_SETUP_INTENT_FLOW || '',
+      stripeFinalizeSetupIntentFlow: (environment as any).STRIPE_FINALIZE_SETUP_INTENT_FLOW || '',
+      stripeSetDefaultPaymentMethodFlow: (environment as any).STRIPE_SET_DEFAULT_PAYMENT_METHOD_FLOW || '',
       stripeGetBillingHistoryFlow: environment.STRIPE_GET_BILLING_HISTORY_FLOW || '',
       setProviderTierFlow: environment.SET_PROVIDER_TIER_FLOW || '',
       providerGetQuotaFlow: environment.PROVIDER_GET_QUOTA_FLOW || '',

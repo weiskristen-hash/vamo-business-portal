@@ -797,5 +797,193 @@ describe('StripeService', () => {
         container.remove();
       }
     });
+
+    it('mountCardSetupElement and cleanupCardSetup keep standalone card setup Elements isolated from subscription checkout Elements', async () => {
+      const checkoutElement = { mount: vi.fn(), destroy: vi.fn() };
+      const cardSetupElement = { mount: vi.fn(), destroy: vi.fn() };
+      const checkoutElements = { create: vi.fn().mockReturnValue(checkoutElement) };
+      const setupElements = { create: vi.fn().mockReturnValue(cardSetupElement) };
+
+      const mockStripe = {
+        elements: vi
+          .fn()
+          .mockReturnValueOnce(checkoutElements)
+          .mockReturnValueOnce(setupElements),
+      };
+      vi.spyOn(service, 'getStripe').mockResolvedValue(mockStripe as any);
+
+      const checkoutContainer = document.createElement('div');
+      checkoutContainer.id = 'portal-payment-element';
+      const setupContainer = document.createElement('div');
+      setupContainer.id = 'portal-card-setup-element';
+      document.body.appendChild(checkoutContainer);
+      document.body.appendChild(setupContainer);
+
+      try {
+        await service.mountPaymentElement('pi_secret_checkout', 'portal-payment-element');
+        await service.mountCardSetupElement('seti_secret_card', 'portal-card-setup-element');
+
+        expect((service as any).activeElements).toBe(checkoutElements);
+        expect((service as any).cardSetupElements).toBe(setupElements);
+
+        // Cleaning up standalone card setup must not clear subscription checkout activeElements
+        service.cleanupCardSetup();
+        expect(cardSetupElement.destroy).toHaveBeenCalledTimes(1);
+        expect((service as any).cardSetupElements).toBeNull();
+        expect((service as any).activeElements).toBe(checkoutElements);
+
+        // Cleaning up checkout must not throw or corrupt state
+        service.cleanup();
+        expect((service as any).activeElements).toBeNull();
+      } finally {
+        checkoutContainer.remove();
+        setupContainer.remove();
+      }
+    });
+  });
+
+  describe('Standalone Credit-Card Management Flows', () => {
+    it('loadSavedPaymentMethods does not infer default card from list order when defaultPaymentMethodId is absent', async () => {
+      runtimeConfig.updateConfig({ stripeGetPaymentMethodsFlow: 'flow-get-pms' });
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        paymentMethods: [
+          { id: 'pm_first', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2028 },
+          { id: 'pm_second', brand: 'mastercard', last4: '5555', expMonth: 6, expYear: 2029 },
+        ],
+      });
+
+      const res = await service.loadSavedPaymentMethods();
+      expect(res.defaultVerified).toBe(false);
+      expect(res.defaultPaymentMethodId).toBeNull();
+      expect(res.paymentMethods[0].isRenewalCard).toBeUndefined();
+      expect(res.paymentMethods[1].isRenewalCard).toBeUndefined();
+    });
+
+    it('loadSavedPaymentMethods marks only the verified defaultPaymentMethodId as renewal card', async () => {
+      runtimeConfig.updateConfig({ stripeGetPaymentMethodsFlow: 'flow-get-pms' });
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        paymentMethods: [
+          { id: 'pm_first', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2028 },
+          { id: 'pm_second', brand: 'mastercard', last4: '5555', expMonth: 6, expYear: 2029 },
+        ],
+        defaultPaymentMethodId: 'pm_second',
+      });
+
+      const res = await service.loadSavedPaymentMethods();
+      expect(res.defaultVerified).toBe(true);
+      expect(res.defaultPaymentMethodId).toBe('pm_second');
+      expect(res.paymentMethods[0].isRenewalCard).toBe(false);
+      expect(res.paymentMethods[1].isRenewalCard).toBe(true);
+    });
+
+    it('createCardSetupIntent requests a SetupIntent without client-supplied customerId and deduplicates in-flight calls', async () => {
+      runtimeConfig.updateConfig({ stripeCreateSetupIntentFlow: 'flow-create-si' });
+      let resolvePost!: (val: any) => void;
+      const postSpy = vi.spyOn(service, 'flowPost').mockReturnValueOnce(
+        new Promise((res) => {
+          resolvePost = res;
+        })
+      );
+
+      const p1 = service.createCardSetupIntent();
+      const p2 = service.createCardSetupIntent();
+      expect(postSpy).toHaveBeenCalledTimes(1);
+      expect(postSpy).toHaveBeenCalledWith('flow-create-si', {});
+
+      resolvePost({
+        setupIntentId: 'seti_12345',
+        clientSecret: 'seti_12345_secret_abc',
+      });
+
+      const [r1, r2] = await Promise.all([p1, p2]);
+      expect(r1).toEqual({
+        setupIntentId: 'seti_12345',
+        clientSecret: 'seti_12345_secret_abc',
+      });
+      expect(r2).toEqual(r1);
+    });
+
+    it('finalizeCardSetup verifies succeeded SetupIntent and attached payment method on backend', async () => {
+      runtimeConfig.updateConfig({ stripeFinalizeSetupIntentFlow: 'flow-finalize-si' });
+      const postSpy = vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        verified: true,
+        setupIntentId: 'seti_12345',
+        status: 'succeeded',
+        paymentMethodId: 'pm_new_99',
+        paymentMethod: {
+          id: 'pm_new_99',
+          brand: 'visa',
+          last4: '1111',
+          expMonth: 10,
+          expYear: 2030,
+        },
+      });
+
+      const res = await service.finalizeCardSetup('seti_12345');
+      expect(postSpy).toHaveBeenCalledWith('flow-finalize-si', { setupIntentId: 'seti_12345' });
+      expect(res.verified).toBe(true);
+      expect(res.paymentMethodId).toBe('pm_new_99');
+      expect(res.paymentMethod?.last4).toBe('1111');
+    });
+
+    it('finalizeCardSetup rejects unverified or non-succeeded SetupIntent', async () => {
+      runtimeConfig.updateConfig({ stripeFinalizeSetupIntentFlow: 'flow-finalize-si' });
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        verified: false,
+        error: true,
+        status: 'requires_payment_method',
+        message: 'Card setup has not succeeded.',
+      });
+
+      await expect(service.finalizeCardSetup('seti_failed')).rejects.toThrow(
+        'Card setup has not succeeded.'
+      );
+    });
+
+    it('setDefaultPaymentMethod updates customer and active subscription default payment method and deduplicates concurrent requests', async () => {
+      runtimeConfig.updateConfig({ stripeSetDefaultPaymentMethodFlow: 'flow-set-default' });
+      let resolvePost!: (val: any) => void;
+      const postSpy = vi.spyOn(service, 'flowPost').mockReturnValueOnce(
+        new Promise((res) => {
+          resolvePost = res;
+        })
+      );
+
+      const p1 = service.setDefaultPaymentMethod('pm_new_99', 'sub_active_1');
+      const p2 = service.setDefaultPaymentMethod('pm_new_99', 'sub_active_1');
+      expect(postSpy).toHaveBeenCalledTimes(1);
+      expect(postSpy).toHaveBeenCalledWith('flow-set-default', {
+        paymentMethodId: 'pm_new_99',
+        subscriptionId: 'sub_active_1',
+      });
+
+      resolvePost({
+        updated: true,
+        defaultPaymentMethodId: 'pm_new_99',
+        customerDefaultUpdated: true,
+        subscriptionDefaultUpdated: true,
+        subscriptionId: 'sub_active_1',
+      });
+
+      const [r1, r2] = await Promise.all([p1, p2]);
+      expect(r1.updated).toBe(true);
+      expect(r1.defaultPaymentMethodId).toBe('pm_new_99');
+      expect(r2).toEqual(r1);
+    });
+
+    it('detachPaymentMethod surfaces RENEWAL_CARD_PROTECTED error when backend blocks detaching active renewal card', async () => {
+      runtimeConfig.updateConfig({ stripeDetachPaymentMethodFlow: 'flow-detach-pm' });
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        detached: false,
+        error: true,
+        code: 'RENEWAL_CARD_PROTECTED',
+        message: 'Cannot remove active renewal card.',
+      });
+
+      await expect(service.detachPaymentMethod('pm_renewal')).rejects.toMatchObject({
+        code: 'RENEWAL_CARD_PROTECTED',
+      });
+    });
   });
 });
+
