@@ -1,0 +1,911 @@
+{
+  "flows": [
+    {
+      "id": "b1c4e8a2-7f3d-4e9a-8c1b-2d5f6a9e0c31",
+      "name": "Stripe - Create SetupIntent",
+      "icon": "credit_card",
+      "color": "#8070C0",
+      "description": "Creates a standalone off_session Stripe SetupIntent for the authenticated user without charging or changing subscriptions.",
+      "status": "active",
+      "trigger": "webhook",
+      "accountability": "all",
+      "options": {
+        "method": "POST",
+        "async": false,
+        "return": "format_setup_intent"
+      },
+      "rootOperation": "b1c4e8a2-0001-4000-8000-000000000001",
+      "operations": [
+        {
+          "id": "b1c4e8a2-0001-4000-8000-000000000001",
+          "key": "read_user",
+          "name": "Read Authenticated User",
+          "type": "item-read",
+          "position_x": 1,
+          "position_y": 1,
+          "resolve": "b1c4e8a2-0002-4000-8000-000000000002",
+          "reject": null,
+          "options": {
+            "collection": "directus_users",
+            "permissions": "$full",
+            "key": [
+              "{{ $accountability.user }}"
+            ],
+            "query": {
+              "fields": [
+                "email",
+                "first_name",
+                "last_name"
+              ]
+            }
+          }
+        },
+        {
+          "id": "b1c4e8a2-0002-4000-8000-000000000002",
+          "key": "extract_user",
+          "name": "Extract User Email & Name",
+          "type": "exec",
+          "position_x": 19,
+          "position_y": 1,
+          "resolve": "b1c4e8a2-0003-4000-8000-000000000003",
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const raw = data.read_user;\n  const user = Array.isArray(raw) ? raw[0] : raw;\n  const email = user && typeof user.email === 'string' ? user.email.trim() : '';\n  if (!email) {\n    throw new Error('Authenticated user email is required.');\n  }\n  const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || email;\n  return {\n    email,\n    name,\n    encodedEmail: encodeURIComponent(email),\n    encodedName: encodeURIComponent(name),\n  };\n};"
+          }
+        },
+        {
+          "id": "b1c4e8a2-0003-4000-8000-000000000003",
+          "key": "get_customer",
+          "name": "Lookup Stripe Customer by Email",
+          "type": "request",
+          "position_x": 37,
+          "position_y": 1,
+          "resolve": "b1c4e8a2-0004-4000-8000-000000000004",
+          "reject": null,
+          "options": {
+            "method": "GET",
+            "url": "https://api.stripe.com/v1/customers?email={{ extract_user.encodedEmail }}&limit=1",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              }
+            ]
+          }
+        },
+        {
+          "id": "b1c4e8a2-0004-4000-8000-000000000004",
+          "key": "extract_existing_customer",
+          "name": "Extract Existing Customer ID",
+          "type": "exec",
+          "position_x": 55,
+          "position_y": 1,
+          "resolve": "b1c4e8a2-0005-4000-8000-000000000005",
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const body = data.get_customer && data.get_customer.data;\n  const customers = body && body.data;\n  const customerId = (Array.isArray(customers) && customers.length > 0) ? customers[0].id : null;\n  return { customerId };\n};"
+          }
+        },
+        {
+          "id": "b1c4e8a2-0005-4000-8000-000000000005",
+          "key": "is_customer_missing",
+          "name": "Customer Missing?",
+          "type": "condition",
+          "position_x": 73,
+          "position_y": 1,
+          "resolve": "b1c4e8a2-0006-4000-8000-000000000006",
+          "reject": "b1c4e8a2-0007-4000-8000-000000000007",
+          "options": {
+            "filter": {
+              "extract_existing_customer": {
+                "customerId": {
+                  "_null": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "b1c4e8a2-0006-4000-8000-000000000006",
+          "key": "create_customer",
+          "name": "Create Stripe Customer if Missing",
+          "type": "request",
+          "position_x": 73,
+          "position_y": 17,
+          "resolve": "b1c4e8a2-0007-4000-8000-000000000007",
+          "reject": null,
+          "options": {
+            "method": "POST",
+            "url": "https://api.stripe.com/v1/customers",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              },
+              {
+                "header": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": "email={{ extract_user.encodedEmail }}&name={{ extract_user.encodedName }}"
+          }
+        },
+        {
+          "id": "b1c4e8a2-0007-4000-8000-000000000007",
+          "key": "resolve_customer_id",
+          "name": "Resolve Active Customer ID",
+          "type": "exec",
+          "position_x": 91,
+          "position_y": 1,
+          "resolve": "b1c4e8a2-0008-4000-8000-000000000008",
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const existingId = data.extract_existing_customer && data.extract_existing_customer.customerId;\n  const createdBody = data.create_customer && data.create_customer.data;\n  const customerId = existingId || (createdBody && createdBody.id) || null;\n  if (!customerId) {\n    throw new Error('Could not resolve Stripe customer.');\n  }\n  return { customerId };\n};"
+          }
+        },
+        {
+          "id": "b1c4e8a2-0008-4000-8000-000000000008",
+          "key": "create_setup_intent",
+          "name": "Create Stripe SetupIntent",
+          "type": "request",
+          "position_x": 109,
+          "position_y": 1,
+          "resolve": "b1c4e8a2-0009-4000-8000-000000000009",
+          "reject": "b1c4e8a2-0009-4000-8000-000000000009",
+          "options": {
+            "method": "POST",
+            "url": "https://api.stripe.com/v1/setup_intents",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              },
+              {
+                "header": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": "customer={{ resolve_customer_id.customerId }}&payment_method_types[]=card&usage=off_session"
+          }
+        },
+        {
+          "id": "b1c4e8a2-0009-4000-8000-000000000009",
+          "key": "format_setup_intent",
+          "name": "Format SetupIntent Response",
+          "type": "exec",
+          "position_x": 127,
+          "position_y": 1,
+          "resolve": null,
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const si = data.create_setup_intent && data.create_setup_intent.data;\n  if (!si || si.error || !si.id || !si.client_secret) {\n    return {\n      error: true,\n      code: 'SETUP_INTENT_CREATE_FAILED',\n      message: (si && si.error && si.error.message) || 'Could not create SetupIntent.',\n    };\n  }\n  return {\n    setupIntentId: si.id,\n    clientSecret: si.client_secret,\n    customerId: si.customer,\n  };\n};"
+          }
+        }
+      ]
+    },
+    {
+      "id": "c2d5f9b3-8e4a-4f0b-9d2c-3e6a7b0f1d42",
+      "name": "Stripe - Finalize Card Setup",
+      "icon": "verified",
+      "color": "#10B981",
+      "description": "Verifies a Stripe SetupIntent succeeded and belongs to the authenticated customer before returning the attached PaymentMethod.",
+      "status": "active",
+      "trigger": "webhook",
+      "accountability": "all",
+      "options": {
+        "method": "POST",
+        "async": false,
+        "return": "verify_setup"
+      },
+      "rootOperation": "c2d5f9b3-0001-4000-8000-000000000001",
+      "operations": [
+        {
+          "id": "c2d5f9b3-0001-4000-8000-000000000001",
+          "key": "read_user",
+          "name": "Read Authenticated User",
+          "type": "item-read",
+          "position_x": 1,
+          "position_y": 1,
+          "resolve": "c2d5f9b3-0002-4000-8000-000000000002",
+          "reject": null,
+          "options": {
+            "collection": "directus_users",
+            "permissions": "$full",
+            "key": [
+              "{{ $accountability.user }}"
+            ],
+            "query": {
+              "fields": [
+                "email"
+              ]
+            }
+          }
+        },
+        {
+          "id": "c2d5f9b3-0002-4000-8000-000000000002",
+          "key": "validate_input",
+          "name": "Validate Input & User Email",
+          "type": "exec",
+          "position_x": 19,
+          "position_y": 1,
+          "resolve": "c2d5f9b3-0003-4000-8000-000000000003",
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const raw = data.read_user;\n  const user = Array.isArray(raw) ? raw[0] : raw;\n  const email = user && typeof user.email === 'string' ? user.email.trim() : '';\n  const body = (data.$trigger && data.$trigger.body) || {};\n  const setupIntentId = typeof body.setupIntentId === 'string' ? body.setupIntentId.trim() : '';\n  const validFormat = Boolean(setupIntentId && /^seti_[A-Za-z0-9_]+$/.test(setupIntentId));\n  return {\n    email,\n    encodedEmail: email ? encodeURIComponent(email) : '',\n    setupIntentId: validFormat ? setupIntentId : 'seti_invalid',\n    inputValid: Boolean(email && validFormat),\n  };\n};"
+          }
+        },
+        {
+          "id": "c2d5f9b3-0003-4000-8000-000000000003",
+          "key": "get_customer",
+          "name": "Get Stripe Customer",
+          "type": "request",
+          "position_x": 37,
+          "position_y": 1,
+          "resolve": "c2d5f9b3-0004-4000-8000-000000000004",
+          "reject": null,
+          "options": {
+            "method": "GET",
+            "url": "https://api.stripe.com/v1/customers?email={{ validate_input.encodedEmail }}&limit=1",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              }
+            ]
+          }
+        },
+        {
+          "id": "c2d5f9b3-0004-4000-8000-000000000004",
+          "key": "extract_customer_id",
+          "name": "Extract Customer ID",
+          "type": "exec",
+          "position_x": 55,
+          "position_y": 1,
+          "resolve": "c2d5f9b3-0005-4000-8000-000000000005",
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const body = data.get_customer && data.get_customer.data;\n  const customers = body && body.data;\n  const customerId = (Array.isArray(customers) && customers.length > 0) ? customers[0].id : null;\n  return { customerId };\n};"
+          }
+        },
+        {
+          "id": "c2d5f9b3-0005-4000-8000-000000000005",
+          "key": "get_setup_intent",
+          "name": "Retrieve SetupIntent from Stripe",
+          "type": "request",
+          "position_x": 73,
+          "position_y": 1,
+          "resolve": "c2d5f9b3-0006-4000-8000-000000000006",
+          "reject": "c2d5f9b3-0006-4000-8000-000000000006",
+          "options": {
+            "method": "GET",
+            "url": "https://api.stripe.com/v1/setup_intents/{{ validate_input.setupIntentId }}?expand[]=payment_method",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              }
+            ]
+          }
+        },
+        {
+          "id": "c2d5f9b3-0006-4000-8000-000000000006",
+          "key": "verify_setup",
+          "name": "Verify Ownership, Status & PaymentMethod",
+          "type": "exec",
+          "position_x": 91,
+          "position_y": 1,
+          "resolve": null,
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const input = data.validate_input || {};\n  if (!input.inputValid) {\n    return {\n      verified: false,\n      error: true,\n      code: 'INVALID_SETUP_INTENT_INPUT',\n      message: 'A valid setupIntentId is required.',\n    };\n  }\n  const customerId = data.extract_customer_id && data.extract_customer_id.customerId;\n  const si = data.get_setup_intent && data.get_setup_intent.data;\n  if (!customerId) {\n    return {\n      verified: false,\n      error: true,\n      code: 'CUSTOMER_NOT_FOUND',\n      message: 'No Stripe customer found for authenticated user.',\n    };\n  }\n  if (!si || si.error || si.status !== 'succeeded') {\n    return {\n      verified: false,\n      error: true,\n      code: 'SETUP_INTENT_NOT_SUCCEEDED',\n      status: (si && si.status) || null,\n      message: (si && si.error && si.error.message) || 'Card setup has not succeeded.',\n    };\n  }\n  const siCustomer = typeof si.customer === 'string' ? si.customer : (si.customer && si.customer.id);\n  if (siCustomer !== customerId) {\n    return {\n      verified: false,\n      error: true,\n      code: 'SETUP_INTENT_CUSTOMER_MISMATCH',\n      message: 'SetupIntent does not belong to the authenticated customer.',\n    };\n  }\n  const pmObj = typeof si.payment_method === 'object' && si.payment_method !== null ? si.payment_method : null;\n  const pmId = pmObj ? pmObj.id : (typeof si.payment_method === 'string' ? si.payment_method : null);\n  if (!pmId || !pmId.startsWith('pm_')) {\n    return {\n      verified: false,\n      error: true,\n      code: 'PAYMENT_METHOD_MISSING',\n      message: 'No payment method was attached to the SetupIntent.',\n    };\n  }\n  const card = (pmObj && pmObj.card) || {};\n  return {\n    verified: true,\n    setupIntentId: si.id,\n    paymentMethodId: pmId,\n    paymentMethod: pmObj ? {\n      id: pmId,\n      brand: card.brand || 'card',\n      last4: card.last4 || '****',\n      expMonth: card.exp_month || 0,\n      expYear: card.exp_year || 0,\n    } : undefined,\n  };\n};"
+          }
+        }
+      ]
+    },
+    {
+      "id": "d3e6a0c4-9f5b-4a1c-8e3d-4f7b8c1a2e53",
+      "name": "Stripe - Set Default Payment Method",
+      "icon": "star",
+      "color": "#8070C0",
+      "description": "Verifies card ownership and sets the payment method as default on both the Stripe customer and active/trialing subscription.",
+      "status": "active",
+      "trigger": "webhook",
+      "accountability": "all",
+      "options": {
+        "method": "POST",
+        "async": false,
+        "return": "$last"
+      },
+      "rootOperation": "d3e6a0c4-0001-4000-8000-000000000001",
+      "operations": [
+        {
+          "id": "d3e6a0c4-0001-4000-8000-000000000001",
+          "key": "read_user",
+          "name": "Read Authenticated User",
+          "type": "item-read",
+          "position_x": 1,
+          "position_y": 1,
+          "resolve": "d3e6a0c4-0002-4000-8000-000000000002",
+          "reject": null,
+          "options": {
+            "collection": "directus_users",
+            "permissions": "$full",
+            "key": [
+              "{{ $accountability.user }}"
+            ],
+            "query": {
+              "fields": [
+                "email"
+              ]
+            }
+          }
+        },
+        {
+          "id": "d3e6a0c4-0002-4000-8000-000000000002",
+          "key": "validate_input",
+          "name": "Validate Input",
+          "type": "exec",
+          "position_x": 19,
+          "position_y": 1,
+          "resolve": "d3e6a0c4-0003-4000-8000-000000000003",
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const raw = data.read_user;\n  const user = Array.isArray(raw) ? raw[0] : raw;\n  const email = user && typeof user.email === 'string' ? user.email.trim() : '';\n  const body = (data.$trigger && data.$trigger.body) || {};\n  const paymentMethodId = typeof body.paymentMethodId === 'string' ? body.paymentMethodId.trim() : '';\n  const validPm = Boolean(paymentMethodId && /^pm_[A-Za-z0-9_]+$/.test(paymentMethodId));\n  const subscriptionId = typeof body.subscriptionId === 'string' && body.subscriptionId.trim().startsWith('sub_')\n    ? body.subscriptionId.trim()\n    : null;\n  return {\n    email,\n    encodedEmail: email ? encodeURIComponent(email) : '',\n    paymentMethodId: validPm ? paymentMethodId : 'pm_invalid',\n    subscriptionId,\n    inputValid: Boolean(email && validPm),\n  };\n};"
+          }
+        },
+        {
+          "id": "d3e6a0c4-0003-4000-8000-000000000003",
+          "key": "get_customer",
+          "name": "Get Stripe Customer",
+          "type": "request",
+          "position_x": 37,
+          "position_y": 1,
+          "resolve": "d3e6a0c4-0004-4000-8000-000000000004",
+          "reject": null,
+          "options": {
+            "method": "GET",
+            "url": "https://api.stripe.com/v1/customers?email={{ validate_input.encodedEmail }}&limit=1",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              }
+            ]
+          }
+        },
+        {
+          "id": "d3e6a0c4-0004-4000-8000-000000000004",
+          "key": "extract_customer",
+          "name": "Extract Customer ID",
+          "type": "exec",
+          "position_x": 55,
+          "position_y": 1,
+          "resolve": "d3e6a0c4-0005-4000-8000-000000000005",
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const body = data.get_customer && data.get_customer.data;\n  const customers = body && body.data;\n  const customerId = (Array.isArray(customers) && customers.length > 0) ? customers[0].id : null;\n  const subsQuery = customerId\n    ? ('customer=' + encodeURIComponent(customerId) + '&status=all&limit=10')\n    : 'limit=1';\n  return { customerId, subsQuery };\n};"
+          }
+        },
+        {
+          "id": "d3e6a0c4-0005-4000-8000-000000000005",
+          "key": "get_active_subscriptions",
+          "name": "Fetch Customer Subscriptions",
+          "type": "request",
+          "position_x": 73,
+          "position_y": 1,
+          "resolve": "d3e6a0c4-0006-4000-8000-000000000006",
+          "reject": null,
+          "options": {
+            "method": "GET",
+            "url": "https://api.stripe.com/v1/subscriptions?{{ extract_customer.subsQuery }}",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              }
+            ]
+          }
+        },
+        {
+          "id": "d3e6a0c4-0006-4000-8000-000000000006",
+          "key": "get_payment_method",
+          "name": "Retrieve PaymentMethod from Stripe",
+          "type": "request",
+          "position_x": 91,
+          "position_y": 1,
+          "resolve": "d3e6a0c4-0007-4000-8000-000000000007",
+          "reject": "d3e6a0c4-0007-4000-8000-000000000007",
+          "options": {
+            "method": "GET",
+            "url": "https://api.stripe.com/v1/payment_methods/{{ validate_input.paymentMethodId }}",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              }
+            ]
+          }
+        },
+        {
+          "id": "d3e6a0c4-0007-4000-8000-000000000007",
+          "key": "verify_and_prepare",
+          "name": "Verify Ownership & Resolve Subscription",
+          "type": "exec",
+          "position_x": 109,
+          "position_y": 1,
+          "resolve": "d3e6a0c4-0008-4000-8000-000000000008",
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const input = data.validate_input || {};\n  if (!input.inputValid) {\n    return {\n      valid: false,\n      code: 'INVALID_PAYMENT_METHOD_INPUT',\n      message: 'A valid paymentMethodId is required.',\n    };\n  }\n  const customerId = data.extract_customer && data.extract_customer.customerId;\n  if (!customerId) {\n    return {\n      valid: false,\n      code: 'CUSTOMER_NOT_FOUND',\n      message: 'No Stripe customer found for authenticated user.',\n    };\n  }\n  const pm = data.get_payment_method && data.get_payment_method.data;\n  const pmCustomer = pm && (typeof pm.customer === 'string' ? pm.customer : (pm.customer && pm.customer.id));\n  if (!pm || pm.error || pm.id !== input.paymentMethodId || pmCustomer !== customerId) {\n    return {\n      valid: false,\n      code: 'PAYMENT_METHOD_OWNERSHIP_MISMATCH',\n      message: 'Payment method does not belong to the authenticated customer.',\n    };\n  }\n  const subsBody = data.get_active_subscriptions && data.get_active_subscriptions.data;\n  const subs = (subsBody && Array.isArray(subsBody.data)) ? subsBody.data : [];\n  let resolvedSubId = null;\n  if (input.subscriptionId) {\n    const matchingRequested = subs.find(function(s) {\n      return s.id === input.subscriptionId && ['active', 'trialing', 'past_due'].includes(s.status);\n    });\n    if (!matchingRequested) {\n      return {\n        valid: false,\n        code: 'SUBSCRIPTION_OWNERSHIP_MISMATCH',\n        message: 'Specified subscription does not belong to the authenticated customer.',\n      };\n    }\n    resolvedSubId = matchingRequested.id;\n  } else {\n    const activeSub = subs.find(function(s) {\n      return ['active', 'trialing', 'past_due'].includes(s.status);\n    });\n    resolvedSubId = activeSub ? activeSub.id : null;\n  }\n  return {\n    valid: true,\n    customerId,\n    paymentMethodId: input.paymentMethodId,\n    subscriptionId: resolvedSubId,\n  };\n};"
+          }
+        },
+        {
+          "id": "d3e6a0c4-0008-4000-8000-000000000008",
+          "key": "check_valid",
+          "name": "Ownership Valid?",
+          "type": "condition",
+          "position_x": 127,
+          "position_y": 1,
+          "resolve": "d3e6a0c4-0009-4000-8000-000000000009",
+          "reject": "d3e6a0c4-0013-4000-8000-000000000013",
+          "options": {
+            "filter": {
+              "verify_and_prepare": {
+                "valid": {
+                  "_eq": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "d3e6a0c4-0009-4000-8000-000000000009",
+          "key": "update_customer_default",
+          "name": "Update Customer Default PaymentMethod",
+          "type": "request",
+          "position_x": 145,
+          "position_y": 1,
+          "resolve": "d3e6a0c4-0010-4000-8000-000000000010",
+          "reject": null,
+          "options": {
+            "method": "POST",
+            "url": "https://api.stripe.com/v1/customers/{{ verify_and_prepare.customerId }}",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              },
+              {
+                "header": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": "invoice_settings[default_payment_method]={{ verify_and_prepare.paymentMethodId }}"
+          }
+        },
+        {
+          "id": "d3e6a0c4-0010-4000-8000-000000000010",
+          "key": "has_subscription_to_update",
+          "name": "Has Active Subscription?",
+          "type": "condition",
+          "position_x": 163,
+          "position_y": 1,
+          "resolve": "d3e6a0c4-0011-4000-8000-000000000011",
+          "reject": "d3e6a0c4-0012-4000-8000-000000000012",
+          "options": {
+            "filter": {
+              "verify_and_prepare": {
+                "subscriptionId": {
+                  "_nnull": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "d3e6a0c4-0011-4000-8000-000000000011",
+          "key": "update_subscription_default",
+          "name": "Update Subscription Default PaymentMethod",
+          "type": "request",
+          "position_x": 163,
+          "position_y": 17,
+          "resolve": "d3e6a0c4-0012-4000-8000-000000000012",
+          "reject": null,
+          "options": {
+            "method": "POST",
+            "url": "https://api.stripe.com/v1/subscriptions/{{ verify_and_prepare.subscriptionId }}",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              },
+              {
+                "header": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": "default_payment_method={{ verify_and_prepare.paymentMethodId }}"
+          }
+        },
+        {
+          "id": "d3e6a0c4-0012-4000-8000-000000000012",
+          "key": "format_response",
+          "name": "Format Set Default Response",
+          "type": "exec",
+          "position_x": 181,
+          "position_y": 1,
+          "resolve": null,
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const prep = data.verify_and_prepare || {};\n  const custRes = data.update_customer_default && data.update_customer_default.data;\n  const custDefault = custRes && custRes.invoice_settings && custRes.invoice_settings.default_payment_method;\n  const custDefaultId = typeof custDefault === 'string' ? custDefault : (custDefault && custDefault.id);\n  const customerUpdated = Boolean(custRes && !custRes.error && custDefaultId === prep.paymentMethodId);\n\n  let subscriptionUpdated = true;\n  if (prep.subscriptionId) {\n    const subRes = data.update_subscription_default && data.update_subscription_default.data;\n    const subDefault = subRes && subRes.default_payment_method;\n    const subDefaultId = typeof subDefault === 'string' ? subDefault : (subDefault && subDefault.id);\n    subscriptionUpdated = Boolean(subRes && !subRes.error && subDefaultId === prep.paymentMethodId);\n  }\n\n  if (!customerUpdated || !subscriptionUpdated) {\n    return {\n      updated: false,\n      error: true,\n      code: 'DEFAULT_UPDATE_INCOMPLETE',\n      defaultPaymentMethodId: prep.paymentMethodId,\n      customerDefaultUpdated: customerUpdated,\n      subscriptionDefaultUpdated: subscriptionUpdated,\n      subscriptionId: prep.subscriptionId,\n      message: 'Could not verify default payment method update.',\n    };\n  }\n\n  return {\n    updated: true,\n    defaultPaymentMethodId: prep.paymentMethodId,\n    customerDefaultUpdated: customerUpdated,\n    subscriptionDefaultUpdated: subscriptionUpdated,\n    subscriptionId: prep.subscriptionId,\n  };\n};"
+          }
+        },
+        {
+          "id": "d3e6a0c4-0013-4000-8000-000000000013",
+          "key": "format_invalid_response",
+          "name": "Format Validation Error Response",
+          "type": "exec",
+          "position_x": 145,
+          "position_y": 17,
+          "resolve": null,
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const prep = data.verify_and_prepare || {};\n  return {\n    updated: false,\n    error: true,\n    code: prep.code || 'VALIDATION_FAILED',\n    message: prep.message || 'Could not update default payment method.',\n  };\n};"
+          }
+        }
+      ]
+    }
+  ],
+  "existingFlowEnhancements": [
+    {
+      "id": "44946457-c8cd-42e2-98b2-a7a0672d59d3",
+      "name": "Stripe - Get Payment Methods",
+      "icon": "credit_card",
+      "color": "#8070C0",
+      "description": "Lists saved card payment methods for the authenticated user along with verified default/renewal metadata.",
+      "status": "active",
+      "trigger": "webhook",
+      "accountability": "all",
+      "options": {
+        "method": "POST",
+        "async": false,
+        "return": "format_methods"
+      },
+      "rootOperation": "78a367d7-70d1-49c2-868f-fdd1c53dbd10",
+      "operations": [
+        {
+          "id": "78a367d7-70d1-49c2-868f-fdd1c53dbd10",
+          "key": "read_user",
+          "name": "Read User Email",
+          "type": "item-read",
+          "position_x": 1,
+          "position_y": 1,
+          "resolve": "37ca50e5-451b-4ce4-8a1b-e9f4b1202da7",
+          "reject": null,
+          "options": {
+            "collection": "directus_users",
+            "permissions": "$full",
+            "key": [
+              "{{ $accountability.user }}"
+            ],
+            "query": {
+              "fields": [
+                "email"
+              ]
+            }
+          }
+        },
+        {
+          "id": "37ca50e5-451b-4ce4-8a1b-e9f4b1202da7",
+          "key": "extract_email",
+          "name": "Extract Email",
+          "type": "exec",
+          "position_x": 19,
+          "position_y": 1,
+          "resolve": "b521f6c3-5d08-4b9c-bcc7-f29fcf46a187",
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const raw = data.read_user;\n  const user = Array.isArray(raw) ? raw[0] : raw;\n  const email = user && user.email ? user.email.trim() : null;\n  return {\n    email,\n    encodedEmail: email ? encodeURIComponent(email) : '',\n  };\n};"
+          }
+        },
+        {
+          "id": "b521f6c3-5d08-4b9c-bcc7-f29fcf46a187",
+          "key": "get_customer",
+          "name": "Get Stripe Customer",
+          "type": "request",
+          "position_x": 37,
+          "position_y": 1,
+          "resolve": "862a4b1c-9f88-4f28-b27b-e979b6f2eb9b",
+          "reject": null,
+          "options": {
+            "method": "GET",
+            "url": "https://api.stripe.com/v1/customers?email={{ extract_email.encodedEmail }}&limit=1",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              }
+            ]
+          }
+        },
+        {
+          "id": "862a4b1c-9f88-4f28-b27b-e979b6f2eb9b",
+          "key": "extract_customer_id",
+          "name": "Extract Customer ID & Default PM",
+          "type": "exec",
+          "position_x": 55,
+          "position_y": 1,
+          "resolve": "44946457-0001-4000-8000-000000000001",
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const body = data.get_customer && data.get_customer.data;\n  const customers = body && body.data;\n  const customer = (customers && customers.length > 0) ? customers[0] : null;\n  const customerId = customer ? customer.id : null;\n  const rawDefault = customer && customer.invoice_settings && customer.invoice_settings.default_payment_method;\n  const customerDefaultPaymentMethodId = typeof rawDefault === 'string'\n    ? rawDefault\n    : (rawDefault && rawDefault.id) || null;\n  return { customerId, customerDefaultPaymentMethodId };\n};"
+          }
+        },
+        {
+          "id": "44946457-0001-4000-8000-000000000001",
+          "key": "has_customer",
+          "name": "Customer Exists?",
+          "type": "condition",
+          "position_x": 64,
+          "position_y": 1,
+          "resolve": "390fc9fe-db3a-4be1-87cb-ddc48e921eec",
+          "reject": "23cd3258-b87c-4c9f-886a-ef2a1542bdbd",
+          "options": {
+            "filter": {
+              "extract_customer_id": {
+                "customerId": {
+                  "_nnull": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "390fc9fe-db3a-4be1-87cb-ddc48e921eec",
+          "key": "get_payment_methods",
+          "name": "Get Payment Methods",
+          "type": "request",
+          "position_x": 73,
+          "position_y": 1,
+          "resolve": "44946457-0002-4000-8000-000000000002",
+          "reject": null,
+          "options": {
+            "method": "GET",
+            "url": "https://api.stripe.com/v1/payment_methods?customer={{ extract_customer_id.customerId }}&type=card&limit=10",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              }
+            ]
+          }
+        },
+        {
+          "id": "44946457-0002-4000-8000-000000000002",
+          "key": "get_active_subscription",
+          "name": "Get Customer Subscriptions for Renewal Card",
+          "type": "request",
+          "position_x": 82,
+          "position_y": 1,
+          "resolve": "23cd3258-b87c-4c9f-886a-ef2a1542bdbd",
+          "reject": null,
+          "options": {
+            "method": "GET",
+            "url": "https://api.stripe.com/v1/subscriptions?customer={{ extract_customer_id.customerId }}&status=all&limit=10",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              }
+            ]
+          }
+        },
+        {
+          "id": "23cd3258-b87c-4c9f-886a-ef2a1542bdbd",
+          "key": "format_methods",
+          "name": "Format Methods & Default Metadata",
+          "type": "exec",
+          "position_x": 91,
+          "position_y": 1,
+          "resolve": null,
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const customerId = data.extract_customer_id && data.extract_customer_id.customerId;\n  if (!customerId) {\n    return {\n      paymentMethods: [],\n      defaultPaymentMethodId: null,\n      customerDefaultPaymentMethodId: null,\n      subscriptionDefaultPaymentMethodId: null,\n      defaultVerified: true,\n    };\n  }\n\n  const raw = data.get_payment_methods && data.get_payment_methods.data;\n  const methods = (raw && Array.isArray(raw.data)) ? raw.data : [];\n\n  const subRaw = data.get_active_subscription && data.get_active_subscription.data;\n  const subs = (subRaw && Array.isArray(subRaw.data)) ? subRaw.data : [];\n  const activeSub = subs.find(function(s) {\n    return ['active', 'trialing', 'past_due'].includes(s.status);\n  }) || null;\n  const rawSubDefault = activeSub && activeSub.default_payment_method;\n  const subDefault = typeof rawSubDefault === 'string'\n    ? rawSubDefault\n    : (rawSubDefault && rawSubDefault.id) || null;\n  const custDefault = (data.extract_customer_id && data.extract_customer_id.customerDefaultPaymentMethodId) || null;\n  const defaultPaymentMethodId = subDefault || custDefault || null;\n\n  // Deduplicate by card fingerprint — keep the most recent PM per fingerprint,\n  // or the active defaultPaymentMethodId if a duplicate fingerprint matches it.\n  const seen = new Map();\n  for (const pm of methods) {\n    const fp = pm.card && pm.card.fingerprint;\n    const key = fp || pm.id;\n    if (!seen.has(key) || (defaultPaymentMethodId && pm.id === defaultPaymentMethodId)) {\n      seen.set(key, pm);\n    }\n  }\n\n  return {\n    paymentMethods: Array.from(seen.values()).map(function(pm) {\n      const isRenewalCard = Boolean(defaultPaymentMethodId && pm.id === defaultPaymentMethodId);\n      return {\n        id: pm.id,\n        brand: pm.card.brand,\n        last4: pm.card.last4,\n        expMonth: pm.card.exp_month,\n        expYear: pm.card.exp_year,\n        isDefault: isRenewalCard,\n        isRenewalCard: isRenewalCard,\n      };\n    }),\n    defaultPaymentMethodId: defaultPaymentMethodId,\n    customerDefaultPaymentMethodId: custDefault,\n    subscriptionDefaultPaymentMethodId: subDefault,\n    defaultVerified: true,\n  };\n};"
+          }
+        }
+      ]
+    },
+    {
+      "id": "9845ee00-779b-4f6b-9e07-fb8f175f945d",
+      "name": "Stripe - Detach Payment Method",
+      "icon": "delete",
+      "color": "#EF4444",
+      "description": "Verifies card ownership and blocks detaching the active subscription renewal card before detaching from Stripe.",
+      "status": "active",
+      "trigger": "webhook",
+      "accountability": "all",
+      "options": {
+        "method": "POST",
+        "async": false,
+        "return": "format_detach_response"
+      },
+      "rootOperation": "fac5fac2-e728-4d86-ac8f-82f13d31c589",
+      "operations": [
+        {
+          "id": "fac5fac2-e728-4d86-ac8f-82f13d31c589",
+          "key": "read_user",
+          "name": "Read User Email",
+          "type": "item-read",
+          "position_x": 1,
+          "position_y": 1,
+          "resolve": "f823e9d7-20ea-4524-a440-4b4a7b84a26d",
+          "reject": null,
+          "options": {
+            "collection": "directus_users",
+            "permissions": "$full",
+            "key": [
+              "{{ $accountability.user }}"
+            ],
+            "query": {
+              "fields": [
+                "email"
+              ]
+            }
+          }
+        },
+        {
+          "id": "f823e9d7-20ea-4524-a440-4b4a7b84a26d",
+          "key": "extract_email",
+          "name": "Extract Email & PM ID",
+          "type": "exec",
+          "position_x": 19,
+          "position_y": 1,
+          "resolve": "dd3c5027-b144-4960-973f-43eac4efd620",
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const raw = data.read_user;\n  const user = Array.isArray(raw) ? raw[0] : raw;\n  const email = user && user.email ? user.email.trim() : null;\n  const rawPmId = data.$trigger && data.$trigger.body && typeof data.$trigger.body.paymentMethodId === 'string'\n    ? data.$trigger.body.paymentMethodId.trim()\n    : '';\n  const validPm = Boolean(rawPmId && /^pm_[A-Za-z0-9_]+$/.test(rawPmId));\n  return {\n    email,\n    encodedEmail: email ? encodeURIComponent(email) : '',\n    pmId: validPm ? rawPmId : 'pm_invalid',\n    validPm,\n  };\n};"
+          }
+        },
+        {
+          "id": "dd3c5027-b144-4960-973f-43eac4efd620",
+          "key": "get_customer",
+          "name": "Get Stripe Customer",
+          "type": "request",
+          "position_x": 37,
+          "position_y": 1,
+          "resolve": "1c41c020-d89b-4c05-92c2-75835589ec71",
+          "reject": null,
+          "options": {
+            "method": "GET",
+            "url": "https://api.stripe.com/v1/customers?email={{ extract_email.encodedEmail }}&limit=1",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              }
+            ]
+          }
+        },
+        {
+          "id": "1c41c020-d89b-4c05-92c2-75835589ec71",
+          "key": "extract_customer_id",
+          "name": "Extract Customer ID & Default PM",
+          "type": "exec",
+          "position_x": 55,
+          "position_y": 1,
+          "resolve": "9845ee00-0002-4000-8000-000000000002",
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const body = data.get_customer && data.get_customer.data;\n  const customers = body && body.data;\n  const customer = (customers && customers.length > 0) ? customers[0] : null;\n  const customerId = customer ? customer.id : null;\n  const rawDefault = customer && customer.invoice_settings && customer.invoice_settings.default_payment_method;\n  const customerDefaultPaymentMethodId = typeof rawDefault === 'string'\n    ? rawDefault\n    : (rawDefault && rawDefault.id) || null;\n  const subsQuery = customerId\n    ? ('customer=' + encodeURIComponent(customerId) + '&status=all&limit=10')\n    : 'limit=1';\n  return { customerId, customerDefaultPaymentMethodId, subsQuery };\n};"
+          }
+        },
+        {
+          "id": "9845ee00-0002-4000-8000-000000000002",
+          "key": "get_active_subscription",
+          "name": "Get Active Subscriptions",
+          "type": "request",
+          "position_x": 64,
+          "position_y": 1,
+          "resolve": "9845ee00-0001-4000-8000-000000000001",
+          "reject": null,
+          "options": {
+            "method": "GET",
+            "url": "https://api.stripe.com/v1/subscriptions?{{ extract_customer_id.subsQuery }}",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              }
+            ]
+          }
+        },
+        {
+          "id": "9845ee00-0001-4000-8000-000000000001",
+          "key": "get_payment_method",
+          "name": "Get Payment Method from Stripe",
+          "type": "request",
+          "position_x": 73,
+          "position_y": 1,
+          "resolve": "cca4c0a9-9ce5-438c-abcf-214d7d9a1c22",
+          "reject": "cca4c0a9-9ce5-438c-abcf-214d7d9a1c22",
+          "options": {
+            "method": "GET",
+            "url": "https://api.stripe.com/v1/payment_methods/{{ extract_email.pmId }}",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              }
+            ]
+          }
+        },
+        {
+          "id": "cca4c0a9-9ce5-438c-abcf-214d7d9a1c22",
+          "key": "verify_ownership",
+          "name": "Verify Ownership & Renewal Protection",
+          "type": "exec",
+          "position_x": 82,
+          "position_y": 1,
+          "resolve": "9845ee00-0003-4000-8000-000000000003",
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const customerId = data.extract_customer_id && data.extract_customer_id.customerId;\n  const custDefault = data.extract_customer_id && data.extract_customer_id.customerDefaultPaymentMethodId;\n  const pmId = data.extract_email && data.extract_email.pmId;\n  const validPm = data.extract_email && data.extract_email.validPm;\n  if (!customerId || !validPm || !pmId) {\n    return {\n      allowed: false,\n      error: true,\n      code: 'INVALID_REQUEST',\n      message: 'Valid customer and paymentMethodId are required.',\n    };\n  }\n  const pm = data.get_payment_method && data.get_payment_method.data;\n  const pmCustomer = pm && (typeof pm.customer === 'string' ? pm.customer : (pm.customer && pm.customer.id));\n  if (!pm || pm.error || pm.id !== pmId || pmCustomer !== customerId) {\n    return {\n      allowed: false,\n      error: true,\n      code: 'PAYMENT_METHOD_OWNERSHIP_MISMATCH',\n      message: 'Payment method does not belong to the authenticated customer.',\n    };\n  }\n  const subRaw = data.get_active_subscription && data.get_active_subscription.data;\n  const subs = (subRaw && Array.isArray(subRaw.data)) ? subRaw.data : [];\n  const activeSub = subs.find(function(s) {\n    return ['active', 'trialing', 'past_due'].includes(s.status);\n  }) || null;\n  if (activeSub) {\n    const rawSubDefault = activeSub.default_payment_method;\n    const subDefault = typeof rawSubDefault === 'string'\n      ? rawSubDefault\n      : (rawSubDefault && rawSubDefault.id) || null;\n    const effectiveRenewalPm = subDefault || custDefault || null;\n    if (effectiveRenewalPm === pmId) {\n      return {\n        allowed: false,\n        error: true,\n        code: 'RENEWAL_CARD_PROTECTED',\n        message: 'Cannot remove the active subscription renewal card. Select another renewal card first.',\n      };\n    }\n  }\n  return {\n    allowed: true,\n    customerId,\n    pmId,\n  };\n};"
+          }
+        },
+        {
+          "id": "9845ee00-0003-4000-8000-000000000003",
+          "key": "can_detach",
+          "name": "Allowed to Detach?",
+          "type": "condition",
+          "position_x": 91,
+          "position_y": 1,
+          "resolve": "969d5f76-0228-49a9-9f9c-592a8d459611",
+          "reject": "9845ee00-0004-4000-8000-000000000004",
+          "options": {
+            "filter": {
+              "verify_ownership": {
+                "allowed": {
+                  "_eq": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "969d5f76-0228-49a9-9f9c-592a8d459611",
+          "key": "detach_method",
+          "name": "Detach Payment Method",
+          "type": "request",
+          "position_x": 109,
+          "position_y": 1,
+          "resolve": "9845ee00-0004-4000-8000-000000000004",
+          "reject": null,
+          "options": {
+            "method": "POST",
+            "url": "https://api.stripe.com/v1/payment_methods/{{ verify_ownership.pmId }}/detach",
+            "headers": [
+              {
+                "header": "Authorization",
+                "value": "Bearer {{ $env.STRIPE_SECRET_KEY }}"
+              }
+            ],
+            "body": ""
+          }
+        },
+        {
+          "id": "9845ee00-0004-4000-8000-000000000004",
+          "key": "format_detach_response",
+          "name": "Format Detach Response",
+          "type": "exec",
+          "position_x": 127,
+          "position_y": 1,
+          "resolve": null,
+          "reject": null,
+          "options": {
+            "code": "module.exports = async function(data) {\n  const v = data.verify_ownership;\n  if (!v || !v.allowed) {\n    return {\n      detached: false,\n      error: true,\n      code: (v && v.code) || 'DETACH_BLOCKED',\n      message: (v && v.message) || 'Could not remove payment method.',\n    };\n  }\n  const detached = data.detach_method && data.detach_method.data;\n  if (!detached || detached.error || detached.id !== v.pmId) {\n    return {\n      detached: false,\n      error: true,\n      code: 'STRIPE_DETACH_FAILED',\n      message: (detached && detached.error && detached.error.message) || 'Could not detach payment method.',\n    };\n  }\n  return {\n    detached: true,\n    paymentMethodId: v.pmId,\n  };\n};"
+          }
+        }
+      ]
+    }
+  ]
+}

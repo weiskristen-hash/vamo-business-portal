@@ -138,6 +138,50 @@ describe('BillingComponent', () => {
       getSubscription: vi.fn().mockResolvedValue(mockSubscription),
       getPlans: vi.fn().mockResolvedValue(mockPlans),
       getSavedPaymentMethods: vi.fn().mockResolvedValue(mockSavedMethods),
+      loadSavedPaymentMethods: vi.fn().mockImplementation(async () => {
+        const methods = await stripeServiceSpy.getSavedPaymentMethods();
+        return {
+          paymentMethods: (methods || []).map((m: SavedPaymentMethod) => ({
+            ...m,
+            isRenewalCard: m.isRenewalCard === true,
+          })),
+          defaultPaymentMethodId:
+            (methods || []).find((m: SavedPaymentMethod) => m.isRenewalCard === true)?.id ?? null,
+          defaultVerified: (methods || []).some((m: SavedPaymentMethod) => typeof m.isRenewalCard === 'boolean'),
+        };
+      }),
+      createCardSetupIntent: vi.fn().mockResolvedValue({
+        clientSecret: 'seti_standalone_secret_123',
+        setupIntentId: 'seti_standalone_123',
+      }),
+      mountCardSetupElement: vi.fn().mockResolvedValue({
+        stripe: {
+          confirmSetup: vi.fn().mockResolvedValue({
+            setupIntent: { id: 'seti_standalone_123', status: 'succeeded' },
+          }),
+        },
+        elements: {},
+      }),
+      cleanupCardSetup: vi.fn(),
+      finalizeCardSetup: vi.fn().mockResolvedValue({
+        verified: true,
+        setupIntentId: 'seti_standalone_123',
+        paymentMethodId: 'pm_new_1',
+        paymentMethod: {
+          id: 'pm_new_1',
+          brand: 'mastercard',
+          last4: '5555',
+          expMonth: 10,
+          expYear: 2029,
+          isRenewalCard: false,
+        },
+      }),
+      setDefaultPaymentMethod: vi.fn().mockResolvedValue({
+        updated: true,
+        defaultPaymentMethodId: 'pm_new_1',
+        customerDefaultUpdated: true,
+        subscriptionDefaultUpdated: true,
+      }),
       getBillingHistory: vi.fn().mockResolvedValue(mockHistory),
       getExtraPosts: vi.fn().mockResolvedValue(0),
       validatePromoCode: vi.fn().mockResolvedValue({ valid: true, name: 'WELCOME20', percentOff: 20 }),
@@ -1265,5 +1309,314 @@ describe('BillingComponent', () => {
     });
   });
 
+  describe('Standalone Credit-Card Management', () => {
+    it('always renders Payment methods section and empty state with Add credit card button when no cards are saved', async () => {
+      stripeServiceSpy.loadSavedPaymentMethods.mockResolvedValueOnce({
+        paymentMethods: [],
+        defaultPaymentMethodId: null,
+        defaultVerified: true,
+      });
+
+      await component.loadSavedMethods();
+      fixture.detectChanges();
+
+      const section = fixture.nativeElement.querySelector('.saved-methods-section');
+      expect(section).toBeTruthy();
+      expect(section.textContent).toContain('Payment methods');
+
+      const addBtn = fixture.nativeElement.querySelector('.add-card-btn');
+      expect(addBtn).toBeTruthy();
+      expect(addBtn.textContent).toContain('Add credit card');
+
+      const emptyState = fixture.nativeElement.querySelector('.empty-saved-cards');
+      expect(emptyState).toBeTruthy();
+      expect(emptyState.textContent).toContain('No saved cards');
+      expect(emptyState.textContent).toContain('Add a credit or debit card for future payments.');
+    });
+
+    it('renders distinct loading and load-error states for payment methods', async () => {
+      component.savedMethods.set([]);
+      component.savedMethodsLoading.set(true);
+      component.savedMethodsError.set(false);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.payment-methods-loading')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.empty-saved-cards')).toBeNull();
+
+      stripeServiceSpy.loadSavedPaymentMethods.mockRejectedValueOnce(new Error('Network failure'));
+      await component.loadSavedMethods();
+      fixture.detectChanges();
+
+      expect(component.savedMethodsError()).toBe(true);
+      const errorState = fixture.nativeElement.querySelector('.payment-methods-error');
+      expect(errorState).toBeTruthy();
+      expect(errorState.textContent).toContain('We couldn’t load your saved payment methods. Please try again.');
+      expect(fixture.nativeElement.querySelector('.empty-saved-cards')).toBeNull();
+    });
+
+    it('opens and closes the Add Card panel and cleans up the standalone SetupIntent Payment Element without affecting subscription checkout', async () => {
+      await component.openAddCard();
+      fixture.detectChanges();
+
+      expect(component.cardSetupOpen()).toBe(true);
+      expect(component.useCardForRenewals()).toBe(false); // unchecked by default
+      expect(stripeServiceSpy.createCardSetupIntent).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.mountCardSetupElement).toHaveBeenCalledWith(
+        'seti_standalone_secret_123',
+        'portal-card-setup-element'
+      );
+      expect(stripeServiceSpy.createSubscription).not.toHaveBeenCalled();
+
+      const panel = fixture.nativeElement.querySelector('.add-card-panel');
+      expect(panel).toBeTruthy();
+      expect(panel.textContent).toContain('Use this card for future subscription renewals');
+      expect(panel.textContent).toContain(
+        'Saving a card won’t charge you or change your subscription. Your bank may show a temporary verification hold.'
+      );
+
+      component.cancelAddCard();
+      fixture.detectChanges();
+
+      expect(component.cardSetupOpen()).toBe(false);
+      expect(stripeServiceSpy.cleanupCardSetup).toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('.add-card-panel')).toBeNull();
+    });
+
+    it('saves a card without setting default when renewal checkbox is unchecked and does not create or change a subscription', async () => {
+      await component.openAddCard();
+      expect(component.useCardForRenewals()).toBe(false);
+
+      stripeServiceSpy.loadSavedPaymentMethods.mockResolvedValueOnce({
+        paymentMethods: [
+          ...mockSavedMethods,
+          {
+            id: 'pm_new_1',
+            brand: 'mastercard',
+            last4: '5555',
+            expMonth: 10,
+            expYear: 2029,
+            isRenewalCard: false,
+          },
+        ],
+        defaultPaymentMethodId: null,
+        defaultVerified: true,
+      });
+
+      await component.saveNewCard();
+
+      expect(stripeServiceSpy.confirmSetup).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.finalizeCardSetup).toHaveBeenCalledWith('seti_standalone_123');
+      expect(stripeServiceSpy.setDefaultPaymentMethod).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.createSubscription).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+      expect(component.cardSetupOpen()).toBe(false);
+      expect(component.successMessage()).toBe('Card saved.');
+      expect(component.savedMethods().some((m) => m.id === 'pm_new_1')).toBe(true);
+    });
+
+    it('saves a card and sets it as renewal card when checkbox is checked', async () => {
+      await component.openAddCard();
+      component.useCardForRenewals.set(true);
+
+      const savedRenewalCard: SavedPaymentMethod = {
+        id: 'pm_new_1',
+        brand: 'mastercard',
+        last4: '5555',
+        expMonth: 10,
+        expYear: 2029,
+        isRenewalCard: true,
+      };
+      stripeServiceSpy.loadSavedPaymentMethods
+        .mockResolvedValueOnce({
+          paymentMethods: [{ ...savedRenewalCard, isRenewalCard: false }],
+          defaultPaymentMethodId: null,
+          defaultVerified: true,
+        })
+        .mockResolvedValueOnce({
+          paymentMethods: [savedRenewalCard],
+          defaultPaymentMethodId: 'pm_new_1',
+          defaultVerified: true,
+        });
+
+      await component.saveNewCard();
+
+      expect(stripeServiceSpy.finalizeCardSetup).toHaveBeenCalledWith('seti_standalone_123');
+      expect(stripeServiceSpy.setDefaultPaymentMethod).toHaveBeenCalledWith('pm_new_1', 'sub_123');
+      expect(component.successMessage()).toBe('Card saved and set for future renewals.');
+      expect(component.defaultPaymentMethodId()).toBe('pm_new_1');
+      expect(component.defaultPaymentMethodVerified()).toBe(true);
+    });
+
+    it('handles partial failure when card is saved but setting renewal card fails, and allows retrying default selection', async () => {
+      await component.openAddCard();
+      component.useCardForRenewals.set(true);
+
+      const newSavedCard: SavedPaymentMethod = {
+        id: 'pm_new_1',
+        brand: 'mastercard',
+        last4: '5555',
+        expMonth: 10,
+        expYear: 2029,
+        isRenewalCard: false,
+      };
+      stripeServiceSpy.setDefaultPaymentMethod.mockRejectedValueOnce(
+        new Error('Set default flow unavailable')
+      );
+      stripeServiceSpy.loadSavedPaymentMethods.mockResolvedValueOnce({
+        paymentMethods: [newSavedCard],
+        defaultPaymentMethodId: null,
+        defaultVerified: true,
+      });
+
+      await component.saveNewCard();
+      fixture.detectChanges();
+
+      expect(component.cardSetupOpen()).toBe(false);
+      expect(component.successMessage()).toBeNull();
+      expect(component.pendingRenewalRetryCardId()).toBe('pm_new_1');
+      expect(component.errorMessage()).toBe('Card saved, but we couldn’t update your renewal card.');
+      expect(component.savedMethods().some((m) => m.id === 'pm_new_1')).toBe(true);
+
+      const retryBtn = fixture.nativeElement.querySelector('.set-renewal-card-btn');
+      expect(retryBtn).toBeTruthy();
+      expect(retryBtn.textContent).toContain('Retry renewal card');
+
+      // Retry setting default without repeating card setup
+      stripeServiceSpy.setDefaultPaymentMethod.mockResolvedValueOnce({
+        updated: true,
+        defaultPaymentMethodId: 'pm_new_1',
+        customerDefaultUpdated: true,
+        subscriptionDefaultUpdated: true,
+      });
+      stripeServiceSpy.loadSavedPaymentMethods.mockResolvedValueOnce({
+        paymentMethods: [{ ...newSavedCard, isRenewalCard: true }],
+        defaultPaymentMethodId: 'pm_new_1',
+        defaultVerified: true,
+      });
+
+      await component.setCardAsRenewal(newSavedCard);
+      expect(stripeServiceSpy.createCardSetupIntent).toHaveBeenCalledTimes(1); // not called again
+      expect(component.pendingRenewalRetryCardId()).toBeNull();
+      expect(component.successMessage()).toBe('Card saved and set for future renewals.');
+    });
+
+    it('shows customer-safe error in Add Card panel when SetupIntent confirmation fails and keeps panel open', async () => {
+      await component.openAddCard();
+      stripeServiceSpy.confirmSetup.mockResolvedValueOnce({
+        error: { type: 'card_error', code: 'incorrect_cvc', message: 'Your card security code is incorrect.' },
+      });
+
+      await component.saveNewCard();
+      fixture.detectChanges();
+
+      expect(component.cardSetupOpen()).toBe(true);
+      expect(stripeServiceSpy.finalizeCardSetup).not.toHaveBeenCalled();
+      expect(component.cardSetupError()).toBeTruthy();
+      expect(component.cardSetupError()).not.toContain('Directus');
+      expect(component.successMessage()).toBeNull();
+    });
+
+    it('shows Renewal card badge only when defaultPaymentMethodVerified is true from backend state and never infers from list order', async () => {
+      // Unverified list order: first card must NOT get Renewal card badge
+      component.savedMethods.set([
+        { id: 'pm_first', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2028, isRenewalCard: false },
+        { id: 'pm_second', brand: 'mastercard', last4: '4444', expMonth: 11, expYear: 2029, isRenewalCard: false },
+      ]);
+      component.defaultPaymentMethodId.set(null);
+      component.defaultPaymentMethodVerified.set(false);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.renewal-card-badge')).toBeNull();
+
+      // Verified second card is default: only second card gets Renewal card badge
+      component.savedMethods.set([
+        { id: 'pm_first', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2028, isRenewalCard: false },
+        { id: 'pm_second', brand: 'mastercard', last4: '4444', expMonth: 11, expYear: 2029, isRenewalCard: true },
+      ]);
+      component.defaultPaymentMethodId.set('pm_second');
+      component.defaultPaymentMethodVerified.set(true);
+      fixture.detectChanges();
+
+      const badges = fixture.nativeElement.querySelectorAll('.renewal-card-badge');
+      expect(badges.length).toBe(1);
+      expect(badges[0].textContent).toContain('Renewal card');
+    });
+
+    it('blocks removing the active renewal card until another card is selected as renewal card', async () => {
+      const renewalMethod: SavedPaymentMethod = {
+        id: 'pm_renewal',
+        brand: 'visa',
+        last4: '4242',
+        expMonth: 12,
+        expYear: 2028,
+        isRenewalCard: true,
+      };
+      component.subscription.set(mockSubscription); // active subscription
+      component.savedMethods.set([renewalMethod]);
+      component.defaultPaymentMethodId.set('pm_renewal');
+      component.defaultPaymentMethodVerified.set(true);
+      fixture.detectChanges();
+
+      await component.deletePaymentMethod(renewalMethod);
+
+      expect(stripeServiceSpy.detachPaymentMethod).not.toHaveBeenCalled();
+      expect(component.errorMessage()).toBe(
+        'Select another card for renewals before removing your active renewal card.'
+      );
+      expect(component.savedMethods().length).toBe(1);
+    });
+
+    it('verifies 3DS redirect SetupIntent via finalizeCardSetup before claiming success', async () => {
+      billingParams = {
+        card_setup: '1',
+        setup_intent: 'seti_redirect_999',
+        redirect_status: 'succeeded',
+        use_for_renewals: '1',
+      };
+      stripeServiceSpy.finalizeCardSetup.mockResolvedValueOnce({
+        verified: true,
+        setupIntentId: 'seti_redirect_999',
+        paymentMethodId: 'pm_redirect_999',
+      });
+      stripeServiceSpy.setDefaultPaymentMethod.mockResolvedValueOnce({
+        updated: true,
+        defaultPaymentMethodId: 'pm_redirect_999',
+        customerDefaultUpdated: true,
+        subscriptionDefaultUpdated: true,
+      });
+
+      await component.ngOnInit();
+
+      expect(stripeServiceSpy.finalizeCardSetup).toHaveBeenCalledWith('seti_redirect_999');
+      expect(stripeServiceSpy.setDefaultPaymentMethod).toHaveBeenCalledWith('pm_redirect_999', 'sub_123');
+      expect(component.successMessage()).toBe('Card saved and set for future renewals.');
+    });
+
+    it('renders Spanish translations accurately for standalone credit-card management', async () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+
+      stripeServiceSpy.loadSavedPaymentMethods.mockResolvedValueOnce({
+        paymentMethods: [],
+        defaultPaymentMethodId: null,
+        defaultVerified: true,
+      });
+      await component.loadSavedMethods();
+      await component.openAddCard();
+      fixture.detectChanges();
+
+      const section = fixture.nativeElement.querySelector('.saved-methods-section');
+      expect(section.textContent).toContain('Métodos de pago');
+      expect(section.textContent).toContain('Agregar tarjeta');
+      expect(section.textContent).toContain('No tienes tarjetas guardadas');
+      expect(section.textContent).toContain('Usar esta tarjeta para futuras renovaciones de la suscripción');
+      expect(section.textContent).toContain('Guardar tarjeta');
+
+      i18n.setLang('en');
+    });
+  });
+
 });
+
+
 
