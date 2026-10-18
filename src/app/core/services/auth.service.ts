@@ -9,6 +9,7 @@ import { createBrowserAuthStorage, createMemoryAuthStorage, BUSINESS_AUTH_STORAG
 import { VamoUser } from '../models/user.model';
 import { environment } from '../../../environments/environment';
 import { GoogleAuthService } from './google-auth.service';
+import { AppleAuthService } from './apple-auth.service';
 import { clearSavedPromoCode } from '../utils/promo-code.util';
 
 export type AuthState = 'loading' | 'authenticated' | 'unauthenticated';
@@ -26,6 +27,7 @@ async function runWithCrossTabLock<T>(lockName: string, fn: () => Promise<T>): P
 export class AuthService implements OnDestroy {
   private router = inject(Router);
   private googleAuthService = inject(GoogleAuthService);
+  private appleAuthService = inject(AppleAuthService);
 
   // undefined = checking session, null = not logged in, VamoUser = logged in
   private userSubject = new BehaviorSubject<VamoUser | null | undefined>(undefined);
@@ -664,6 +666,81 @@ export class AuthService implements OnDestroy {
   async loginWithGoogle(): Promise<VamoUser> {
     const idToken = await this.googleAuthService.promptForIdToken();
     return await this.loginWithGoogleCredential(idToken);
+  }
+
+  /**
+   * Exchanges an Apple identity token with the VAMO Apple Sign-In Directus Flow.
+   * Stores the returned Directus session tokens and loads the current user.
+   */
+  async loginWithAppleCredential(
+    identityToken: string,
+    userName?: { firstName?: string; lastName?: string } | null
+  ): Promise<VamoUser> {
+    if (!identityToken || typeof identityToken !== 'string' || !identityToken.trim()) {
+      throw new Error('APPLE_TOKEN_MISSING');
+    }
+
+    const flowId = runtimeConfig.appleSignInFlow;
+    if (!flowId) {
+      throw new Error('APPLE_FLOW_NOT_CONFIGURED');
+    }
+
+    const flowUrl = `${runtimeConfig.directusUrl}/flows/trigger/${flowId}`;
+
+    let response: Response;
+    try {
+      response = await fetch(flowUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          identity_token: identityToken.trim(),
+          user_name: {
+            firstName: userName?.firstName?.trim() || '',
+            lastName: userName?.lastName?.trim() || '',
+          },
+        }),
+      });
+    } catch {
+      throw new Error('NETWORK_ERROR');
+    }
+
+    if (!response.ok) {
+      throw new Error(`APPLE_FLOW_FAILED_${response.status}`);
+    }
+
+    let data: any;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error('MALFORMED_FLOW_RESPONSE');
+    }
+
+    if (!data || typeof data !== 'object' || !data.access_token || typeof data.access_token !== 'string') {
+      throw new Error('MALFORMED_FLOW_RESPONSE');
+    }
+
+    const user = await this.handleSsoTokens(
+      data.access_token,
+      data.refresh_token ?? null,
+      data.expires ? Number(data.expires) : null
+    );
+
+    if (!user) {
+      throw new Error('USER_LOAD_FAILED');
+    }
+
+    return user;
+  }
+
+  /**
+   * Initiates Apple Sign-In via Apple JS SDK popup, retrieves Apple identity_token,
+   * and authenticates via the VAMO Directus Apple Sign-In Flow.
+   */
+  async loginWithApple(): Promise<VamoUser> {
+    const result = await this.appleAuthService.signIn();
+    return await this.loginWithAppleCredential(result.identityToken, result.userName);
   }
 
   /**

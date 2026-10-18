@@ -4,6 +4,9 @@ export interface RuntimeConfig {
   directusUrl: string;
   googleClientId: string;
   googleSignInFlow: string;
+  appleClientId: string;
+  appleSignInFlow: string;
+  appleRedirectUri: string;
   stripePublishableKey: string;
   stripeGetPricesFlow: string;
   stripeGetSubscriptionFlow: string;
@@ -45,6 +48,9 @@ let currentConfig: RuntimeConfig = {
   directusUrl: stripTrailingSlash(windowConfig.directusUrl || environment.directusUrl),
   googleClientId: windowConfig.googleClientId || (environment as any).googleClientId || '654016609429-5995je1smpgrlov4uv92pn637a7dlp0t.apps.googleusercontent.com',
   googleSignInFlow: windowConfig.googleSignInFlow || (environment as any).googleSignInFlow || 'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',
+  appleClientId: windowConfig.appleClientId || (environment as any).appleClientId || 'com.vamoapp.vamomobile.signin',
+  appleSignInFlow: windowConfig.appleSignInFlow || (environment as any).appleSignInFlow || '7adc18dc-af9b-43d5-a2b7-2c7770760ec8',
+  appleRedirectUri: windowConfig.appleRedirectUri || (environment as any).appleRedirectUri || 'https://business.vamo-app.com/auth/callback',
   stripePublishableKey: windowConfig.stripePublishableKey || environment.STRIPE_PUBLISHABLE_KEY || '',
   stripeGetPricesFlow: windowConfig.stripeGetPricesFlow || environment.STRIPE_GET_PRICES_FLOW || '',
   stripeGetSubscriptionFlow: windowConfig.stripeGetSubscriptionFlow || environment.STRIPE_GET_SUBSCRIPTION_FLOW || '',
@@ -74,6 +80,15 @@ export const runtimeConfig = {
   },
   get googleSignInFlow(): string {
     return currentConfig.googleSignInFlow;
+  },
+  get appleClientId(): string {
+    return currentConfig.appleClientId;
+  },
+  get appleSignInFlow(): string {
+    return currentConfig.appleSignInFlow;
+  },
+  get appleRedirectUri(): string {
+    return currentConfig.appleRedirectUri;
   },
   setDirectusUrl(url: string): void {
     if (isAllowedApiUrl(url)) {
@@ -142,6 +157,9 @@ export const runtimeConfig = {
       directusUrl: stripTrailingSlash(environment.directusUrl),
       googleClientId: (environment as any).googleClientId || '654016609429-5995je1smpgrlov4uv92pn637a7dlp0t.apps.googleusercontent.com',
       googleSignInFlow: (environment as any).googleSignInFlow || 'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',
+      appleClientId: (environment as any).appleClientId || 'com.vamoapp.vamomobile.signin',
+      appleSignInFlow: (environment as any).appleSignInFlow || '7adc18dc-af9b-43d5-a2b7-2c7770760ec8',
+      appleRedirectUri: (environment as any).appleRedirectUri || 'https://business.vamo-app.com/auth/callback',
       stripePublishableKey: environment.STRIPE_PUBLISHABLE_KEY || '',
       stripeGetPricesFlow: environment.STRIPE_GET_PRICES_FLOW || '',
       stripeGetSubscriptionFlow: environment.STRIPE_GET_SUBSCRIPTION_FLOW || '',

@@ -20,6 +20,8 @@ describe('RegisterComponent (Canonical Source Parity)', () => {
       loginWithProvider: vi.fn(),
       loginWithGoogle: vi.fn().mockResolvedValue({ id: 'google-user', first_name: 'Mateo', last_name: 'Peralta', email: 'mateo@google.com', provider_link: null }),
       loginWithGoogleCredential: vi.fn().mockResolvedValue({ id: 'google-user', first_name: 'Mateo', last_name: 'Peralta', email: 'mateo@google.com', provider_link: null }),
+      loginWithApple: vi.fn().mockResolvedValue({ id: 'apple-user', first_name: 'Camila', last_name: 'Rojas', email: 'camila@apple.com', provider_link: null }),
+      loginWithAppleCredential: vi.fn().mockResolvedValue({ id: 'apple-user', first_name: 'Camila', last_name: 'Rojas', email: 'camila@apple.com', provider_link: null }),
     };
 
     routerSpy = {
@@ -215,12 +217,12 @@ describe('RegisterComponent (Canonical Source Parity)', () => {
     expect(routerSpy.navigate).not.toHaveBeenCalled();
   });
 
-  it('11. should not render Apple action button while preserving component Apple sign-up method and Google action', () => {
-    expect(fixture.nativeElement.querySelector('.apple-btn')).toBeNull();
+  it('11. should render Apple action button beneath Google and trigger loginWithApple', async () => {
+    expect(fixture.nativeElement.querySelector('.apple-btn')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('.google-btn')).toBeTruthy();
 
-    component.onAppleSignUp();
-    expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('apple', '/app/overview');
+    await component.onAppleSignUp();
+    expect(authServiceSpy.loginWithApple).toHaveBeenCalledOnce();
   });
 
   it('12. should toggle password and confirmPassword visibility flags', () => {
