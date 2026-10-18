@@ -39,10 +39,20 @@ export function appleAuthErrorKey(err: unknown): string {
     code === 'TOKEN_MISSING' ||
     code === 'STATE_MISMATCH' ||
     code === 'NONCE_MISMATCH' ||
+    code === 'INVALID_TOKEN' ||
+    code === 'INVALID_ISSUER' ||
+    code === 'INVALID_AUDIENCE' ||
+    code === 'TOKEN_EXPIRED' ||
+    code === 'INVALID_SIGNATURE' ||
     [
       'APPLE_TOKEN_MISSING',
       'APPLE_STATE_MISMATCH',
       'APPLE_NONCE_MISMATCH',
+      'APPLE_INVALID_TOKEN',
+      'APPLE_INVALID_ISSUER',
+      'APPLE_INVALID_AUDIENCE',
+      'APPLE_TOKEN_EXPIRED',
+      'APPLE_INVALID_SIGNATURE',
     ].includes(message) ||
     lower.includes('identity_token') ||
     lower.includes('state mismatch') ||

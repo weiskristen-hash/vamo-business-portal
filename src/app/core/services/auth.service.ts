@@ -577,11 +577,11 @@ export class AuthService implements OnDestroy {
   }
 
   /**
-   * Hand off to Directus hosted OAuth flow (e.g. google).
+   * Hand off to Directus hosted OAuth flow (google only; Apple uses AppleID.auth popup + Directus flow).
    * Directus redirects back to /auth/callback with access_token, refresh_token, expires.
    */
   loginWithProvider(
-    provider: 'google' | 'apple',
+    provider: 'google',
     returnUrl: string = '/app/overview',
     signupIntent?: 'business' | 'browse'
   ): void {
@@ -670,11 +670,13 @@ export class AuthService implements OnDestroy {
 
   /**
    * Exchanges an Apple identity token with the VAMO Apple Sign-In Directus Flow.
-   * Stores the returned Directus session tokens and loads the current user.
+   * Verifies the token's structure, claims, and RS256 signature against Apple's JWKS
+   * before sending it to the Directus flow, then stores the returned session tokens.
    */
   async loginWithAppleCredential(
     identityToken: string,
-    userName?: { firstName?: string; lastName?: string } | null
+    userName?: { firstName?: string; lastName?: string } | null,
+    alreadyVerified = false
   ): Promise<VamoUser> {
     if (!identityToken || typeof identityToken !== 'string' || !identityToken.trim()) {
       throw new Error('APPLE_TOKEN_MISSING');
@@ -683,6 +685,11 @@ export class AuthService implements OnDestroy {
     const flowId = runtimeConfig.appleSignInFlow;
     if (!flowId) {
       throw new Error('APPLE_FLOW_NOT_CONFIGURED');
+    }
+
+    const trimmedToken = identityToken.trim();
+    if (!alreadyVerified) {
+      await this.appleAuthService.verifyIdentityToken(trimmedToken);
     }
 
     const flowUrl = `${runtimeConfig.directusUrl}/flows/trigger/${flowId}`;
@@ -695,7 +702,7 @@ export class AuthService implements OnDestroy {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          identity_token: identityToken.trim(),
+          identity_token: trimmedToken,
           user_name: {
             firstName: userName?.firstName?.trim() || '',
             lastName: userName?.lastName?.trim() || '',
@@ -735,12 +742,12 @@ export class AuthService implements OnDestroy {
   }
 
   /**
-   * Initiates Apple Sign-In via Apple JS SDK popup, retrieves Apple identity_token,
+   * Initiates Apple Sign-In via Apple JS SDK popup, retrieves and verifies Apple identity_token,
    * and authenticates via the VAMO Directus Apple Sign-In Flow.
    */
   async loginWithApple(): Promise<VamoUser> {
     const result = await this.appleAuthService.signIn();
-    return await this.loginWithAppleCredential(result.identityToken, result.userName);
+    return await this.loginWithAppleCredential(result.identityToken, result.userName, true);
   }
 
   /**
