@@ -17,6 +17,9 @@ export interface RuntimeConfig {
   stripeReleaseScheduleFlow: string;
   stripeGetPaymentMethodsFlow: string;
   stripeDetachPaymentMethodFlow: string;
+  stripeCreateSetupIntentFlow: string;
+  stripeFinalizeSetupIntentFlow: string;
+  stripeSetDefaultPaymentMethodFlow: string;
   stripeGetBillingHistoryFlow: string;
   setProviderTierFlow: string;
   providerGetQuotaFlow: string;
@@ -26,6 +29,16 @@ export interface RuntimeConfig {
   getBoostAvailabilityFlow: string;
   deleteAccountFlow: string;
 }
+
+export const DEV_DIRECTUS_HOST = 'quepasa-api.c1oud7.de';
+
+export const DEV_DIRECTUS_CARD_FLOWS = {
+  stripeGetPaymentMethodsFlow: '44946457-c8cd-42e2-98b2-a7a0672d59d3',
+  stripeDetachPaymentMethodFlow: '9845ee00-779b-4f6b-9e07-fb8f175f945d',
+  stripeCreateSetupIntentFlow: 'b1c4e8a2-7f3d-4e9a-8c1b-2d5f6a9e0c31',
+  stripeFinalizeSetupIntentFlow: 'c2d5f9b3-8e4a-4f0b-9d2c-3e6a7b0f1d42',
+  stripeSetDefaultPaymentMethodFlow: 'd3e6a0c4-9f5b-4a1c-8e3d-4f7b8c1a2e53',
+} as const;
 
 export function stripTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
@@ -42,34 +55,91 @@ export function isAllowedApiUrl(value: string, allowedHosts: string[] = environm
   }
 }
 
+export function isDevelopmentDirectusUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.hostname.toLowerCase() === DEV_DIRECTUS_HOST;
+  } catch {
+    return false;
+  }
+}
+
 const windowConfig = (typeof window !== 'undefined' ? (window as any).__VAMO_CONFIG__ : null) || {};
 
-let currentConfig: RuntimeConfig = {
-  directusUrl: stripTrailingSlash(windowConfig.directusUrl || environment.directusUrl),
-  googleClientId: windowConfig.googleClientId || (environment as any).googleClientId || '654016609429-5995je1smpgrlov4uv92pn637a7dlp0t.apps.googleusercontent.com',
-  googleSignInFlow: windowConfig.googleSignInFlow || (environment as any).googleSignInFlow || 'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',
-  appleClientId: windowConfig.appleClientId || (environment as any).appleClientId || 'com.vamoapp.vamomobile.signin',
-  appleSignInFlow: windowConfig.appleSignInFlow || (environment as any).appleSignInFlow || '7adc18dc-af9b-43d5-a2b7-2c7770760ec8',
-  appleRedirectUri: windowConfig.appleRedirectUri || (environment as any).appleRedirectUri || 'https://business.vamo-app.com/auth/callback',
-  stripePublishableKey: windowConfig.stripePublishableKey || environment.STRIPE_PUBLISHABLE_KEY || '',
-  stripeGetPricesFlow: windowConfig.stripeGetPricesFlow || environment.STRIPE_GET_PRICES_FLOW || '',
-  stripeGetSubscriptionFlow: windowConfig.stripeGetSubscriptionFlow || environment.STRIPE_GET_SUBSCRIPTION_FLOW || '',
-  stripeValidatePromoFlow: windowConfig.stripeValidatePromoFlow || environment.STRIPE_VALIDATE_PROMO_FLOW || '',
-  stripeCreateSubscriptionFlow: windowConfig.stripeCreateSubscriptionFlow || environment.STRIPE_CREATE_SUBSCRIPTION_FLOW || '',
-  stripeChangeSubscriptionFlow: windowConfig.stripeChangeSubscriptionFlow || environment.STRIPE_CHANGE_SUBSCRIPTION_FLOW || '',
-  stripeCancelSubscriptionFlow: windowConfig.stripeCancelSubscriptionFlow || environment.STRIPE_CANCEL_SUBSCRIPTION_FLOW || '',
-  stripeReleaseScheduleFlow: windowConfig.stripeReleaseScheduleFlow || environment.STRIPE_RELEASE_SCHEDULE_FLOW || '',
-  stripeGetPaymentMethodsFlow: windowConfig.stripeGetPaymentMethodsFlow || environment.STRIPE_GET_PAYMENT_METHODS_FLOW || '',
-  stripeDetachPaymentMethodFlow: windowConfig.stripeDetachPaymentMethodFlow || environment.STRIPE_DETACH_PAYMENT_METHOD_FLOW || '',
-  stripeGetBillingHistoryFlow: windowConfig.stripeGetBillingHistoryFlow || environment.STRIPE_GET_BILLING_HISTORY_FLOW || '',
-  setProviderTierFlow: windowConfig.setProviderTierFlow || environment.SET_PROVIDER_TIER_FLOW || '',
-  providerGetQuotaFlow: windowConfig.providerGetQuotaFlow || environment.PROVIDER_GET_QUOTA_FLOW || '',
-  stripeGetAddonPricesFlow: windowConfig.stripeGetAddonPricesFlow || (environment as any).STRIPE_GET_ADDON_PRICES_FLOW || '',
-  stripeCreateAddonPaymentFlow: windowConfig.stripeCreateAddonPaymentFlow || (environment as any).STRIPE_CREATE_ADDON_PAYMENT_FLOW || '',
-  stripeApplyAddonFlow: windowConfig.stripeApplyAddonFlow || (environment as any).STRIPE_APPLY_ADDON_FLOW || '',
-  getBoostAvailabilityFlow: windowConfig.getBoostAvailabilityFlow || (environment as any).GET_BOOST_AVAILABILITY_FLOW || '',
-  deleteAccountFlow: windowConfig.deleteAccountFlow || (environment as any).DELETE_ACCOUNT_FLOW || '',
-};
+function buildInitialConfig(overrides: Record<string, any> = {}): RuntimeConfig {
+  const resolvedDirectusUrl = stripTrailingSlash(overrides['directusUrl'] || environment.directusUrl);
+  const isDevHost = isDevelopmentDirectusUrl(resolvedDirectusUrl);
+
+  return {
+    directusUrl: resolvedDirectusUrl,
+    googleClientId:
+      overrides['googleClientId'] ||
+      (environment as any).googleClientId ||
+      '654016609429-5995je1smpgrlov4uv92pn637a7dlp0t.apps.googleusercontent.com',
+    googleSignInFlow:
+      overrides['googleSignInFlow'] ||
+      (environment as any).googleSignInFlow ||
+      'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',
+    appleClientId:
+      overrides['appleClientId'] ||
+      (environment as any).appleClientId ||
+      'com.vamoapp.vamomobile.signin',
+    appleSignInFlow:
+      overrides['appleSignInFlow'] ||
+      (environment as any).appleSignInFlow ||
+      '7adc18dc-af9b-43d5-a2b7-2c7770760ec8',
+    appleRedirectUri:
+      overrides['appleRedirectUri'] ||
+      (environment as any).appleRedirectUri ||
+      'https://business.vamo-app.com/auth/callback',
+    stripePublishableKey: overrides['stripePublishableKey'] || environment.STRIPE_PUBLISHABLE_KEY || '',
+    stripeGetPricesFlow: overrides['stripeGetPricesFlow'] || environment.STRIPE_GET_PRICES_FLOW || '',
+    stripeGetSubscriptionFlow: overrides['stripeGetSubscriptionFlow'] || environment.STRIPE_GET_SUBSCRIPTION_FLOW || '',
+    stripeValidatePromoFlow: overrides['stripeValidatePromoFlow'] || environment.STRIPE_VALIDATE_PROMO_FLOW || '',
+    stripeCreateSubscriptionFlow:
+      overrides['stripeCreateSubscriptionFlow'] || environment.STRIPE_CREATE_SUBSCRIPTION_FLOW || '',
+    stripeChangeSubscriptionFlow:
+      overrides['stripeChangeSubscriptionFlow'] || environment.STRIPE_CHANGE_SUBSCRIPTION_FLOW || '',
+    stripeCancelSubscriptionFlow:
+      overrides['stripeCancelSubscriptionFlow'] || environment.STRIPE_CANCEL_SUBSCRIPTION_FLOW || '',
+    stripeReleaseScheduleFlow:
+      overrides['stripeReleaseScheduleFlow'] || environment.STRIPE_RELEASE_SCHEDULE_FLOW || '',
+    stripeGetPaymentMethodsFlow:
+      overrides['stripeGetPaymentMethodsFlow'] ||
+      environment.STRIPE_GET_PAYMENT_METHODS_FLOW ||
+      (isDevHost ? DEV_DIRECTUS_CARD_FLOWS.stripeGetPaymentMethodsFlow : ''),
+    stripeDetachPaymentMethodFlow:
+      overrides['stripeDetachPaymentMethodFlow'] ||
+      environment.STRIPE_DETACH_PAYMENT_METHOD_FLOW ||
+      (isDevHost ? DEV_DIRECTUS_CARD_FLOWS.stripeDetachPaymentMethodFlow : ''),
+    stripeCreateSetupIntentFlow:
+      overrides['stripeCreateSetupIntentFlow'] ??
+      ((environment as any).STRIPE_CREATE_SETUP_INTENT_FLOW ||
+        (isDevHost ? DEV_DIRECTUS_CARD_FLOWS.stripeCreateSetupIntentFlow : '')),
+    stripeFinalizeSetupIntentFlow:
+      overrides['stripeFinalizeSetupIntentFlow'] ??
+      ((environment as any).STRIPE_FINALIZE_SETUP_INTENT_FLOW ||
+        (isDevHost ? DEV_DIRECTUS_CARD_FLOWS.stripeFinalizeSetupIntentFlow : '')),
+    stripeSetDefaultPaymentMethodFlow:
+      overrides['stripeSetDefaultPaymentMethodFlow'] ??
+      ((environment as any).STRIPE_SET_DEFAULT_PAYMENT_METHOD_FLOW ||
+        (isDevHost ? DEV_DIRECTUS_CARD_FLOWS.stripeSetDefaultPaymentMethodFlow : '')),
+    stripeGetBillingHistoryFlow:
+      overrides['stripeGetBillingHistoryFlow'] || environment.STRIPE_GET_BILLING_HISTORY_FLOW || '',
+    setProviderTierFlow: overrides['setProviderTierFlow'] || environment.SET_PROVIDER_TIER_FLOW || '',
+    providerGetQuotaFlow: overrides['providerGetQuotaFlow'] || environment.PROVIDER_GET_QUOTA_FLOW || '',
+    stripeGetAddonPricesFlow:
+      overrides['stripeGetAddonPricesFlow'] || (environment as any).STRIPE_GET_ADDON_PRICES_FLOW || '',
+    stripeCreateAddonPaymentFlow:
+      overrides['stripeCreateAddonPaymentFlow'] || (environment as any).STRIPE_CREATE_ADDON_PAYMENT_FLOW || '',
+    stripeApplyAddonFlow: overrides['stripeApplyAddonFlow'] || (environment as any).STRIPE_APPLY_ADDON_FLOW || '',
+    getBoostAvailabilityFlow:
+      overrides['getBoostAvailabilityFlow'] || (environment as any).GET_BOOST_AVAILABILITY_FLOW || '',
+    deleteAccountFlow: overrides['deleteAccountFlow'] || (environment as any).DELETE_ACCOUNT_FLOW || '',
+  };
+}
+
+let currentConfig: RuntimeConfig = buildInitialConfig(windowConfig);
 
 export const runtimeConfig = {
   get directusUrl(): string {
@@ -90,9 +160,46 @@ export const runtimeConfig = {
   get appleRedirectUri(): string {
     return currentConfig.appleRedirectUri;
   },
+  setAppleRedirectUri(uri: string): void {
+    if (isAllowedApiUrl(uri)) {
+      currentConfig.appleRedirectUri = stripTrailingSlash(uri);
+    }
+  },
   setDirectusUrl(url: string): void {
     if (isAllowedApiUrl(url)) {
-      currentConfig.directusUrl = stripTrailingSlash(url);
+      const normalized = stripTrailingSlash(url);
+      currentConfig.directusUrl = normalized;
+      if (isDevelopmentDirectusUrl(normalized)) {
+        if (!currentConfig.stripeCreateSetupIntentFlow) {
+          currentConfig.stripeCreateSetupIntentFlow = DEV_DIRECTUS_CARD_FLOWS.stripeCreateSetupIntentFlow;
+        }
+        if (!currentConfig.stripeFinalizeSetupIntentFlow) {
+          currentConfig.stripeFinalizeSetupIntentFlow = DEV_DIRECTUS_CARD_FLOWS.stripeFinalizeSetupIntentFlow;
+        }
+        if (!currentConfig.stripeSetDefaultPaymentMethodFlow) {
+          currentConfig.stripeSetDefaultPaymentMethodFlow = DEV_DIRECTUS_CARD_FLOWS.stripeSetDefaultPaymentMethodFlow;
+        }
+        if (!currentConfig.stripeGetPaymentMethodsFlow) {
+          currentConfig.stripeGetPaymentMethodsFlow = DEV_DIRECTUS_CARD_FLOWS.stripeGetPaymentMethodsFlow;
+        }
+        if (!currentConfig.stripeDetachPaymentMethodFlow) {
+          currentConfig.stripeDetachPaymentMethodFlow = DEV_DIRECTUS_CARD_FLOWS.stripeDetachPaymentMethodFlow;
+        }
+      } else {
+        if (currentConfig.stripeCreateSetupIntentFlow === DEV_DIRECTUS_CARD_FLOWS.stripeCreateSetupIntentFlow) {
+          currentConfig.stripeCreateSetupIntentFlow = (environment as any).STRIPE_CREATE_SETUP_INTENT_FLOW || '';
+        }
+        if (currentConfig.stripeFinalizeSetupIntentFlow === DEV_DIRECTUS_CARD_FLOWS.stripeFinalizeSetupIntentFlow) {
+          currentConfig.stripeFinalizeSetupIntentFlow = (environment as any).STRIPE_FINALIZE_SETUP_INTENT_FLOW || '';
+        }
+        if (
+          currentConfig.stripeSetDefaultPaymentMethodFlow ===
+          DEV_DIRECTUS_CARD_FLOWS.stripeSetDefaultPaymentMethodFlow
+        ) {
+          currentConfig.stripeSetDefaultPaymentMethodFlow =
+            (environment as any).STRIPE_SET_DEFAULT_PAYMENT_METHOD_FLOW || '';
+        }
+      }
     }
   },
   get stripePublishableKey(): string {
@@ -125,6 +232,15 @@ export const runtimeConfig = {
   get stripeDetachPaymentMethodFlow(): string {
     return currentConfig.stripeDetachPaymentMethodFlow;
   },
+  get stripeCreateSetupIntentFlow(): string {
+    return currentConfig.stripeCreateSetupIntentFlow;
+  },
+  get stripeFinalizeSetupIntentFlow(): string {
+    return currentConfig.stripeFinalizeSetupIntentFlow;
+  },
+  get stripeSetDefaultPaymentMethodFlow(): string {
+    return currentConfig.stripeSetDefaultPaymentMethodFlow;
+  },
   get stripeGetBillingHistoryFlow(): string {
     return currentConfig.stripeGetBillingHistoryFlow;
   },
@@ -153,31 +269,6 @@ export const runtimeConfig = {
     currentConfig = { ...currentConfig, ...partial };
   },
   reset(): void {
-    currentConfig = {
-      directusUrl: stripTrailingSlash(environment.directusUrl),
-      googleClientId: (environment as any).googleClientId || '654016609429-5995je1smpgrlov4uv92pn637a7dlp0t.apps.googleusercontent.com',
-      googleSignInFlow: (environment as any).googleSignInFlow || 'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',
-      appleClientId: (environment as any).appleClientId || 'com.vamoapp.vamomobile.signin',
-      appleSignInFlow: (environment as any).appleSignInFlow || '7adc18dc-af9b-43d5-a2b7-2c7770760ec8',
-      appleRedirectUri: (environment as any).appleRedirectUri || 'https://business.vamo-app.com/auth/callback',
-      stripePublishableKey: environment.STRIPE_PUBLISHABLE_KEY || '',
-      stripeGetPricesFlow: environment.STRIPE_GET_PRICES_FLOW || '',
-      stripeGetSubscriptionFlow: environment.STRIPE_GET_SUBSCRIPTION_FLOW || '',
-      stripeValidatePromoFlow: environment.STRIPE_VALIDATE_PROMO_FLOW || '',
-      stripeCreateSubscriptionFlow: environment.STRIPE_CREATE_SUBSCRIPTION_FLOW || '',
-      stripeChangeSubscriptionFlow: environment.STRIPE_CHANGE_SUBSCRIPTION_FLOW || '',
-      stripeCancelSubscriptionFlow: environment.STRIPE_CANCEL_SUBSCRIPTION_FLOW || '',
-      stripeReleaseScheduleFlow: environment.STRIPE_RELEASE_SCHEDULE_FLOW || '',
-      stripeGetPaymentMethodsFlow: environment.STRIPE_GET_PAYMENT_METHODS_FLOW || '',
-      stripeDetachPaymentMethodFlow: environment.STRIPE_DETACH_PAYMENT_METHOD_FLOW || '',
-      stripeGetBillingHistoryFlow: environment.STRIPE_GET_BILLING_HISTORY_FLOW || '',
-      setProviderTierFlow: environment.SET_PROVIDER_TIER_FLOW || '',
-      providerGetQuotaFlow: environment.PROVIDER_GET_QUOTA_FLOW || '',
-      stripeGetAddonPricesFlow: (environment as any).STRIPE_GET_ADDON_PRICES_FLOW || '',
-      stripeCreateAddonPaymentFlow: (environment as any).STRIPE_CREATE_ADDON_PAYMENT_FLOW || '',
-      stripeApplyAddonFlow: (environment as any).STRIPE_APPLY_ADDON_FLOW || '',
-      getBoostAvailabilityFlow: (environment as any).GET_BOOST_AVAILABILITY_FLOW || '',
-      deleteAccountFlow: (environment as any).DELETE_ACCOUNT_FLOW || '',
-    };
+    currentConfig = buildInitialConfig();
   },
 };

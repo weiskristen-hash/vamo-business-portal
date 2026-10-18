@@ -676,5 +676,45 @@ describe('Apple Web Sign-In & JWT Security Specifications', () => {
         .join(' ');
       expect(loggedArgs).not.toContain(unsignedAlgNone);
     });
+
+    it('21. Allows configuring Apple redirect URI for staging without disrupting production callback or credit-card flows', async () => {
+      // Production callback is the default
+      runtimeConfig.reset();
+      expect(runtimeConfig.appleRedirectUri).toBe('https://business.vamo-app.com/auth/callback');
+
+      // Staging redirect URI can be configured via setAppleRedirectUri
+      runtimeConfig.setAppleRedirectUri('https://staging-business.vamo-app.com/auth/callback/');
+      expect(runtimeConfig.appleRedirectUri).toBe('https://staging-business.vamo-app.com/auth/callback');
+
+      // Untrusted redirect URI host is rejected
+      runtimeConfig.setAppleRedirectUri('https://evil.example.com/auth/callback');
+      expect(runtimeConfig.appleRedirectUri).toBe('https://staging-business.vamo-app.com/auth/callback');
+
+      // AppleID.auth.init receives the staging redirect URI when configured
+      let capturedConfig: any = null;
+      (window as any).AppleID = {
+        auth: {
+          init: vi.fn((cfg: any) => {
+            capturedConfig = cfg;
+          }),
+          signIn: vi.fn(async () => ({
+            authorization: {
+              state: capturedConfig.state,
+              id_token: await signAppleTestJwt({ nonce: capturedConfig.nonce }),
+            },
+          })),
+        },
+      };
+
+      await appleAuthService.signIn();
+      expect(capturedConfig.redirectURI).toBe('https://staging-business.vamo-app.com/auth/callback');
+
+      // Resetting restores the production callback without affecting dev Directus credit-card flows
+      runtimeConfig.reset();
+      expect(runtimeConfig.appleRedirectUri).toBe('https://business.vamo-app.com/auth/callback');
+      runtimeConfig.setDirectusUrl('https://quepasa-api.c1oud7.de');
+      expect(runtimeConfig.stripeCreateSetupIntentFlow).toBeTruthy();
+      expect(runtimeConfig.appleClientId).toBe('com.vamoapp.vamomobile.signin');
+    });
   });
 });

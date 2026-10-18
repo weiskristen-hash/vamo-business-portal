@@ -82,6 +82,33 @@ export interface SavedPaymentMethod {
   last4: string;
   expMonth: number;
   expYear: number;
+  isRenewalCard?: boolean;
+}
+
+export interface SavedPaymentMethodsResult {
+  paymentMethods: SavedPaymentMethod[];
+  defaultPaymentMethodId: string | null;
+  defaultVerified: boolean;
+}
+
+export interface CardSetupIntentResult {
+  setupIntentId: string;
+  clientSecret: string;
+}
+
+export interface FinalizeCardSetupResult {
+  verified: boolean;
+  setupIntentId: string;
+  paymentMethodId: string;
+  paymentMethod?: SavedPaymentMethod;
+}
+
+export interface SetDefaultPaymentMethodResult {
+  updated: boolean;
+  defaultPaymentMethodId: string;
+  customerDefaultUpdated: boolean;
+  subscriptionDefaultUpdated: boolean;
+  subscriptionId?: string | null;
 }
 
 export interface PromoResult {
@@ -232,6 +259,8 @@ export class StripeService {
   private i18n = inject(I18nService);
   private stripePromise: Promise<Stripe | null> | null = null;
   private activeElements: StripeElements | null = null;
+  private cardSetupElements: StripeElements | null = null;
+  private cardSetupPaymentElement: any = null;
 
   getStripe(): Promise<Stripe | null> {
     const pubKey = runtimeConfig.stripePublishableKey;
@@ -455,14 +484,8 @@ export class StripeService {
     return { requiresSetup: false, ...result };
   }
 
-  async mountPaymentElement(
-    clientSecret: string,
-    containerId: string,
-  ): Promise<{ stripe: Stripe; elements: StripeElements }> {
-    const stripe = await this.getStripe();
-    if (!stripe) throw new Error('Stripe failed to initialize.');
-
-    this.activeElements = stripe.elements({
+  private createElementsInstance(stripe: Stripe, clientSecret: string): StripeElements {
+    return stripe.elements({
       clientSecret,
       locale: this.i18n.lang() === 'es' ? 'es' : 'en',
       appearance: {
@@ -495,6 +518,16 @@ export class StripeService {
         },
       },
     });
+  }
+
+  async mountPaymentElement(
+    clientSecret: string,
+    containerId: string,
+  ): Promise<{ stripe: Stripe; elements: StripeElements }> {
+    const stripe = await this.getStripe();
+    if (!stripe) throw new Error('Stripe failed to initialize.');
+
+    this.activeElements = this.createElementsInstance(stripe, clientSecret);
 
     const paymentElement = this.activeElements.create('payment');
     const container = document.getElementById(containerId);
@@ -502,6 +535,29 @@ export class StripeService {
     paymentElement.mount(container);
 
     return { stripe, elements: this.activeElements };
+  }
+
+  async mountCardSetupElement(
+    clientSecret: string,
+    containerId: string,
+  ): Promise<{ stripe: Stripe; elements: StripeElements }> {
+    const stripe = await this.getStripe();
+    if (!stripe) throw new Error('Stripe failed to initialize.');
+
+    this.cleanupCardSetup();
+    this.cardSetupElements = this.createElementsInstance(stripe, clientSecret);
+
+    const paymentElement = this.cardSetupElements.create('payment');
+    let container = document.getElementById(containerId);
+    if (!container) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      container = document.getElementById(containerId);
+    }
+    if (!container) throw new Error(`Container #${containerId} not found.`);
+    paymentElement.mount(container);
+    this.cardSetupPaymentElement = paymentElement;
+
+    return { stripe, elements: this.cardSetupElements };
   }
 
   async confirmPayment(
@@ -1168,10 +1224,270 @@ export class StripeService {
       return [];
     }
     try {
-      const res = await this.flowPost(flowId, {});
-      return res?.paymentMethods ?? [];
+      const result = await this.loadSavedPaymentMethods();
+      return result.paymentMethods;
     } catch {
       return [];
+    }
+  }
+
+  async loadSavedPaymentMethods(): Promise<SavedPaymentMethodsResult> {
+    const flowId = runtimeConfig.stripeGetPaymentMethodsFlow;
+    if (!flowId) {
+      throw new Error('Get payment methods flow is not configured.');
+    }
+    const res = await this.flowPost(flowId, {});
+    const body = res?.data ?? res ?? {};
+    const rawMethods = Array.isArray(body?.paymentMethods) ? body.paymentMethods : [];
+
+    const hasExplicitDefaultField =
+      Boolean(body && typeof body === 'object') &&
+      ('defaultPaymentMethodId' in body ||
+        'renewalPaymentMethodId' in body ||
+        'subscriptionDefaultPaymentMethodId' in body ||
+        'customerDefaultPaymentMethodId' in body);
+
+    const rawDefaultId =
+      body?.defaultPaymentMethodId ??
+      body?.renewalPaymentMethodId ??
+      body?.subscriptionDefaultPaymentMethodId ??
+      body?.customerDefaultPaymentMethodId ??
+      null;
+
+    const itemLevelDefault = rawMethods.find(
+      (pm: any) => pm && (pm.isRenewalCard === true || pm.isDefault === true),
+    );
+
+    const hasItemExplicitFlag = rawMethods.some(
+      (pm: any) =>
+        pm &&
+        (typeof pm.isRenewalCard === 'boolean' || typeof pm.isDefault === 'boolean'),
+    );
+
+    const defaultVerified = hasExplicitDefaultField || hasItemExplicitFlag;
+    const verifiedDefaultId: string | null = defaultVerified
+      ? typeof rawDefaultId === 'string' && rawDefaultId.trim().startsWith('pm_')
+        ? rawDefaultId.trim()
+        : typeof itemLevelDefault?.id === 'string' && itemLevelDefault.id.trim().startsWith('pm_')
+          ? itemLevelDefault.id.trim()
+          : null
+      : null;
+
+    const paymentMethods: SavedPaymentMethod[] = rawMethods
+      .filter((pm: any) => pm && typeof pm.id === 'string' && pm.id.trim().length > 0)
+      .map((pm: any) => {
+        const id = pm.id.trim();
+        const isRenewalCard =
+          defaultVerified && verifiedDefaultId !== null && id === verifiedDefaultId;
+        return {
+          id,
+          brand: String(pm.brand || 'card'),
+          last4: String(pm.last4 || '****'),
+          expMonth: Number(pm.expMonth) || 0,
+          expYear: Number(pm.expYear) || 0,
+          ...(defaultVerified ? { isRenewalCard } : {}),
+        };
+      });
+
+    return {
+      paymentMethods,
+      defaultPaymentMethodId: verifiedDefaultId,
+      defaultVerified,
+    };
+  }
+
+  private inFlightCardSetupIntent: Promise<CardSetupIntentResult> | null = null;
+
+  async createCardSetupIntent(): Promise<CardSetupIntentResult> {
+    const flowId = runtimeConfig.stripeCreateSetupIntentFlow;
+    if (!flowId) {
+      throw new Error('Card setup flow is not configured.');
+    }
+    if (this.inFlightCardSetupIntent) {
+      return this.inFlightCardSetupIntent;
+    }
+
+    const execution = (async (): Promise<CardSetupIntentResult> => {
+      // Server resolves authenticated user and Stripe customer from $accountability.user.
+      const res = await this.flowPost(flowId, {});
+      const body = res?.data ?? res?.format_setup_intent ?? res;
+      if (body?.error === true || body?.stripeError) {
+        throw new Error(body?.message || body?.stripeError || 'Could not start card setup.');
+      }
+      const clientSecret =
+        typeof body?.clientSecret === 'string'
+          ? body.clientSecret.trim()
+          : typeof body?.client_secret === 'string'
+            ? body.client_secret.trim()
+            : '';
+      if (!clientSecret || !clientSecret.startsWith('seti_')) {
+        throw new Error('Invalid SetupIntent response from server.');
+      }
+      const rawSetupId =
+        typeof body?.setupIntentId === 'string' && body.setupIntentId.trim().startsWith('seti_')
+          ? body.setupIntentId.trim()
+          : typeof body?.id === 'string' && body.id.trim().startsWith('seti_')
+            ? body.id.trim()
+            : clientSecret.split('_secret_')[0];
+      if (!rawSetupId || !rawSetupId.startsWith('seti_')) {
+        throw new Error('Invalid SetupIntent identifier from server.');
+      }
+      return {
+        setupIntentId: rawSetupId,
+        clientSecret,
+      };
+    })();
+
+    this.inFlightCardSetupIntent = execution;
+    try {
+      return await execution;
+    } finally {
+      this.inFlightCardSetupIntent = null;
+    }
+  }
+
+  private inFlightFinalizeSetup = new Map<string, Promise<FinalizeCardSetupResult>>();
+
+  async finalizeCardSetup(setupIntentId: string): Promise<FinalizeCardSetupResult> {
+    const cleanId = typeof setupIntentId === 'string' ? setupIntentId.trim() : '';
+    if (!cleanId || !cleanId.startsWith('seti_')) {
+      throw new Error('A valid SetupIntent identifier is required.');
+    }
+    const flowId = runtimeConfig.stripeFinalizeSetupIntentFlow;
+    if (!flowId) {
+      throw new Error('Finalize card setup flow is not configured.');
+    }
+
+    const existing = this.inFlightFinalizeSetup.get(cleanId);
+    if (existing) {
+      return existing;
+    }
+
+    const execution = (async (): Promise<FinalizeCardSetupResult> => {
+      const res = await this.flowPost(flowId, { setupIntentId: cleanId });
+      const body = res?.data ?? res?.verify_setup ?? res;
+      const status = body?.status ?? body?.setupIntent?.status ?? null;
+      const isVerified =
+        body?.error !== true &&
+        (body?.verified === true || status === 'succeeded') &&
+        status !== 'requires_payment_method' &&
+        status !== 'requires_action' &&
+        status !== 'requires_confirmation' &&
+        status !== 'canceled';
+
+      const rawPm = body?.paymentMethod ?? body?.payment_method ?? null;
+      const paymentMethodId =
+        typeof body?.paymentMethodId === 'string' && body.paymentMethodId.trim().startsWith('pm_')
+          ? body.paymentMethodId.trim()
+          : typeof rawPm?.id === 'string' && rawPm.id.trim().startsWith('pm_')
+            ? rawPm.id.trim()
+            : typeof rawPm === 'string' && rawPm.trim().startsWith('pm_')
+              ? rawPm.trim()
+              : '';
+
+      if (!isVerified || !paymentMethodId) {
+        const err: any = new Error(body?.message || 'Card setup could not be verified.');
+        if (body?.code) err.code = body.code;
+        throw err;
+      }
+
+      let paymentMethod: SavedPaymentMethod | undefined;
+      if (rawPm && typeof rawPm === 'object' && typeof rawPm.id === 'string') {
+        const cardObj = rawPm.card ?? rawPm;
+        paymentMethod = {
+          id: paymentMethodId,
+          brand: String(cardObj.brand || 'card'),
+          last4: String(cardObj.last4 || '****'),
+          expMonth: Number(cardObj.expMonth ?? cardObj.exp_month) || 0,
+          expYear: Number(cardObj.expYear ?? cardObj.exp_year) || 0,
+        };
+      }
+
+      return {
+        verified: true,
+        setupIntentId: cleanId,
+        paymentMethodId,
+        ...(paymentMethod ? { paymentMethod } : {}),
+      };
+    })();
+
+    this.inFlightFinalizeSetup.set(cleanId, execution);
+    try {
+      return await execution;
+    } finally {
+      this.inFlightFinalizeSetup.delete(cleanId);
+    }
+  }
+
+  private inFlightSetDefault = new Map<string, Promise<SetDefaultPaymentMethodResult>>();
+
+  async setDefaultPaymentMethod(
+    paymentMethodId: string,
+    subscriptionId?: string | null,
+  ): Promise<SetDefaultPaymentMethodResult> {
+    const cleanPmId = typeof paymentMethodId === 'string' ? paymentMethodId.trim() : '';
+    if (!cleanPmId || !cleanPmId.startsWith('pm_')) {
+      throw new Error('A valid payment method identifier is required.');
+    }
+    const flowId = runtimeConfig.stripeSetDefaultPaymentMethodFlow;
+    if (!flowId) {
+      throw new Error('Set default payment method flow is not configured.');
+    }
+    const cleanSubId =
+      typeof subscriptionId === 'string' && subscriptionId.trim().startsWith('sub_')
+        ? subscriptionId.trim()
+        : null;
+    const lockKey = `${cleanPmId}:${cleanSubId ?? ''}`;
+    const existing = this.inFlightSetDefault.get(lockKey);
+    if (existing) {
+      return existing;
+    }
+
+    const payload: Record<string, string> = { paymentMethodId: cleanPmId };
+    if (cleanSubId) {
+      payload['subscriptionId'] = cleanSubId;
+    }
+
+    const execution = (async (): Promise<SetDefaultPaymentMethodResult> => {
+      const res = await this.flowPost(flowId, payload);
+      const body = res?.data ?? res?.format_response ?? res;
+      const returnedDefaultId =
+        body?.defaultPaymentMethodId ??
+        body?.paymentMethodId ??
+        body?.invoice_settings?.default_payment_method ??
+        null;
+
+      const customerDefaultUpdated = body?.customerDefaultUpdated !== false;
+      const subscriptionDefaultUpdated = cleanSubId
+        ? body?.subscriptionDefaultUpdated !== false
+        : Boolean(body?.subscriptionDefaultUpdated ?? true);
+
+      if (
+        body?.error === true ||
+        body?.updated === false ||
+        !customerDefaultUpdated ||
+        (cleanSubId && !subscriptionDefaultUpdated) ||
+        (returnedDefaultId && returnedDefaultId !== cleanPmId)
+      ) {
+        const err: any = new Error(body?.message || 'Could not update renewal card.');
+        if (body?.code) err.code = body.code;
+        throw err;
+      }
+
+      return {
+        updated: true,
+        defaultPaymentMethodId: cleanPmId,
+        customerDefaultUpdated,
+        subscriptionDefaultUpdated,
+        subscriptionId: body?.subscriptionId ?? cleanSubId,
+      };
+    })();
+
+    this.inFlightSetDefault.set(lockKey, execution);
+    try {
+      return await execution;
+    } finally {
+      this.inFlightSetDefault.delete(lockKey);
     }
   }
 
@@ -1180,7 +1496,13 @@ export class StripeService {
     if (!flowId) {
       throw new Error('Detach payment method flow is not configured.');
     }
-    await this.flowPost(flowId, { paymentMethodId });
+    const res = await this.flowPost(flowId, { paymentMethodId });
+    const body = res?.data ?? res;
+    if (body?.error === true || body?.detached === false) {
+      const err: any = new Error(body?.message || 'Could not remove payment method.');
+      if (body?.code) err.code = body.code;
+      throw err;
+    }
   }
 
   async setProviderTier(tier: 'starter' | 'basic' | 'advanced' | null): Promise<void> {
@@ -1249,4 +1571,21 @@ export class StripeService {
   cleanup(): void {
     this.activeElements = null;
   }
+
+  cleanupCardSetup(): void {
+    if (this.cardSetupPaymentElement) {
+      try {
+        if (typeof this.cardSetupPaymentElement.destroy === 'function') {
+          this.cardSetupPaymentElement.destroy();
+        } else if (typeof this.cardSetupPaymentElement.unmount === 'function') {
+          this.cardSetupPaymentElement.unmount();
+        }
+      } catch {
+        // Ignore unmount errors when container is already removed
+      }
+    }
+    this.cardSetupPaymentElement = null;
+    this.cardSetupElements = null;
+  }
 }
+
