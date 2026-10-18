@@ -601,7 +601,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             <span>{{ 'PORTAL.BILLING.CARD_SETUP_LOADING' | translate }}</span>
           </div>
 
-          <div *ngIf="cardSetupClientSecret()" class="payment-elements-container card-setup-elements-container">
+          <div [hidden]="!cardSetupClientSecret()" class="payment-elements-container card-setup-elements-container">
             <div id="portal-card-setup-element" class="stripe-mount-box"></div>
           </div>
 

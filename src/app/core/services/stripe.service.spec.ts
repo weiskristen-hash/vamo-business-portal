@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { StripeService, StripePlan } from './stripe.service';
 import { AuthService } from './auth.service';
 import { I18nService } from '../i18n/i18n.service';
-import { runtimeConfig } from '../config/runtime-config';
+import { runtimeConfig, DEV_DIRECTUS_CARD_FLOWS } from '../config/runtime-config';
 
 describe('StripeService', () => {
   let service: StripeService;
@@ -984,6 +984,38 @@ describe('StripeService', () => {
         code: 'RENEWAL_CARD_PROTECTED',
       });
     });
+
+    it('wires verified development Directus flow IDs when targeting quepasa-api.c1oud7.de while keeping production unpopulated', () => {
+      runtimeConfig.reset();
+      expect(runtimeConfig.directusUrl).toBe('https://api.vamo-app.com');
+      expect(runtimeConfig.stripeCreateSetupIntentFlow).toBe('');
+      expect(runtimeConfig.stripeFinalizeSetupIntentFlow).toBe('');
+      expect(runtimeConfig.stripeSetDefaultPaymentMethodFlow).toBe('');
+
+      runtimeConfig.setDirectusUrl('https://quepasa-api.c1oud7.de');
+      expect(runtimeConfig.directusUrl).toBe('https://quepasa-api.c1oud7.de');
+      expect(runtimeConfig.stripeCreateSetupIntentFlow).toBe(
+        DEV_DIRECTUS_CARD_FLOWS.stripeCreateSetupIntentFlow
+      );
+      expect(runtimeConfig.stripeFinalizeSetupIntentFlow).toBe(
+        DEV_DIRECTUS_CARD_FLOWS.stripeFinalizeSetupIntentFlow
+      );
+      expect(runtimeConfig.stripeSetDefaultPaymentMethodFlow).toBe(
+        DEV_DIRECTUS_CARD_FLOWS.stripeSetDefaultPaymentMethodFlow
+      );
+      expect(runtimeConfig.stripeGetPaymentMethodsFlow).toBe(
+        DEV_DIRECTUS_CARD_FLOWS.stripeGetPaymentMethodsFlow
+      );
+      expect(runtimeConfig.stripeDetachPaymentMethodFlow).toBe(
+        DEV_DIRECTUS_CARD_FLOWS.stripeDetachPaymentMethodFlow
+      );
+
+      runtimeConfig.setDirectusUrl('https://api.vamo-app.com');
+      expect(runtimeConfig.stripeCreateSetupIntentFlow).toBe('');
+      expect(runtimeConfig.stripeFinalizeSetupIntentFlow).toBe('');
+      expect(runtimeConfig.stripeSetDefaultPaymentMethodFlow).toBe('');
+    });
   });
 });
+
 

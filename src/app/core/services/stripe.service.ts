@@ -548,7 +548,11 @@ export class StripeService {
     this.cardSetupElements = this.createElementsInstance(stripe, clientSecret);
 
     const paymentElement = this.cardSetupElements.create('payment');
-    const container = document.getElementById(containerId);
+    let container = document.getElementById(containerId);
+    if (!container) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      container = document.getElementById(containerId);
+    }
     if (!container) throw new Error(`Container #${containerId} not found.`);
     paymentElement.mount(container);
     this.cardSetupPaymentElement = paymentElement;

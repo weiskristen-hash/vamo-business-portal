@@ -1,85 +1,78 @@
-# Directus Contract Verification & Reviewable Flow Definitions: Business Billing Credit-Card Management
+# VAMO Business Portal — Directus Flow Contract for Credit-Card Management
 
-## 1. Authoritative Inspection Summary
+## 1. Existing Flow Audit & Development Verification Summary
 
-Using authorized read-only administrative inspection of `/flows` and `/operations` on both `prod_directus` (`https://api.vamo-app.com`) and `dev_directus` (`https://quepasa-api.c1oud7.de`), all 36 Directus flows and 265 operations were audited without invoking any mutation endpoints.
+We audited the Directus instances (`prod_directus` at `https://api.vamo-app.com` and `dev_directus` at `https://quepasa-api.c1oud7.de`) and verified complete development isolation on `dev_directus` before installing and testing the card-management flows:
 
-### 1.1 Existing Flows Relevant to Payment Methods & Billing
+| Environment | Host | Stripe Key Mode | Isolation Status |
+|---|---|---|---|
+| `dev_directus` | `https://quepasa-api.c1oud7.de` | **TEST mode (`livemode: false`)** | Confirmed isolated test Stripe account; no operations forward to production |
+| `prod_directus` | `https://api.vamo-app.com` | LIVE mode (`livemode: true`) | Read-only inspected; untouched |
 
-| Flow Name | Flow UUID (`prod` & `dev`) | Status | Trigger | Permission | Current Contract & Findings |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `Stripe - Get Payment Methods` | `44946457-c8cd-42e2-98b2-a7a0672d59d3` | `active` | `POST /flows/trigger/44946457-c8cd-42e2-98b2-a7a0672d59d3` | `$full` | Resolves `$accountability.user` email from `directus_users`, looks up `GET /v1/customers?email=...&limit=1`, fetches `GET /v1/payment_methods?customer={{customerId}}&type=card&limit=10`, deduplicates by `card.fingerprint`, and returns `{ paymentMethods: [{ id, brand, last4, expMonth, expYear }] }`. **Gap:** Does not return `defaultPaymentMethodId` or `isRenewalCard`. |
-| `Stripe - Detach Payment Method` | `9845ee00-779b-4f6b-9e07-fb8f175f945d` | `active` | `POST /flows/trigger/9845ee00-779b-4f6b-9e07-fb8f175f945d` | `$full` | Accepts `{ paymentMethodId }`, resolves customer by `$accountability.user` email, checks `if (!customerId)` and `if (!pmId)`, and calls `POST /v1/payment_methods/{{pmId}}/detach`. **Gap:** Does not verify `pm.customer === customerId` on the PaymentMethod before detaching, and does not block detaching the effective renewal card on an active subscription. |
-| `Stripe - Get Subscription` | `a48e3dee-3d94-471b-804f-16ada69737cf` | `active` | `POST /flows/trigger/a48e3dee-3d94-471b-804f-16ada69737cf` | `$full` | Returns `{ subscription: { subscriptionId, subscriptionItemId, status, cancelAtPeriodEnd, currentPeriodStart, currentPeriodEnd, plan, pendingPlanName, pendingPeriodEnd, pendingScheduleId } }`. Does not expose `default_payment_method`. |
-| `Stripe - Create Subscription` | `0a31e459-0909-41b0-8286-2aecc763fe29` | `active` | `POST /flows/trigger/0a31e459-0909-41b0-8286-2aecc763fe29` | `$full` | Creates a subscription and only creates a `SetupIntent` when the first invoice is `$0` (`requiresSetup: true`). Cannot be used for standalone card setup without creating a subscription. |
+### Verified Development Directus Flow IDs (`https://quepasa-api.c1oud7.de`)
 
-### 1.2 Confirmed Absent Flows (Both `prod_directus` and `dev_directus`)
-
-1. **Create SetupIntent / Save Payment Method (Standalone):** Absent.
-2. **Finalize Card Setup / Verify SetupIntent:** Absent.
-3. **Set Default Payment Method (Customer & Active Subscription):** Absent.
-4. **Customer Billing Portal Session:** Absent.
-
----
-
-## 2. Frontend Runtime Configuration Keys
-
-No fake production flow UUIDs have been invented. The portal runtime configuration (`src/environments/environment.ts` and `src/app/core/config/runtime-config.ts`) reuses the existing flow UUIDs for listing/detaching cards and defines explicit runtime config keys for the three new flows:
-
-- `stripeGetPaymentMethodsFlow`: `'44946457-c8cd-42e2-98b2-a7a0672d59d3'` (existing)
-- `stripeDetachPaymentMethodFlow`: `'9845ee00-779b-4f6b-9e07-fb8f175f945d'` (existing)
-- `stripeCreateSetupIntentFlow`: `''` (populated via `window.__VAMO_CONFIG__.stripeCreateSetupIntentFlow` once deployed)
-- `stripeFinalizeSetupIntentFlow`: `''` (populated via `window.__VAMO_CONFIG__.stripeFinalizeSetupIntentFlow` once deployed)
-- `stripeSetDefaultPaymentMethodFlow`: `''` (populated via `window.__VAMO_CONFIG__.stripeSetDefaultPaymentMethodFlow` once deployed)
+| Flow Name | Runtime Config Key | `dev_directus` Flow ID | `prod_directus` Status |
+|---|---|---|---|
+| **Stripe - Create SetupIntent** | `stripeCreateSetupIntentFlow` | `b1c4e8a2-7f3d-4e9a-8c1b-2d5f6a9e0c31` | Not yet promoted (`''` in `environment.ts`) |
+| **Stripe - Finalize Card Setup** | `stripeFinalizeSetupIntentFlow` | `c2d5f9b3-8e4a-4f0b-9d2c-3e6a7b0f1d42` | Not yet promoted (`''` in `environment.ts`) |
+| **Stripe - Set Default Payment Method** | `stripeSetDefaultPaymentMethodFlow` | `d3e6a0c4-9f5b-4a1c-8e3d-4f7b8c1a2e53` | Not yet promoted (`''` in `environment.ts`) |
+| **Stripe - Get Payment Methods** | `stripeGetPaymentMethodsFlow` | `44946457-c8cd-42e2-98b2-a7a0672d59d3` | Active in prod (needs default metadata upgrade on promotion) |
+| **Stripe - Detach Payment Method** | `stripeDetachPaymentMethodFlow` | `9845ee00-779b-4f6b-9e07-fb8f175f945d` | Active in prod (needs ownership + renewal protection upgrade on promotion) |
 
 ---
 
-## 3. Reviewable Directus Flow Contracts
+## 2. Installed & Verified Flow Specifications
 
-Complete, import-ready Directus flow definitions (with Stripe secret keys parameterized as `<STRIPE_SECRET_KEY>`) are provided in [`billing-credit-card-management.flows.json`](./billing-credit-card-management.flows.json).
+Complete, importable Directus flow and operation definitions (including deterministic operation UUIDs and 1-to-1 unique `resolve`/`reject` links required by `directus_operations`) are provided in [`billing-credit-card-management.flows.json`](./billing-credit-card-management.flows.json).
 
-### 3.1 `Stripe - Create SetupIntent` (New Flow)
-
-- **Trigger:** Webhook (`POST /flows/trigger/<stripeCreateSetupIntentFlow>`), Synchronous (`options.return = "$last"`), Permission: `$full` (authenticated user).
-- **Request Payload:** `{}` (No client-supplied `customerId` or `email` is trusted).
+### 2.1 `Stripe - Create SetupIntent` (`b1c4e8a2-7f3d-4e9a-8c1b-2d5f6a9e0c31`)
+- **Trigger:** Webhook (`POST /flows/trigger/b1c4e8a2-7f3d-4e9a-8c1b-2d5f6a9e0c31`, `accountability: "all"`, `return: "format_setup_intent"`)
+- **Request Payload:** `{}` (Server resolves authenticated user from `$accountability.user` — never trusts client-supplied email or customer ID)
 - **Operations:**
-  1. `read_user` (`item-read` on `directus_users`, key `{{$accountability.user}}`, fields `["id", "email", "first_name", "last_name", "provider"]`): Resolves the authenticated user and linked business provider.
-  2. `prep_customer_lookup` (`exec`): Validates that the authenticated user has an email address and encodes it for Stripe lookup.
-  3. `find_customer` (`request`): `GET https://api.stripe.com/v1/customers?email={{prep_customer_lookup.encodedEmail}}&limit=1`.
-  4. `check_customer_exists` (`condition`): Branches on whether `find_customer.data.data[0].id` exists.
-  5. `create_customer` (`request`, only if no customer exists): `POST https://api.stripe.com/v1/customers` with `email`, `name`, `metadata[directus_user_id]`, and `metadata[provider_id]`.
-  6. `resolve_customer_id` (`exec`): Selects the existing or newly created Stripe `customer.id`.
-  7. `create_setup_intent` (`request`): `POST https://api.stripe.com/v1/setup_intents` with:
-     ```
-     customer={{resolve_customer_id.customerId}}&payment_method_types[]=card&usage=off_session&metadata[directus_user_id]={{read_user.id}}
-     ```
-  8. `format_response` (`exec`): Returns:
-     ```json
-     {
-       "setupIntentId": "seti_...",
-       "clientSecret": "seti_..._secret_..."
-     }
-     ```
-
-### 3.2 `Stripe - Finalize Card Setup` (New Flow)
-
-- **Trigger:** Webhook (`POST /flows/trigger/<stripeFinalizeSetupIntentFlow>`), Synchronous (`options.return = "$last"`), Permission: `$full`.
-- **Request Payload:** `{ "setupIntentId": "seti_..." }`.
-- **Operations:**
-  1. `read_user` (`item-read` on `directus_users`, key `{{$accountability.user}}`, fields `["id", "email"]`).
-  2. `validate_input` (`exec`): Validates `setupIntentId` format (`^seti_[A-Za-z0-9_]+$`) and encodes user email.
-  3. `find_customer` (`request`): `GET https://api.stripe.com/v1/customers?email={{validate_input.encodedEmail}}&limit=1`.
-  4. `get_setup_intent` (`request`): `GET https://api.stripe.com/v1/setup_intents/{{validate_input.setupIntentId}}?expand[]=payment_method`.
-  5. `verify_setup_intent` (`exec`):
-     - Confirms `find_customer.data.data[0].id` matches `get_setup_intent.data.customer`.
-     - Confirms `get_setup_intent.data.status === 'succeeded'`.
-     - Confirms `get_setup_intent.data.payment_method` is an attached `card` PaymentMethod belonging to `customerId`.
+  1. `read_user` (`item-read` on `directus_users`, key `{{ $accountability.user }}`, fields `["email", "first_name", "last_name"]`)
+  2. `extract_user` (`exec`): Validates authenticated email and URL-encodes `email` and `name`.
+  3. `get_customer` (`request` `GET https://api.stripe.com/v1/customers?email={{ extract_user.encodedEmail }}&limit=1`)
+  4. `extract_existing_customer` (`exec`): Extracts `customerId` if present.
+  5. `is_customer_missing` (`condition`): Checks if `customerId` is null (`resolve` -> `create_customer`, `reject` -> `resolve_customer_id`).
+  6. `create_customer` (`request` `POST https://api.stripe.com/v1/customers` with `email` and `name`).
+  7. `resolve_customer_id` (`exec`): Resolves the existing or newly created `customerId`.
+  8. `create_setup_intent` (`request` `POST https://api.stripe.com/v1/setup_intents`):
+     - Body: `customer={{ resolve_customer_id.customerId }}&payment_method_types[]=card&usage=off_session`
+  9. `format_setup_intent` (`exec`):
      - Returns:
+       ```json
+       {
+         "setupIntentId": "seti_...",
+         "clientSecret": "seti_..._secret_...",
+         "customerId": "cus_..."
+       }
+       ```
+
+---
+
+### 2.2 `Stripe - Finalize Card Setup` (`c2d5f9b3-8e4a-4f0b-9d2c-3e6a7b0f1d42`)
+- **Trigger:** Webhook (`POST /flows/trigger/c2d5f9b3-8e4a-4f0b-9d2c-3e6a7b0f1d42`, `accountability: "all"`, `return: "verify_setup"`)
+- **Request Payload:**
+  ```json
+  {
+    "setupIntentId": "seti_..."
+  }
+  ```
+- **Operations:**
+  1. `read_user` (`item-read` on `directus_users`, key `{{ $accountability.user }}`, fields `["email"]`)
+  2. `validate_input` (`exec`): Validates authenticated email and `setupIntentId` format (`^seti_[A-Za-z0-9_]+$`).
+  3. `get_customer` (`request` `GET https://api.stripe.com/v1/customers?email={{ validate_input.encodedEmail }}&limit=1`)
+  4. `extract_customer_id` (`exec`): Extracts `customerId`.
+  5. `get_setup_intent` (`request` `GET https://api.stripe.com/v1/setup_intents/{{ validate_input.setupIntentId }}?expand[]=payment_method`)
+  6. `verify_setup` (`exec`):
+     - Verifies `setupIntent.customer === customerId` (belongs to the authenticated user's customer).
+     - Verifies `setupIntent.status === "succeeded"`.
+     - Verifies `setupIntent.payment_method` is present (`pm_...`).
+     - Returns on success:
        ```json
        {
          "verified": true,
          "setupIntentId": "seti_...",
-         "status": "succeeded",
          "paymentMethodId": "pm_...",
          "paymentMethod": {
            "id": "pm_...",
@@ -90,70 +83,93 @@ Complete, import-ready Directus flow definitions (with Stripe secret keys parame
          }
        }
        ```
-     - If verification fails, returns `{ "verified": false, "error": true, "code": "SETUP_UNVERIFIED", "message": "Card setup could not be verified." }`.
+     - Returns on failure (`requires_payment_method`, `requires_action`, `canceled`, or ownership mismatch):
+       ```json
+       {
+         "verified": false,
+         "error": true,
+         "code": "SETUP_INTENT_NOT_SUCCEEDED",
+         "status": "requires_payment_method",
+         "message": "Card setup has not succeeded."
+       }
+       ```
 
-### 3.3 `Stripe - Set Default Payment Method` (New Flow)
+---
 
-- **Trigger:** Webhook (`POST /flows/trigger/<stripeSetDefaultPaymentMethodFlow>`), Synchronous (`options.return = "$last"`), Permission: `$full`.
-- **Request Payload:** `{ "paymentMethodId": "pm_...", "subscriptionId": "sub_..." }` (`subscriptionId` optional; server verifies customer ownership).
+### 2.3 `Stripe - Set Default Payment Method` (`d3e6a0c4-9f5b-4a1c-8e3d-4f7b8c1a2e53`)
+- **Trigger:** Webhook (`POST /flows/trigger/d3e6a0c4-9f5b-4a1c-8e3d-4f7b8c1a2e53`, `accountability: "all"`, `return: "$last"`)
+- **Request Payload:**
+  ```json
+  {
+    "paymentMethodId": "pm_...",
+    "subscriptionId": "sub_..."
+  }
+  ```
+  *(Note: `subscriptionId` is optional; if omitted, the flow looks up any `active`/`trialing`/`past_due` subscription for the authenticated user's Stripe customer.)*
 - **Operations:**
-  1. `read_user` (`item-read` on `directus_users`, key `{{$accountability.user}}`, fields `["id", "email"]`).
-  2. `validate_input` (`exec`): Validates `paymentMethodId` (`^pm_[A-Za-z0-9_]+$`).
-  3. `find_customer` (`request`): `GET https://api.stripe.com/v1/customers?email={{validate_input.encodedEmail}}&limit=1`.
-  4. `get_payment_method` (`request`): `GET https://api.stripe.com/v1/payment_methods/{{validate_input.paymentMethodId}}`.
-  5. `verify_ownership` (`exec`): Confirms `get_payment_method.data.customer === customerId`. Throws/aborts if the card does not belong to the authenticated user's Stripe customer.
-  6. `update_customer_default` (`request`): `POST https://api.stripe.com/v1/customers/{{verify_ownership.customerId}}` with body `invoice_settings[default_payment_method]={{validate_input.paymentMethodId}}`.
-  7. `list_subscriptions` (`request`): `GET https://api.stripe.com/v1/subscriptions?customer={{verify_ownership.customerId}}&limit=10`.
-  8. `select_active_subscription` (`exec`): Finds the active/trialing/past_due subscription for `customerId` (matching `subscriptionId` if supplied, or the primary active subscription).
-  9. `has_active_subscription` (`condition`): Checks if `select_active_subscription.activeSubscriptionId` is non-null.
-  10. `update_subscription_default` (`request`, when active subscription exists): `POST https://api.stripe.com/v1/subscriptions/{{select_active_subscription.activeSubscriptionId}}` with body `default_payment_method={{validate_input.paymentMethodId}}`.
-      - **Safety guarantee:** Updates ONLY `default_payment_method` on the subscription. Does not modify `items`, `price`, `discounts`, `trial_end`, `billing_cycle_anchor`, or `schedule`, and does not pay or retry open invoices.
-  11. `format_response` (`exec`): Returns:
-      ```json
+  1. `read_user` -> `validate_input` -> `get_customer` -> `extract_customer`: Resolves the authenticated user's Stripe `customerId`.
+  2. `get_active_subscriptions` (`GET https://api.stripe.com/v1/subscriptions?{{ extract_customer.subsQuery }}`)
+  3. `get_payment_method` (`GET https://api.stripe.com/v1/payment_methods/{{ validate_input.paymentMethodId }}`)
+  4. `verify_and_prepare` (`exec`): Verifies `paymentMethod.customer === customerId` and resolves the customer's `active`/`trialing`/`past_due` subscription (verifying subscription ownership if `subscriptionId` was passed).
+  5. `check_valid` (`condition`): Routes invalid/mismatched requests to `format_invalid_response` without mutating Stripe.
+  6. `update_customer_default` (`POST https://api.stripe.com/v1/customers/{{ verify_and_prepare.customerId }}`):
+     - Body: `invoice_settings[default_payment_method]={{ verify_and_prepare.paymentMethodId }}`
+  7. `has_subscription_to_update` (`condition`) -> `update_subscription_default` (`POST https://api.stripe.com/v1/subscriptions/{{ verify_and_prepare.subscriptionId }}`):
+     - Body: `default_payment_method={{ verify_and_prepare.paymentMethodId }}`
+  8. `format_response` (`exec`):
+     - Returns:
+       ```json
+       {
+         "updated": true,
+         "defaultPaymentMethodId": "pm_...",
+         "customerDefaultUpdated": true,
+         "subscriptionDefaultUpdated": true,
+         "subscriptionId": "sub_..."
+       }
+       ```
+
+---
+
+### 2.4 `Stripe - Get Payment Methods` (`44946457-c8cd-42e2-98b2-a7a0672d59d3`)
+- Backward-compatible with existing `paymentMethods` callers and returns verified default/renewal metadata:
+  ```json
+  {
+    "paymentMethods": [
       {
-        "updated": true,
-        "defaultPaymentMethodId": "pm_...",
-        "customerDefaultUpdated": true,
-        "subscriptionDefaultUpdated": true,
-        "subscriptionId": "sub_..."
+        "id": "pm_...",
+        "brand": "visa",
+        "last4": "4242",
+        "expMonth": 12,
+        "expYear": 2028,
+        "isDefault": true,
+        "isRenewalCard": true
       }
-      ```
+    ],
+    "defaultPaymentMethodId": "pm_...",
+    "customerDefaultPaymentMethodId": "pm_...",
+    "subscriptionDefaultPaymentMethodId": "pm_...",
+    "defaultVerified": true
+  }
+  ```
 
-### 3.4 Backward-Compatible Updates to Existing Flows
+---
 
-#### A. `Stripe - Get Payment Methods` (`44946457-c8cd-42e2-98b2-a7a0672d59d3`)
-- **Mobile-App Compatibility Preserved:** Continues returning `paymentMethods: [{ id, brand, last4, expMonth, expYear }]`.
-- **Additions for Verified Renewal Card Badge:**
-  - Also fetches `GET /v1/subscriptions?customer={{customerId}}&limit=5` (or reads `customer.invoice_settings.default_payment_method` from `find_customer`).
-  - Computes `defaultPaymentMethodId = activeSub?.default_payment_method || customer?.invoice_settings?.default_payment_method || null`.
-  - Returns:
-    ```json
-    {
-      "paymentMethods": [
-        {
-          "id": "pm_...",
-          "brand": "visa",
-          "last4": "4242",
-          "expMonth": 12,
-          "expYear": 2028,
-          "isDefault": true,
-          "isRenewalCard": true
-        }
-      ],
-      "defaultPaymentMethodId": "pm_..."
-    }
-    ```
-
-#### B. `Stripe - Detach Payment Method` (`9845ee00-779b-4f6b-9e07-fb8f175f945d`)
-- **Additions for Ownership & Renewal-Card Protection:**
-  - Fetches `GET /v1/payment_methods/{{pmId}}` and verifies `pm.customer === customerId`.
-  - Fetches `GET /v1/subscriptions?customer={{customerId}}&limit=5` and resolves the effective renewal payment method (`activeSub.default_payment_method || customer.invoice_settings.default_payment_method`) when an active/trialing/past_due subscription exists.
-  - If `pmId === effectiveRenewalPaymentMethodId` on an active subscription, rejects without detaching:
-    ```json
-    {
-      "detached": false,
-      "error": true,
-      "code": "RENEWAL_CARD_PROTECTED",
-      "message": "Select another card for renewals before removing your active renewal card."
-    }
-    ```
+### 2.5 `Stripe - Detach Payment Method` (`9845ee00-779b-4f6b-9e07-fb8f175f945d`)
+- Verifies `pm.customer === customerId` before detaching.
+- Checks whether the customer has an `active`, `trialing`, or `past_due` subscription whose effective renewal payment method (`subscription.default_payment_method || customer.invoice_settings.default_payment_method`) matches `paymentMethodId`.
+- If `paymentMethodId` is the active renewal card, blocks detachment and returns:
+  ```json
+  {
+    "detached": false,
+    "error": true,
+    "code": "RENEWAL_CARD_PROTECTED",
+    "message": "Cannot remove the active subscription renewal card. Select another renewal card first."
+  }
+  ```
+- Otherwise detaches the card and returns:
+  ```json
+  {
+    "detached": true,
+    "paymentMethodId": "pm_..."
+  }
+  ```
