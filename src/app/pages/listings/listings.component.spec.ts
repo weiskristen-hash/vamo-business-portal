@@ -531,4 +531,70 @@ describe('ListingsComponent', () => {
       expect(pauseBtn).toBeNull();
     });
   });
+
+  describe('Post-Release Alignment: Category Icons, Price Units & Event Links', () => {
+    it('renders category PNG icons in listing badges, formats price_unit suffixes in EN/ES, and links published events to https://app.vamo-app.com/event/:id', () => {
+      const eventsWithUnits: VamoEvent[] = [
+        {
+          ...mockEvents[0],
+          id: 'ev-music-1',
+          category: 'live',
+          status: 'published',
+          isFree: false,
+          price: 25,
+          price_unit: 'per_person',
+          currency: 'USD',
+        },
+        {
+          ...mockEvents[1],
+          id: 'ev-excursion-2',
+          category: 'excursions',
+          status: 'published',
+          isFree: false,
+          price: 150,
+          price_unit: 'per_group',
+          currency: 'USD',
+        },
+      ];
+      component.events = eventsWithUnits;
+      component.applyFilters();
+      i18nService.setLang('en');
+      fixture.detectChanges();
+
+      const badgeIcons = Array.from(
+        fixture.nativeElement.querySelectorAll('.category-badge img.cat-badge-icon')
+      ) as HTMLImageElement[];
+      expect(badgeIcons.map((img) => img.getAttribute('src'))).toEqual([
+        '/assets/category-icons/music_nightlife.png',
+        '/assets/category-icons/excursion.png',
+      ]);
+
+      const pricePillsEn = Array.from(
+        fixture.nativeElement.querySelectorAll('.price-pill')
+      ) as HTMLElement[];
+      expect(pricePillsEn.map((el) => el.textContent?.trim())).toEqual([
+        'USD $25.00 / person',
+        'USD $150.00 / group',
+      ]);
+
+      const viewLinks = Array.from(
+        fixture.nativeElement.querySelectorAll('.view-vamo-btn')
+      ) as HTMLAnchorElement[];
+      expect(viewLinks.map((a) => a.getAttribute('href'))).toEqual([
+        'https://app.vamo-app.com/event/ev-music-1',
+        'https://app.vamo-app.com/event/ev-excursion-2',
+      ]);
+
+      // Switch to Spanish
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      const pricePillsEs = Array.from(
+        fixture.nativeElement.querySelectorAll('.price-pill')
+      ) as HTMLElement[];
+      expect(pricePillsEs.map((el) => el.textContent?.trim())).toEqual([
+        'USD $25.00 / persona',
+        'USD $150.00 / grupo',
+      ]);
+    });
+  });
 });

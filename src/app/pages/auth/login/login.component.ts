@@ -1111,6 +1111,21 @@ export class LoginComponent implements OnInit, AfterViewInit {
       this.sessionExpiredNotice = true;
     }
 
+    const queryError = this.route.snapshot.queryParams?.['error'];
+    if (typeof queryError === 'string' && queryError.trim()) {
+      const normalizedError = queryError.trim();
+      if (
+        normalizedError === 'access_denied' ||
+        normalizedError === 'user_cancelled' ||
+        normalizedError === 'GOOGLE_CANCELLED'
+      ) {
+        this.errorKey = 'AUTH.GOOGLE_CANCELLED';
+      } else {
+        this.errorKey = 'AUTH.GOOGLE_LOGIN_ERROR';
+      }
+      this.errorParams = undefined;
+    }
+
     const prefillEmail = this.route.snapshot.queryParams?.['email'];
     if (typeof prefillEmail === 'string' && prefillEmail.trim()) {
       this.email = prefillEmail.trim();

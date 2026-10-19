@@ -98,9 +98,16 @@ export class SsoCallbackComponent implements OnInit {
   errorMessage = '';
 
   async ngOnInit(): Promise<void> {
-    const params = this.route.snapshot.queryParams;
-    capturePromoCode(params['promo']);
-    const errorParam = params['error'] || params['error_description'];
+    const params = this.route.snapshot.queryParams || {};
+    const hashParams = this.parseHashParams();
+    capturePromoCode(params['promo'] || hashParams.get('promo'));
+    const errorParam =
+      params['error'] ||
+      params['error_description'] ||
+      params['reason'] ||
+      hashParams.get('error') ||
+      hashParams.get('error_description') ||
+      hashParams.get('reason');
 
     if (errorParam) {
       await this.router.navigate(['/login'], { queryParams: { error: errorParam } });
@@ -115,14 +122,26 @@ export class SsoCallbackComponent implements OnInit {
     }, 12000);
 
     try {
-      // 1. Check for token parameters in query params (or URL fragment if passed as hash)
-      const accessToken = params['access_token'];
-      const refreshToken = params['refresh_token'];
-      const expires = params['expires'] ? Number(params['expires']) : null;
+      // 1. Check for token parameters in query params or URL fragment (#id_token / #access_token)
+      const idToken = params['id_token'] || hashParams.get('id_token');
+      const accessToken = params['access_token'] || hashParams.get('access_token');
+      const refreshToken = params['refresh_token'] || hashParams.get('refresh_token');
+      const expiresRaw =
+        params['expires'] ||
+        hashParams.get('expires') ||
+        params['expires_in'] ||
+        hashParams.get('expires_in');
+      const expires = expiresRaw ? Number(expiresRaw) : null;
+
+      if (idToken || accessToken) {
+        this.scrubUrlTokens();
+      }
 
       let user: any = null;
 
-      if (accessToken) {
+      if (idToken && typeof this.authService.loginWithGoogleCredential === 'function') {
+        user = await this.authService.loginWithGoogleCredential(idToken);
+      } else if (accessToken) {
         user = await this.authService.handleSsoTokens(accessToken, refreshToken, expires);
       } else {
         // Fallback: restore active Directus cookie/storage session
@@ -181,6 +200,30 @@ export class SsoCallbackComponent implements OnInit {
       clearTimeout(timeoutId);
       console.warn('[SsoCallback] Callback processing error:', err);
       this.errorMessage = 'Could not verify your authentication session. Please try again.';
+    }
+  }
+
+  private parseHashParams(): URLSearchParams {
+    try {
+      if (typeof window !== 'undefined' && window.location?.hash) {
+        const rawHash = window.location.hash.startsWith('#')
+          ? window.location.hash.slice(1)
+          : window.location.hash;
+        return new URLSearchParams(rawHash);
+      }
+    } catch {
+      // Ignore hash parsing errors
+    }
+    return new URLSearchParams();
+  }
+
+  private scrubUrlTokens(): void {
+    try {
+      if (typeof window !== 'undefined' && window.history?.replaceState && window.location) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    } catch {
+      // Ignore history state restrictions
     }
   }
 

@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../../core/services/auth.service';
 import { BusinessService } from '../../../core/services/business.service';
 import { CustomerErrorService } from '../../../core/services/customer-error.service';
-import { VamoEvent, Area, EVENT_CATEGORIES, EventCategory } from '../../../core/models/event.model';
+import { VamoEvent, Area, EVENT_CATEGORIES, EventCategory, PRICE_UNITS, PriceUnit } from '../../../core/models/event.model';
 import { I18nService } from '../../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../../core/i18n/translate.pipe';
 import {
@@ -18,9 +18,12 @@ import {
   isFileDragEvent,
   extractDroppedFiles,
   validateImageUploadFiles,
+  formatEventPriceUnitSuffix,
+  getPublicEventUrl,
 } from '../../../core/utils/event-display.util';
 import { getDrCurrentDateTime } from '../../../core/utils/date-validation.util';
 import { PublishingAccessService } from '../../../core/services/publishing-access.service';
+import { FitImageComponent } from '../../../shared/components/fit-image/fit-image.component';
 
 export interface ExistingImage {
   junctionId: number | string;
@@ -30,7 +33,7 @@ export interface ExistingImage {
 @Component({
   selector: 'app-listing-editor',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, TranslatePipe],
+  imports: [CommonModule, RouterModule, FormsModule, TranslatePipe, FitImageComponent],
   template: `
     <div class="editor-page">
       <!-- Top Navigation & Action Header -->
@@ -52,6 +55,16 @@ export interface ExistingImage {
         </div>
 
         <div class="header-actions">
+          <a
+            *ngIf="isEditMode && !isDraft && eventId"
+            [href]="getPublicEventLink()"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-ghost view-on-vamo-btn"
+            [title]="'PORTAL.LISTINGS.VIEW_ON_VAMO_TITLE' | translate"
+          >
+            {{ 'PORTAL.LISTINGS.VIEW_ON_VAMO' | translate }}
+          </a>
           <button type="button" class="btn btn-secondary" (click)="onCancel()" [disabled]="submitting">
             {{ 'PORTAL.COMMON.CANCEL' | translate }}
           </button>
@@ -158,9 +171,16 @@ export interface ExistingImage {
                     *ngFor="let cat of categories"
                     class="category-card-btn"
                     [class.selected]="draft.category === cat.value"
+                    [attr.aria-pressed]="draft.category === cat.value"
+                    [disabled]="isPastEvent"
                     (click)="setCategory(cat.value)"
                   >
-                    <span class="cat-emoji">{{ cat.emoji }}</span>
+                    <img
+                      [src]="cat.icon"
+                      alt=""
+                      aria-hidden="true"
+                      class="cat-icon-img"
+                    />
                     <span class="cat-label">{{ 'CATEGORIES.' + cat.value.toUpperCase() | translate }}</span>
                   </button>
                 </div>
@@ -215,7 +235,11 @@ export interface ExistingImage {
                   [class.selected-for-preview]="isPreviewImageSelected(img.url)"
                   (click)="selectPreviewImage(img.url)"
                 >
-                  <img [src]="img.url" [alt]="'PORTAL.EVENT_EDITOR.ALT_EXISTING' | translate" class="preview-img" />
+                  <app-fit-image
+                    [src]="img.url"
+                    [alt]="'PORTAL.EVENT_EDITOR.ALT_EXISTING' | translate"
+                    imgClass="preview-img"
+                  ></app-fit-image>
                   <span *ngIf="idx === 0 && selectedNewFiles.length === 0" class="cover-badge">{{ 'PORTAL.EVENT_EDITOR.COVER_BADGE' | translate }}</span>
                   <button type="button" class="remove-photo-btn" (click)="$event.stopPropagation(); removeExistingImage(img)" [disabled]="isPastEvent" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
                 </div>
@@ -227,7 +251,11 @@ export interface ExistingImage {
                   [class.selected-for-preview]="isPreviewImageSelected(preview)"
                   (click)="selectPreviewImage(preview)"
                 >
-                  <img [src]="preview" [alt]="'PORTAL.EVENT_EDITOR.ALT_NEW' | translate" class="preview-img" />
+                  <app-fit-image
+                    [src]="preview"
+                    [alt]="'PORTAL.EVENT_EDITOR.ALT_NEW' | translate"
+                    imgClass="preview-img"
+                  ></app-fit-image>
                   <span *ngIf="existingImages.length === 0 && idx === 0" class="cover-badge">{{ 'PORTAL.EVENT_EDITOR.COVER_BADGE' | translate }}</span>
                   <button type="button" class="remove-photo-btn" (click)="$event.stopPropagation(); removeNewFile(idx)" [disabled]="isPastEvent" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
                 </div>
@@ -693,6 +721,25 @@ export interface ExistingImage {
                 </div>
               </div>
 
+              <!-- Price Unit Selector when Paid (matches VAMO mobile app) -->
+              <div *ngIf="!draft.isFree && !draft.contactForPrice" class="form-group mt-3">
+                <label class="form-label" id="price-unit-label">{{ 'EVENTS.PRICING.UNIT_LABEL' | translate }}</label>
+                <div class="price-unit-selector" role="group" aria-labelledby="price-unit-label">
+                  <button
+                    type="button"
+                    *ngFor="let unit of priceUnits"
+                    class="price-unit-btn"
+                    [attr.data-price-unit]="unit"
+                    [class.active]="(draft.price_unit || 'per_person') === unit"
+                    [attr.aria-pressed]="(draft.price_unit || 'per_person') === unit"
+                    [disabled]="isPastEvent"
+                    (click)="setPriceUnit(unit)"
+                  >
+                    {{ 'EVENTS.PRICING.UNIT.' + unit.toUpperCase() | translate }}
+                  </button>
+                </div>
+              </div>
+
               <!-- Special Promotion Toggle & Text -->
               <div class="promotion-box mt-4">
                 <div class="toggle-row mb-2">
@@ -867,12 +914,12 @@ export interface ExistingImage {
                     >
                       <!-- Full-width Hero Image (330 × 288 CSS px) -->
                       <div class="phone-card-image-wrap placement-image-event_details">
-                        <img
+                        <app-fit-image
                           *ngIf="hasPreviewImage()"
                           [src]="getPreviewImageUrl()"
                           [alt]="'PORTAL.EVENT_EDITOR.PREVIEW.COVER_ALT' | translate"
-                          class="phone-cover-img"
-                        />
+                          imgClass="phone-cover-img"
+                        ></app-fit-image>
                         <div *ngIf="!hasPreviewImage()" class="phone-image-empty-state">
                           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -1049,12 +1096,12 @@ export interface ExistingImage {
                           <!-- Compact 220px Event Card -->
                           <div class="phone-whats-hot-card">
                             <div class="phone-card-image-wrap placement-image-whats_hot">
-                              <img
+                              <app-fit-image
                                 *ngIf="hasPreviewImage()"
                                 [src]="getPreviewImageUrl()"
                                 [alt]="'PORTAL.EVENT_EDITOR.PREVIEW.COVER_ALT' | translate"
-                                class="phone-cover-img"
-                              />
+                                imgClass="phone-cover-img"
+                              ></app-fit-image>
                               <div *ngIf="!hasPreviewImage()" class="phone-image-empty-state phone-image-empty-state--compact">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                   <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -1117,12 +1164,12 @@ export interface ExistingImage {
 
                       <!-- Full-Width Main Banner Hero (330 × 288 CSS px) -->
                       <div class="phone-card-image-wrap placement-image-main_banner">
-                        <img
+                        <app-fit-image
                           *ngIf="hasPreviewImage()"
                           [src]="getPreviewImageUrl()"
                           [alt]="'PORTAL.EVENT_EDITOR.PREVIEW.COVER_ALT' | translate"
-                          class="phone-cover-img"
-                        />
+                          imgClass="phone-cover-img"
+                        ></app-fit-image>
                         <div *ngIf="!hasPreviewImage()" class="phone-image-empty-state">
                           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -1418,7 +1465,7 @@ export interface ExistingImage {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 6px;
+      gap: 8px;
       padding: 12px 8px;
       border: 1px solid var(--vamo-border);
       border-radius: var(--vamo-radius-md);
@@ -1428,15 +1475,30 @@ export interface ExistingImage {
       text-align: center;
     }
 
-    .category-card-btn:hover {
+    .category-card-btn:hover:not(:disabled) {
       border-color: var(--vamo-primary);
       background: var(--vamo-surface-subtle);
+    }
+
+    .category-card-btn:focus-visible {
+      outline: none;
+      border-color: var(--vamo-primary);
+      box-shadow: 0 0 0 3px rgba(128, 112, 192, 0.28);
     }
 
     .category-card-btn.selected {
       border-color: var(--vamo-primary);
       background: var(--vamo-primary-light);
       box-shadow: 0 0 0 2px rgba(128, 112, 192, 0.2);
+    }
+
+    .cat-icon-img {
+      width: 34px;
+      height: 34px;
+      object-fit: contain;
+      display: block;
+      flex-shrink: 0;
+      background: transparent;
     }
 
     .cat-emoji {
@@ -1515,6 +1577,7 @@ export interface ExistingImage {
       color: #ffffff;
       padding: 2px 6px;
       border-radius: var(--vamo-radius-sm);
+      z-index: 2;
     }
 
     .remove-photo-btn {
@@ -1532,6 +1595,7 @@ export interface ExistingImage {
       justify-content: center;
       cursor: pointer;
       font-size: 11px;
+      z-index: 2;
     }
 
     .upload-dropzone-btn {
@@ -1923,6 +1987,44 @@ export interface ExistingImage {
       color: var(--vamo-primary);
     }
 
+    .price-unit-selector {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .price-unit-btn {
+      padding: 9px 10px;
+      border: 1px solid var(--vamo-border);
+      border-radius: var(--vamo-radius-md);
+      background: var(--vamo-surface);
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--vamo-text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: center;
+    }
+
+    .price-unit-btn:hover:not(:disabled) {
+      border-color: var(--vamo-primary);
+      background: var(--vamo-surface-subtle);
+      color: var(--vamo-text);
+    }
+
+    .price-unit-btn.active {
+      border-color: var(--vamo-primary);
+      background: var(--vamo-primary-light);
+      color: var(--vamo-primary);
+      box-shadow: 0 0 0 2px rgba(128, 112, 192, 0.15);
+    }
+
+    @media (max-width: 640px) {
+      .price-unit-selector {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
     .promotion-box {
       background: #fdf2f8;
       border: 1px dashed var(--vamo-secondary);
@@ -2106,7 +2208,7 @@ export interface ExistingImage {
     .phone-image-empty-state--compact { padding: 8px 10px; gap: 2px; }
     .phone-image-empty-state--compact .empty-state-title { font-size: 0.68rem; }
     .phone-image-empty-state--compact .empty-state-hint { font-size: 0.6rem; line-height: 1.2; }
-    .phone-hero-gradient { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.1) 50%, transparent 100%); pointer-events: none; }
+    .phone-hero-gradient { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.1) 50%, transparent 100%); pointer-events: none; z-index: 1; }
     .phone-hero-badges { position: absolute; bottom: 12px; left: 12px; display: flex; gap: 6px; pointer-events: none; z-index: 2; }
     .hero-badge { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; letter-spacing: 0.02em; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
     .hero-badge--banner { background: rgba(254, 57, 127, 0.25); color: #fe397f; border: 1px solid rgba(254, 57, 127, 0.4); }
@@ -2150,7 +2252,7 @@ export interface ExistingImage {
     .whats-hot-meta-text { min-width: 0; }
     .whats-hot-repeat-icon { color: rgba(255, 255, 255, 0.5); flex-shrink: 0; }
     .whats-hot-card-location { font-size: 11px; color: rgba(255, 255, 255, 0.6); margin: 3px 0 0; }
-    .phone-banner-gradient { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.2) 55%, transparent 100%); pointer-events: none; }
+    .phone-banner-gradient { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.2) 55%, transparent 100%); pointer-events: none; z-index: 1; }
     .phone-banner-overlay { position: absolute; bottom: 16px; left: 16px; right: 16px; color: #fff; z-index: 2; display: flex; flex-direction: column; min-width: 0; }
     .phone-banner-title-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; min-width: 0; }
     .phone-banner-title { font-size: 16px; font-weight: 700; color: #fff; line-height: 1.3; margin: 0; min-width: 0; }
@@ -2277,6 +2379,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   private publishingAccess = inject(PublishingAccessService);
 
   categories: EventCategory[] = EVENT_CATEGORIES;
+  readonly priceUnits: readonly PriceUnit[] = PRICE_UNITS;
   allWeekdays = [
     { key: 'mon', label: 'Mon' },
     { key: 'tue', label: 'Tue' },
@@ -2345,6 +2448,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     contactForPrice: false,
     price: 0,
     currency: 'USD',
+    price_unit: 'per_person',
     hasPromotion: false,
     promoText: null,
     promotionStart: null,
@@ -2462,6 +2566,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     const today = this.businessService.drTodayStr();
     this.draft.startDate = today;
     this.draft.promotionStart = new Date().toISOString();
+    this.draft.price_unit = 'per_person';
     this.draft.address = this.providerAddress;
     this.lat = this.providerLat;
     this.lng = this.providerLng;
@@ -2510,6 +2615,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         contactForPrice: !!event.contactForPrice,
         price: event.price ?? 0,
         currency: event.currency || 'USD',
+        price_unit: event.price_unit ?? 'per_person',
         hasPromotion: !!event.hasPromotion,
         promoText: event.promoText || null,
         address: event.address || '',
@@ -2582,6 +2688,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         contactForPrice: this.draft.contactForPrice,
         price: this.draft.price,
         currency: this.draft.currency,
+        price_unit: this.draft.price_unit,
         hasPromotion: this.draft.hasPromotion,
         promoText: this.draft.promoText,
         address: this.draft.address,
@@ -2627,6 +2734,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       if (data.lat !== undefined && this.lat === null) this.lat = data.lat;
       if (data.lng !== undefined && this.lng === null) this.lng = data.lng;
       if (data.multiDay !== undefined) this.multiDay = data.multiDay;
+      if (data.price_unit) this.draft.price_unit = data.price_unit;
       if (data.recurring && this.draft.mode === 'recurring') this.draft.recurring = data.recurring;
       this.isDirty = true;
     } catch {}
@@ -2961,11 +3069,20 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     } else if (model === 'paid') {
       this.draft.isFree = false;
       this.draft.contactForPrice = false;
+      if (!this.draft.price_unit) {
+        this.draft.price_unit = 'per_person';
+      }
     } else {
       this.draft.isFree = false;
       this.draft.contactForPrice = true;
       this.draft.price = 0;
     }
+    this.markDirty();
+  }
+
+  setPriceUnit(unit: PriceUnit): void {
+    if (this.isPastEvent) return;
+    this.draft.price_unit = unit;
     this.markDirty();
   }
 
@@ -3231,6 +3348,9 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         contactForPrice: this.draft.contactForPrice,
         price: this.draft.price,
         currency: this.draft.isFree ? undefined : this.draft.currency,
+        price_unit: (this.draft.isFree || this.draft.contactForPrice)
+          ? null
+          : (this.draft.price_unit ?? 'per_person'),
         hasPromotion: this.draft.hasPromotion,
         promoText: this.draft.promoText,
         address: this.draft.address ?? null,
@@ -3314,6 +3434,10 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     }
   }
 
+  getPublicEventLink(): string {
+    return getPublicEventUrl(this.eventId);
+  }
+
   // Preview formatting helpers
   getCategoryLabel(categoryKey?: string): string {
     if (!categoryKey) return this.i18n.t('CATEGORIES.OTHER');
@@ -3329,6 +3453,11 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   getCategoryEmoji(categoryKey?: string): string {
     const found = this.categories.find((c) => c.value === categoryKey);
     return found ? found.emoji : '📌';
+  }
+
+  getCategoryIcon(categoryKey?: string): string {
+    const found = this.categories.find((c) => c.value === categoryKey);
+    return found ? found.icon : '/assets/category-icons/other.png';
   }
 
   setPreviewPlacement(mode: 'event_details' | 'whats_hot' | 'main_banner'): void {
@@ -3462,7 +3591,8 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     if (this.draft.isFree) return this.i18n.t('PORTAL.LISTINGS.FREE');
     if (this.draft.contactForPrice) return this.i18n.t('PORTAL.LISTINGS.CONTACT_FOR_PRICE');
     if (this.draft.price) {
-      return `${this.draft.currency || 'USD'} $${Number(this.draft.price).toFixed(2)}`;
+      const suffix = formatEventPriceUnitSuffix(this.draft.price_unit, this.i18n);
+      return `${this.draft.currency || 'USD'} $${Number(this.draft.price).toFixed(2)}${suffix}`;
     }
     return this.i18n.t('PORTAL.LISTINGS.FREE');
   }
@@ -3472,7 +3602,8 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     if (this.draft.contactForPrice) return this.i18n.t('EVENTS.PRICING.CONTACT');
     if (this.draft.price && Number(this.draft.price) > 0) {
       const symbol = this.draft.currency === 'DOP' ? 'RD$' : '$';
-      return `${symbol}${Number(this.draft.price).toFixed(2)}`;
+      const suffix = formatEventPriceUnitSuffix(this.draft.price_unit, this.i18n);
+      return `${symbol}${Number(this.draft.price).toFixed(2)}${suffix}`;
     }
     return this.i18n.t('EVENTS.PRICING.FREE');
   }

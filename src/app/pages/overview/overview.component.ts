@@ -404,7 +404,7 @@ import {
     .business-brand-avatar img {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
     }
 
     .avatar-fallback {
@@ -876,7 +876,7 @@ export class OverviewComponent implements OnInit {
   get businessLogoUrl(): string | null {
     const logo = this.provider?.logo;
     if (!logo) return null;
-    return this.businessService.getAssetUrl(logo, 'width=120&height=120&fit=cover');
+    return this.businessService.getAssetUrl(logo);
   }
 
   getBusinessTypeLabel(type?: string | null): string {

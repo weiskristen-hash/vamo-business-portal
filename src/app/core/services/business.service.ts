@@ -461,6 +461,7 @@ export class BusinessService {
     'contactForPrice',
     'price',
     'currency',
+    'price_unit',
     'hasPromotion',
     'promoText',
     'location_point',
@@ -622,6 +623,7 @@ export class BusinessService {
         contactForPrice: data.contactForPrice,
         price: data.price,
         currency: data.isFree ? undefined : data.currency,
+        price_unit: data.isFree || data.contactForPrice ? null : (data.price_unit ?? null),
         areas: {
           create: areaIds.map((aid) => ({ areas_id: aid })),
           update: [],
@@ -753,6 +755,9 @@ export class BusinessService {
       if (data.currency !== undefined || data.isFree !== undefined) {
         payload['currency'] = data.isFree ? undefined : data.currency;
       }
+      if (data.price_unit !== undefined || data.isFree !== undefined || data.contactForPrice !== undefined) {
+        payload['price_unit'] = (data.isFree || data.contactForPrice) ? null : (data.price_unit ?? null);
+      }
       if (data.status !== undefined) payload['status'] = data.status;
       if (data.addon_expires_at !== undefined) payload['addon_expires_at'] = data.addon_expires_at;
 
@@ -873,7 +878,10 @@ export class BusinessService {
           ? JSON.stringify(event.recurring)
           : (typeof event.recurring === 'string' ? event.recurring : JSON.stringify({ days: [] })),
         isFree: event.isFree,
+        contactForPrice: event.contactForPrice,
         price: event.price,
+        currency: event.currency,
+        price_unit: event.isFree || event.contactForPrice ? null : (event.price_unit ?? null),
         hasPromotion: event.hasPromotion,
         promoText: event.promoText,
       };
