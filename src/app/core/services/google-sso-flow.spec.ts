@@ -382,16 +382,16 @@ describe('Google SSO Flow — Phase 3B Parity Specifications', () => {
     expect(canActivateBusiness).toBeInstanceOf(Object); // UrlTree redirect to /login
   });
 
-  // 20. Apple behavior uses loginWithApple
-  it('20. Apple login triggers loginWithApple', () => {
+  // 20. Apple behavior is untouched
+  it('20. Apple behavior is untouched and preserves loginWithProvider', () => {
     const fixture = TestBed.createComponent(LoginComponent);
     const comp = fixture.componentInstance;
 
-    const appleSpy = vi.spyOn(authService, 'loginWithApple').mockReturnValue(new Promise(() => {}));
+    const ssoProviderSpy = vi.spyOn(authService, 'loginWithProvider').mockImplementation(() => {});
 
     comp.onAppleLogin();
 
-    expect(appleSpy).toHaveBeenCalledOnce();
+    expect(ssoProviderSpy).toHaveBeenCalledWith('apple', '/app/overview');
     expect(comp.loading).toBe(true);
   });
 

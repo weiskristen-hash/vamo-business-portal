@@ -166,16 +166,16 @@ describe('LoginComponent', () => {
     expect(component.loading).toBe(true);
   });
 
-  it('should render Apple action button beneath Google and trigger loginWithApple', () => {
-    authServiceSpy.loginWithApple = vi.fn().mockReturnValue(new Promise(() => {}));
-    const appleBtn = fixture.nativeElement.querySelector('.apple-btn') as HTMLButtonElement;
+  it('should not render Apple action button while preserving component Apple SSO method and Google action', () => {
+    authServiceSpy.loginWithProvider = vi.fn();
+    const appleBtn = fixture.nativeElement.querySelector('.apple-btn');
     const googleBtn = fixture.nativeElement.querySelector('.google-btn');
 
-    expect(appleBtn).toBeTruthy();
+    expect(appleBtn).toBeNull();
     expect(googleBtn).toBeTruthy();
 
-    appleBtn.click();
-    expect(authServiceSpy.loginWithApple).toHaveBeenCalled();
+    component.onAppleLogin();
+    expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('apple', '/app/overview');
     expect(component.loading).toBe(true);
   });
 

@@ -168,11 +168,7 @@ export const enTranslations: Record<string, any> = {
     "GOOGLE_LOGIN_ERROR": "Google Sign-In failed. Please try again.",
     "GOOGLE_UNAVAILABLE": "Google Sign-In is currently unavailable. Please try again or use email and password.",
     "GOOGLE_CANCELLED": "Google Sign-In was cancelled.",
-    "GOOGLE_TOKEN_MISSING": "Could not retrieve your Google credentials. Please try again.",
-    "APPLE_LOGIN_ERROR": "Apple Sign-In failed. Please try again.",
-    "APPLE_UNAVAILABLE": "Apple Sign-In is currently unavailable. Please try again or use email and password.",
-    "APPLE_CANCELLED": "Apple Sign-In was cancelled.",
-    "APPLE_TOKEN_MISSING": "Could not retrieve your Apple credentials. Please try again."
+    "GOOGLE_TOKEN_MISSING": "Could not retrieve your Google credentials. Please try again."
   },
   "HOME": {
     "WHATS_HOT": "🔥 What's Hot",

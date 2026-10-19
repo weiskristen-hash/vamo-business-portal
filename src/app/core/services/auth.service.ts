@@ -9,7 +9,6 @@ import { createBrowserAuthStorage, createMemoryAuthStorage, BUSINESS_AUTH_STORAG
 import { VamoUser } from '../models/user.model';
 import { environment } from '../../../environments/environment';
 import { GoogleAuthService } from './google-auth.service';
-import { AppleAuthService } from './apple-auth.service';
 import { clearSavedPromoCode } from '../utils/promo-code.util';
 
 export type AuthState = 'loading' | 'authenticated' | 'unauthenticated';
@@ -27,7 +26,6 @@ async function runWithCrossTabLock<T>(lockName: string, fn: () => Promise<T>): P
 export class AuthService implements OnDestroy {
   private router = inject(Router);
   private googleAuthService = inject(GoogleAuthService);
-  private appleAuthService = inject(AppleAuthService);
 
   // undefined = checking session, null = not logged in, VamoUser = logged in
   private userSubject = new BehaviorSubject<VamoUser | null | undefined>(undefined);
@@ -584,11 +582,11 @@ export class AuthService implements OnDestroy {
   }
 
   /**
-   * Hand off to Directus hosted OAuth flow (google only; Apple uses AppleID.auth popup + Directus flow).
+   * Hand off to Directus hosted OAuth flow (e.g. google).
    * Directus redirects back to /auth/callback with access_token, refresh_token, expires.
    */
   loginWithProvider(
-    provider: 'google',
+    provider: 'google' | 'apple',
     returnUrl: string = '/app/overview',
     signupIntent?: 'business' | 'browse'
   ): void {
@@ -673,88 +671,6 @@ export class AuthService implements OnDestroy {
   async loginWithGoogle(): Promise<VamoUser> {
     const idToken = await this.googleAuthService.promptForIdToken();
     return await this.loginWithGoogleCredential(idToken);
-  }
-
-  /**
-   * Exchanges an Apple identity token with the VAMO Apple Sign-In Directus Flow.
-   * Verifies the token's structure, claims, and RS256 signature against Apple's JWKS
-   * before sending it to the Directus flow, then stores the returned session tokens.
-   */
-  async loginWithAppleCredential(
-    identityToken: string,
-    userName?: { firstName?: string; lastName?: string } | null,
-    alreadyVerified = false
-  ): Promise<VamoUser> {
-    if (!identityToken || typeof identityToken !== 'string' || !identityToken.trim()) {
-      throw new Error('APPLE_TOKEN_MISSING');
-    }
-
-    const flowId = runtimeConfig.appleSignInFlow;
-    if (!flowId) {
-      throw new Error('APPLE_FLOW_NOT_CONFIGURED');
-    }
-
-    const trimmedToken = identityToken.trim();
-    if (!alreadyVerified) {
-      await this.appleAuthService.verifyIdentityToken(trimmedToken);
-    }
-
-    const flowUrl = `${runtimeConfig.directusUrl}/flows/trigger/${flowId}`;
-
-    let response: Response;
-    try {
-      response = await fetch(flowUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          identity_token: trimmedToken,
-          user_name: {
-            firstName: userName?.firstName?.trim() || '',
-            lastName: userName?.lastName?.trim() || '',
-          },
-        }),
-      });
-    } catch {
-      throw new Error('NETWORK_ERROR');
-    }
-
-    if (!response.ok) {
-      throw new Error(`APPLE_FLOW_FAILED_${response.status}`);
-    }
-
-    let data: any;
-    try {
-      data = await response.json();
-    } catch {
-      throw new Error('MALFORMED_FLOW_RESPONSE');
-    }
-
-    if (!data || typeof data !== 'object' || !data.access_token || typeof data.access_token !== 'string') {
-      throw new Error('MALFORMED_FLOW_RESPONSE');
-    }
-
-    const user = await this.handleSsoTokens(
-      data.access_token,
-      data.refresh_token ?? null,
-      data.expires ? Number(data.expires) : null
-    );
-
-    if (!user) {
-      throw new Error('USER_LOAD_FAILED');
-    }
-
-    return user;
-  }
-
-  /**
-   * Initiates Apple Sign-In via Apple JS SDK popup, retrieves and verifies Apple identity_token,
-   * and authenticates via the VAMO Directus Apple Sign-In Flow.
-   */
-  async loginWithApple(): Promise<VamoUser> {
-    const result = await this.appleAuthService.signIn();
-    return await this.loginWithAppleCredential(result.identityToken, result.userName, true);
   }
 
   /**
