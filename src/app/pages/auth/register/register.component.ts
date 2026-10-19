@@ -105,7 +105,14 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
               <line x1="12" y1="8" x2="12" y2="12"></line>
               <line x1="12" y1="16" x2="12.01" y2="16"></line>
             </svg>
-            <span>{{ errorMessage }}</span>
+            <div class="warning-text">
+              <span>{{ errorMessage }}</span>
+              <span *ngIf="showAuthRecoveryLinks" class="warning-actions">
+                <a routerLink="/login" class="warning-link">{{ 'ONBOARDING.ERROR_EMAIL_TAKEN_LOGIN' | translate }}</a>
+                <span>{{ 'ONBOARDING.ERROR_EMAIL_TAKEN_OR' | translate }}</span>
+                <a routerLink="/forgot-password" [queryParams]="email.trim() ? { email: email.trim() } : null" class="warning-link">{{ 'ONBOARDING.ERROR_EMAIL_TAKEN_RESET' | translate }}</a>
+              </span>
+            </div>
           </div>
 
           <!-- Duplicate Email Notice -->
@@ -116,8 +123,13 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
               <line x1="12" y1="17" x2="12.01" y2="17"></line>
             </svg>
             <div class="warning-text">
-              <span>{{ 'ONBOARDING.ERROR_EMAIL_TAKEN' | translate }}</span>
-              <a routerLink="/login" class="warning-link">{{ 'ONBOARDING.ERROR_EMAIL_TAKEN_LOGIN' | translate }} &rarr;</a>
+              <strong>{{ 'ONBOARDING.ERROR_EMAIL_TAKEN' | translate }}</strong>
+              <span class="warning-actions">
+                {{ 'ONBOARDING.ERROR_EMAIL_TAKEN_SUB' | translate }}
+                <a routerLink="/login" class="warning-link">{{ 'ONBOARDING.ERROR_EMAIL_TAKEN_LOGIN' | translate }}</a>
+                {{ 'ONBOARDING.ERROR_EMAIL_TAKEN_OR' | translate }}
+                <a routerLink="/forgot-password" [queryParams]="email.trim() ? { email: email.trim() } : null" class="warning-link">{{ 'ONBOARDING.ERROR_EMAIL_TAKEN_RESET' | translate }}</a>.
+              </span>
             </div>
           </div>
 
@@ -877,8 +889,29 @@ export class RegisterComponent implements OnInit {
   showPassword = false;
   showConfirmPassword = false;
   loading = false;
-  errorMessage = '';
+  errorKey: string | null = null;
+  errorParams?: Record<string, string | number>;
+  private rawErrorMessage = '';
+
+  get errorMessage(): string {
+    this.i18n.lang();
+    if (this.errorKey) {
+      return this.i18n.t(this.errorKey, this.errorParams);
+    }
+    return this.rawErrorMessage;
+  }
+
+  set errorMessage(val: string) {
+    if (!val) {
+      this.errorKey = null;
+      this.errorParams = undefined;
+      this.showAuthRecoveryLinks = false;
+    }
+    this.rawErrorMessage = val;
+  }
+
   emailTaken = false;
+  showAuthRecoveryLinks = false;
 
   touched = {
     firstName: false,
@@ -897,6 +930,7 @@ export class RegisterComponent implements OnInit {
     this.touched[field] = true;
     if (field === 'email') {
       this.emailTaken = false;
+      this.showAuthRecoveryLinks = false;
     }
   }
 
@@ -937,7 +971,9 @@ export class RegisterComponent implements OnInit {
     this.loading = true;
     this.errorMessage = '';
     this.emailTaken = false;
+    this.showAuthRecoveryLinks = false;
 
+    let registrationCompleted = false;
     try {
       await this.authService.register({
         first_name: this.firstName.trim(),
@@ -945,6 +981,7 @@ export class RegisterComponent implements OnInit {
         email: this.email.trim(),
         password: this.password,
       });
+      registrationCompleted = true;
 
       // Login immediately following successful account creation matching canonical VAMO
       const user = await this.authService.login(this.email.trim(), this.password);
@@ -959,7 +996,15 @@ export class RegisterComponent implements OnInit {
       if (this.isEmailTakenError(err)) {
         this.emailTaken = true;
       } else {
-        this.errorMessage = this.customerErrorService.toCustomerMessage(err, 'auth');
+        const contextualErr =
+          registrationCompleted && this.isRegistrationAuthFailure(err)
+            ? this.withRegistrationAuthConflict(err)
+            : err;
+        const errorInfo = this.customerErrorService.toCustomerErrorKey(contextualErr, 'register');
+        this.errorKey = errorInfo.key;
+        this.errorParams = errorInfo.params;
+        this.rawErrorMessage = this.customerErrorService.toCustomerMessage(contextualErr, 'register');
+        this.showAuthRecoveryLinks = errorInfo.key === 'PORTAL.ERRORS.REGISTER_AUTH_MSG';
       }
     } finally {
       this.loading = false;
@@ -993,7 +1038,10 @@ export class RegisterComponent implements OnInit {
   }
 
   handleGoogleError(err: unknown): void {
-    this.errorMessage = this.i18n.t(googleAuthErrorKey(err));
+    const key = googleAuthErrorKey(err);
+    this.errorKey = key;
+    this.errorParams = undefined;
+    this.rawErrorMessage = this.i18n.t(key);
   }
 
   async onAppleSignUp(): Promise<void> {
@@ -1028,18 +1076,52 @@ export class RegisterComponent implements OnInit {
   }
 
   handleAppleError(err: unknown): void {
-    this.errorMessage = this.i18n.t(appleAuthErrorKey(err));
+    const key = appleAuthErrorKey(err);
+    this.errorKey = key;
+    this.errorParams = undefined;
+    this.rawErrorMessage = this.i18n.t(key);
   }
 
   private isEmailTakenError(err: any): boolean {
-    const code = err?.errors?.[0]?.extensions?.code ?? '';
-    const msg = (err?.errors?.[0]?.message ?? err?.message ?? '').toLowerCase();
-    return (
+    const errors = Array.isArray(err?.errors) ? err.errors : [];
+    const code = err?.errors?.[0]?.extensions?.code ?? err?.code ?? '';
+    const hasUniqueCode =
       code === 'RECORD_NOT_UNIQUE' ||
+      errors.some((e: any) => e?.extensions?.code === 'RECORD_NOT_UNIQUE' || e?.code === 'RECORD_NOT_UNIQUE');
+    const msg = [
+      ...errors.map((e: any) => e?.message ?? ''),
+      err?.message ?? '',
+    ]
+      .join(' ')
+      .toLowerCase();
+    return (
+      hasUniqueCode ||
       msg.includes('unique') ||
       msg.includes('already exist') ||
       msg.includes('already registered') ||
       msg.includes('email already taken')
     );
+  }
+
+  private isRegistrationAuthFailure(err: any): boolean {
+    const code = err?.errors?.[0]?.extensions?.code ?? err?.code ?? '';
+    const status = err?.status ?? err?.response?.status;
+    const msg = (err?.errors?.[0]?.message ?? err?.message ?? '').toLowerCase();
+    return (
+      code === 'INVALID_CREDENTIALS' ||
+      code === 'INVALID_USER_CREDENTIALS' ||
+      status === 401 ||
+      msg.includes('invalid user credentials') ||
+      msg.includes('invalid credentials')
+    );
+  }
+
+  private withRegistrationAuthConflict(err: any): any {
+    if (!err || typeof err !== 'object') {
+      return { message: String(err ?? ''), isRegistrationAuthConflict: true };
+    }
+    return Object.assign(Object.create(Object.getPrototypeOf(err)), err, {
+      isRegistrationAuthConflict: true,
+    });
   }
 }

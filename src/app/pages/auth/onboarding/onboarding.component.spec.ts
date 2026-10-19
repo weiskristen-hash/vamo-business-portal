@@ -511,4 +511,95 @@ describe('OnboardingComponent (Canonical Source Parity)', () => {
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/login'], { replaceUrl: true });
   });
 
+  describe('Registration Error Handling Regressions', () => {
+    beforeEach(() => {
+      component.currentStep.set('business-register');
+      component.firstName = 'Marco';
+      component.lastName = 'Diaz';
+      component.email = 'existing@resort.do';
+      component.password = 'secret123';
+      component.confirmPassword = 'secret123';
+      component.agreedToTerms = true;
+      component.i18n.setLang('en');
+      fixture.detectChanges();
+    });
+
+    afterEach(() => {
+      component.i18n.setLang('en');
+    });
+
+    it('shows duplicate email banner with Sign in and reset password links in EN and ES when Directus returns RECORD_NOT_UNIQUE', async () => {
+      authServiceSpy.register.mockRejectedValueOnce({
+        errors: [{ extensions: { code: 'RECORD_NOT_UNIQUE' }, message: 'Email is already registered' }],
+      });
+
+      await component.registerBusinessUser();
+      fixture.detectChanges();
+
+      expect(component.emailTaken()).toBe(true);
+      expect(component.errorMessage()).toBeNull();
+      expect(component.loading()).toBe(false);
+
+      const warning = fixture.nativeElement.querySelector('.ob-alert-warning') as HTMLElement;
+      expect(warning).toBeTruthy();
+      expect(warning.textContent).toContain('This email address is already registered.');
+      expect(warning.textContent).toContain('Already have a VAMO account?');
+      expect(warning.textContent).toContain('Sign in');
+      expect(warning.textContent).toContain('reset your password');
+      expect(warning.textContent).not.toContain('session has expired');
+
+      const links = Array.from(warning.querySelectorAll('a')) as HTMLAnchorElement[];
+      expect(links.length).toBe(2);
+
+      // Switch to Spanish
+      component.i18n.setLang('es');
+      fixture.detectChanges();
+      expect(warning.textContent).toContain('Esta dirección de correo electrónico ya está registrada.');
+      expect(warning.textContent).toContain('¿Ya tienes una cuenta de VAMO?');
+      expect(warning.textContent).toContain('Inicia sesión');
+      expect(warning.textContent).toContain('restablece tu contraseña');
+    });
+
+    it('does NOT show "Your session has expired" when registering an existing email with a different password (post-registration login 401)', async () => {
+      authServiceSpy.register.mockResolvedValueOnce(undefined);
+      authServiceSpy.login.mockRejectedValueOnce({
+        status: 401,
+        errors: [{ extensions: { code: 'INVALID_CREDENTIALS' }, message: 'Invalid user credentials.' }],
+      });
+
+      await component.registerBusinessUser();
+      fixture.detectChanges();
+
+      expect(component.emailTaken()).toBe(false);
+      expect(component.showAuthRecoveryLinks()).toBe(true);
+      expect(component.errorMessage()).toBe(
+        "We couldn't complete registration with this email. If you already have a VAMO account, sign in or reset your password."
+      );
+      expect(component.errorMessage()).not.toContain('session has expired');
+
+      const errorAlert = fixture.nativeElement.querySelector('.ob-alert-error') as HTMLElement;
+      expect(errorAlert).toBeTruthy();
+      expect(errorAlert.textContent).toContain('Sign in');
+      expect(errorAlert.textContent).toContain('reset your password');
+
+      // Switch to Spanish reactively
+      component.i18n.setLang('es');
+      fixture.detectChanges();
+      expect(component.errorMessage()).toBe(
+        'No pudimos completar el registro con este correo electrónico. Si ya tienes una cuenta de VAMO, inicia sesión o restablece tu contraseña.'
+      );
+    });
+
+    it('shows network error message when registration fails due to network connection issue', async () => {
+      authServiceSpy.register.mockRejectedValueOnce(new Error('NetworkError when attempting to fetch resource.'));
+
+      await component.registerBusinessUser();
+      fixture.detectChanges();
+
+      expect(component.errorMessage()).toBe("We're having trouble connecting. Check your connection and try again.");
+      expect(component.errorMessage()).not.toContain('session has expired');
+    });
+  });
+
 });
+

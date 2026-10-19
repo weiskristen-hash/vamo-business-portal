@@ -464,11 +464,18 @@ export class AuthService implements OnDestroy {
     email: string;
     password: string;
   }): Promise<void> {
+    const tempStorage = createMemoryAuthStorage();
+    const tempClient = this.createIsolatedClient(tempStorage);
+
     // Canonical VAMO pre-check: Directus returns 204 even for duplicate emails without throwing.
-    // If login succeeds with these credentials, the email is already registered.
+    // Run the pre-check on an isolated in-memory client so an existing browser session is never modified.
     try {
-      await directusClient.login({ email: payload.email, password: payload.password });
-      try { await directusClient.logout(); } catch { /* ignore */ }
+      await tempClient.login({ email: payload.email, password: payload.password });
+      try {
+        await tempClient.logout();
+      } catch {
+        /* ignore */
+      }
       const takenErr: any = new Error('Email already taken');
       takenErr.errors = [{ extensions: { code: 'RECORD_NOT_UNIQUE' }, message: 'Email already taken' }];
       throw takenErr;
@@ -477,7 +484,7 @@ export class AuthService implements OnDestroy {
       // Login failed -> email is not registered with this password, proceed to registerUser
     }
 
-    await directusClient.request(
+    await tempClient.request(
       registerUser(payload.email, payload.password, {
         verification_url: 'https://vamo-app.com/verify.html',
         first_name: payload.first_name,

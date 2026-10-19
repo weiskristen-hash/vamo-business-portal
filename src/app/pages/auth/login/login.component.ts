@@ -1137,6 +1137,20 @@ export class LoginComponent implements OnInit, AfterViewInit {
       this.sessionExpiredNotice = true;
     }
 
+    const prefillEmail = this.route.snapshot.queryParams?.['email'];
+    if (typeof prefillEmail === 'string' && prefillEmail.trim()) {
+      this.email = prefillEmail.trim();
+      this.forgotEmail = prefillEmail.trim();
+    }
+
+    const isForgotPasswordRoute =
+      this.route.snapshot.routeConfig?.path === 'forgot-password' ||
+      this.route.snapshot.queryParams?.['forgot'] === 'true' ||
+      this.route.snapshot.queryParams?.['reset'] === 'true';
+    if (isForgotPasswordRoute) {
+      this.showForgotModal = true;
+    }
+
     const rawReturnUrl = this.route.snapshot.queryParams['returnUrl'] || sessionStoredReturnUrl || '/app/overview';
     this.returnUrl = this.authService.sanitizeReturnUrl(rawReturnUrl);
 

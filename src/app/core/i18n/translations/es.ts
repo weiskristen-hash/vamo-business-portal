@@ -131,8 +131,11 @@ export const esTranslations: Record<string, any> = {
     "ERROR_BUSINESS_DESCRIPTION_MIN": "La descripción debe tener al menos 20 caracteres",
     "ERROR_PHONE_REQUIRED": "El número de teléfono es obligatorio",
     "ERROR_ADDRESS_REQUIRED": "La dirección del negocio es obligatoria",
-    "ERROR_EMAIL_TAKEN": "Esta dirección de correo ya está registrada.",
-    "ERROR_EMAIL_TAKEN_LOGIN": "Iniciar sesión",
+    "ERROR_EMAIL_TAKEN": "Esta dirección de correo electrónico ya está registrada.",
+    "ERROR_EMAIL_TAKEN_SUB": "¿Ya tienes una cuenta de VAMO?",
+    "ERROR_EMAIL_TAKEN_LOGIN": "Inicia sesión",
+    "ERROR_EMAIL_TAKEN_OR": "o",
+    "ERROR_EMAIL_TAKEN_RESET": "restablece tu contraseña",
     "ERROR_TERMS_REQUIRED": "Debes aceptar los Términos de Uso y la Política de Privacidad para continuar."
   },
   "AUTH": {
@@ -1616,6 +1619,11 @@ export const esTranslations: Record<string, any> = {
       "SUPPORT_SECONDARY": "Si el problema continúa, contacta a soporte de VAMO en {{email}}.",
       "VALIDATION_HEADLINE": "Por favor revisa tu información",
       "VALIDATION_MSG": "Por favor corrige los errores antes de guardar.",
+      "REGISTER_HEADLINE": "Error en el registro",
+      "REGISTER_MSG": "No pudimos crear tu cuenta en este momento. Por favor inténtalo de nuevo.",
+      "REGISTER_AUTH_MSG": "No pudimos completar el registro con este correo electrónico. Si ya tienes una cuenta de VAMO, inicia sesión o restablece tu contraseña.",
+      "REGISTER_VALIDATION_MSG": "Por favor revisa tus datos de registro e inténtalo de nuevo.",
+      "DUPLICATE_EMAIL_MSG": "Esta dirección de correo electrónico ya está registrada. ¿Ya tienes una cuenta de VAMO? Inicia sesión o restablece tu contraseña.",
       "NO_BUSINESS": "No hay un perfil de negocio asociado a tu cuenta.",
       "UNABLE_LOAD_DASHBOARD": "No se pudo cargar el panel"
     }

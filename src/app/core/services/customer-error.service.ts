@@ -4,6 +4,10 @@ import { I18nService } from '../i18n/i18n.service';
 
 export type ErrorActionCategory =
   | 'auth'
+  | 'register'
+  | 'register-auth'
+  | 'register-validation'
+  | 'duplicate-email'
   | 'save'
   | 'load'
   | 'upload'
@@ -75,11 +79,19 @@ export class CustomerErrorService {
     category: ErrorActionCategory = 'save'
   ): { key: string; params?: Record<string, string | number> } {
     this.logDiagnostic(err, category);
-    const detectedCategory = this.detectCategory(err) || category;
+    const detectedCategory = this.detectCategory(err, category) || category;
 
     switch (detectedCategory) {
       case 'auth':
         return { key: 'PORTAL.ERRORS.AUTH_MSG' };
+      case 'duplicate-email':
+        return { key: 'PORTAL.ERRORS.DUPLICATE_EMAIL_MSG' };
+      case 'register-auth':
+        return { key: 'PORTAL.ERRORS.REGISTER_AUTH_MSG' };
+      case 'register-validation':
+        return { key: 'PORTAL.ERRORS.REGISTER_VALIDATION_MSG' };
+      case 'register':
+        return { key: 'PORTAL.ERRORS.REGISTER_MSG' };
       case 'network':
         return { key: 'PORTAL.ERRORS.NETWORK_MSG' };
       case 'permission':
@@ -125,7 +137,7 @@ export class CustomerErrorService {
     }
 
     // 3. Inspect technical error characteristics
-    const detectedCategory = this.detectCategory(err) || category;
+    const detectedCategory = this.detectCategory(err, category) || category;
 
     switch (detectedCategory) {
       case 'auth':
@@ -133,6 +145,35 @@ export class CustomerErrorService {
           headline: this.i18n.t('PORTAL.ERRORS.AUTH_HEADLINE'),
           message: this.i18n.t('PORTAL.ERRORS.AUTH_MSG'),
           actionText: this.i18n.t('PORTAL.ERRORS.AUTH_ACTION'),
+        };
+
+      case 'duplicate-email':
+        return {
+          headline: this.i18n.t('ONBOARDING.ERROR_EMAIL_TAKEN'),
+          message: this.i18n.t('PORTAL.ERRORS.DUPLICATE_EMAIL_MSG'),
+          actionText: this.i18n.t('ONBOARDING.ERROR_EMAIL_TAKEN_LOGIN'),
+        };
+
+      case 'register-auth':
+        return {
+          headline: this.i18n.t('PORTAL.ERRORS.REGISTER_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.REGISTER_AUTH_MSG'),
+          actionText: this.i18n.t('ONBOARDING.ERROR_EMAIL_TAKEN_LOGIN'),
+        };
+
+      case 'register-validation':
+        return {
+          headline: this.i18n.t('PORTAL.ERRORS.VALIDATION_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.REGISTER_VALIDATION_MSG'),
+          actionText: this.i18n.t('PORTAL.ERRORS.TRY_AGAIN'),
+        };
+
+      case 'register':
+        return {
+          headline: this.i18n.t('PORTAL.ERRORS.REGISTER_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.REGISTER_MSG'),
+          secondaryMessage: this.i18n.t('PORTAL.ERRORS.SUPPORT_SECONDARY', { email: VAMO_SUPPORT_EMAIL }),
+          actionText: this.i18n.t('PORTAL.ERRORS.TRY_AGAIN'),
         };
 
       case 'network':
@@ -225,21 +266,69 @@ export class CustomerErrorService {
   /**
    * Detects underlying category from error code, status, or network states.
    */
-  private detectCategory(err: any): ErrorActionCategory | null {
+  private detectCategory(
+    err: any,
+    fallbackCategory: ErrorActionCategory = 'save'
+  ): ErrorActionCategory | null {
     if (!err) return null;
+
+    const errors = Array.isArray(err?.errors) ? err.errors : [];
+    const code = err?.errors?.[0]?.extensions?.code || err?.code || '';
+    const status = err?.status || err?.response?.status;
+    const rawMsg = [
+      ...errors.map((e: any) => (typeof e?.message === 'string' ? e.message : '')),
+      typeof err?.message === 'string' ? err.message : '',
+    ]
+      .join(' ')
+      .trim();
+    const lowerMsg = rawMsg.toLowerCase();
+
+    const isDuplicateEmail =
+      code === 'RECORD_NOT_UNIQUE' ||
+      errors.some((e: any) => e?.extensions?.code === 'RECORD_NOT_UNIQUE' || e?.code === 'RECORD_NOT_UNIQUE') ||
+      lowerMsg.includes('has to be unique') ||
+      lowerMsg.includes('already exist') ||
+      lowerMsg.includes('already registered') ||
+      lowerMsg.includes('email already taken');
+
+    if (isDuplicateEmail) {
+      return 'duplicate-email';
+    }
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       return 'network';
     }
 
-    if (err?.message === 'OFFLINE') {
+    if (err?.message === 'OFFLINE' || err?.isNetworkError) {
       return 'network';
     }
 
-    const code = err?.errors?.[0]?.extensions?.code || err?.code;
-    const status = err?.status || err?.response?.status;
+    const isRegistrationContext =
+      fallbackCategory === 'register' ||
+      fallbackCategory === 'register-auth' ||
+      fallbackCategory === 'register-validation';
 
-    if (code === 'TOKEN_EXPIRED' || code === 'INVALID_TOKEN' || status === 401) {
+    // Genuine authenticated session expiry
+    if (
+      code === 'TOKEN_EXPIRED' ||
+      code === 'SESSION_EXPIRED' ||
+      err?.message === 'SESSION_EXPIRED'
+    ) {
+      return 'auth';
+    }
+
+    // Registration or credential authentication failure (never a session expiry)
+    if (
+      code === 'INVALID_CREDENTIALS' ||
+      code === 'INVALID_USER_CREDENTIALS' ||
+      code === 'REGISTRATION_AUTH_FAILED' ||
+      err?.isRegistrationAuthConflict ||
+      (isRegistrationContext && (status === 401 || code === 'INVALID_TOKEN'))
+    ) {
+      return 'register-auth';
+    }
+
+    if (code === 'INVALID_TOKEN' || status === 401) {
       return 'auth';
     }
 
@@ -247,12 +336,26 @@ export class CustomerErrorService {
       return 'permission';
     }
 
-    const msg = typeof err?.message === 'string' ? err.message : '';
-    if (/permission|forbidden|access fields|not exist/i.test(msg)) {
+    if (
+      code === 'INVALID_PAYLOAD' ||
+      code === 'FAILED_VALIDATION' ||
+      code === 'INVALID_QUERY' ||
+      status === 400 ||
+      status === 422
+    ) {
+      if (isRegistrationContext) {
+        return 'register-validation';
+      }
+      if (fallbackCategory === 'validation') {
+        return 'validation';
+      }
+    }
+
+    if (/permission|forbidden|access fields|not exist/i.test(rawMsg)) {
       return 'permission';
     }
 
-    if (/network|failed to fetch|econnrefused|timeout/i.test(msg)) {
+    if (/network|failed to fetch|econnrefused|timeout/i.test(rawMsg)) {
       return 'network';
     }
 
@@ -260,11 +363,45 @@ export class CustomerErrorService {
   }
 
   /**
+   * Redacts passwords and tokens from diagnostic payloads before logging.
+   */
+  private redactDiagnosticError(err: unknown): unknown {
+    if (!err || typeof err !== 'object') return err;
+    const sensitiveKeys = new Set([
+      'password',
+      'confirmPassword',
+      'access_token',
+      'refresh_token',
+      'token',
+      'authorization',
+    ]);
+    const hasSensitiveKey = Object.keys(err as Record<string, unknown>).some((k) =>
+      sensitiveKeys.has(k)
+    );
+    if (!hasSensitiveKey) return err;
+
+    const clone: Record<string, unknown> = { ...(err as Record<string, unknown>) };
+    if (err instanceof Error) {
+      clone['name'] = err.name;
+      clone['message'] = err.message;
+    }
+    for (const key of Object.keys(clone)) {
+      if (sensitiveKeys.has(key)) {
+        clone[key] = '[REDACTED]';
+      }
+    }
+    return clone;
+  }
+
+  /**
    * Diagnostic logger that suppresses internal leakage in production.
    */
   private logDiagnostic(err: unknown, category: string): void {
     if (!environment.production) {
-      console.warn(`[CustomerErrorService:${category}] Handled diagnostic:`, err);
+      console.warn(
+        `[CustomerErrorService:${category}] Handled diagnostic:`,
+        this.redactDiagnosticError(err)
+      );
     } else {
       // In production, log a minimal sanitized message without payload/schema/tokens
       const sanitizedName = (err as any)?.name || 'Error';
