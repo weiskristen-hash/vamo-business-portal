@@ -10,6 +10,7 @@ export const environment = {
   appleClientId: 'com.vamoapp.vamomobile.signin',
   appleSignInFlow: '7adc18dc-af9b-43d5-a2b7-2c7770760ec8',
   appleRedirectUri: 'https://business.vamo-app.com/auth/callback',
+  stagingAppleRedirectUri: 'https://staging-business.vamo-app.com/auth/callback',
   allowedHosts: ['api.vamo-app.com', 'quepasa-api.c1oud7.de', 'vamo-app.com'],
 
   // Stripe & Billing Flow Configuration (canonical source keys from Isla-Labs-DR/vamo-app)

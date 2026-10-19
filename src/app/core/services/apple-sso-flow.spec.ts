@@ -9,7 +9,11 @@ import {
 } from './apple-auth.service';
 import { GoogleAuthService } from './google-auth.service';
 import { LoginComponent } from '../../pages/auth/login/login.component';
-import { runtimeConfig } from '../config/runtime-config';
+import {
+  runtimeConfig,
+  isStagingPortalHost,
+  resolveAppleRedirectUri,
+} from '../config/runtime-config';
 import { I18nService } from '../i18n/i18n.service';
 import { createBrowserAuthStorage } from '../directus/browser-auth.storage';
 
@@ -712,6 +716,15 @@ describe('Apple Web Sign-In & JWT Security Specifications', () => {
       // Resetting restores the production callback without affecting dev Directus credit-card flows
       runtimeConfig.reset();
       expect(runtimeConfig.appleRedirectUri).toBe('https://business.vamo-app.com/auth/callback');
+      expect(isStagingPortalHost('staging-business.vamo-app.com')).toBe(true);
+      expect(isStagingPortalHost('business-staging.islavibe-dr.workers.dev')).toBe(true);
+      expect(isStagingPortalHost('business.vamo-app.com')).toBe(false);
+      expect(resolveAppleRedirectUri({}, 'staging-business.vamo-app.com')).toBe(
+        'https://staging-business.vamo-app.com/auth/callback'
+      );
+      expect(resolveAppleRedirectUri({}, 'business.vamo-app.com')).toBe(
+        'https://business.vamo-app.com/auth/callback'
+      );
       runtimeConfig.setDirectusUrl('https://quepasa-api.c1oud7.de');
       expect(runtimeConfig.stripeCreateSetupIntentFlow).toBeTruthy();
       expect(runtimeConfig.appleClientId).toBe('com.vamoapp.vamomobile.signin');
