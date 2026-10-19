@@ -165,11 +165,7 @@ export const esTranslations: Record<string, any> = {
     "GOOGLE_LOGIN_ERROR": "Error al iniciar sesión con Google. Por favor, inténtalo de nuevo.",
     "GOOGLE_UNAVAILABLE": "El inicio de sesión con Google no está disponible actualmente. Inténtalo de nuevo o usa correo y contraseña.",
     "GOOGLE_CANCELLED": "Se canceló el inicio de sesión con Google.",
-    "GOOGLE_TOKEN_MISSING": "No se pudieron obtener las credenciales de Google. Por favor, inténtalo de nuevo.",
-    "APPLE_LOGIN_ERROR": "Error al iniciar sesión con Apple. Por favor, inténtalo de nuevo.",
-    "APPLE_UNAVAILABLE": "El inicio de sesión con Apple no está disponible actualmente. Inténtalo de nuevo o usa correo y contraseña.",
-    "APPLE_CANCELLED": "Se canceló el inicio de sesión con Apple.",
-    "APPLE_TOKEN_MISSING": "No se pudieron obtener las credenciales de Apple. Por favor, inténtalo de nuevo."
+    "GOOGLE_TOKEN_MISSING": "No se pudieron obtener las credenciales de Google. Por favor, inténtalo de nuevo."
   },
   "HOME": {
     "WHATS_HOT": "🔥 Lo más caliente",
