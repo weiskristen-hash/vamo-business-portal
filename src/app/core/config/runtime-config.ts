@@ -8,6 +8,7 @@ export interface RuntimeConfig {
   stripeGetPricesFlow: string;
   stripeGetSubscriptionFlow: string;
   stripeValidatePromoFlow: string;
+  stripePreviewCheckoutFlow: string;
   stripeCreateSubscriptionFlow: string;
   stripeChangeSubscriptionFlow: string;
   stripeCancelSubscriptionFlow: string;
@@ -35,6 +36,7 @@ export const DEV_DIRECTUS_CARD_FLOWS = {
   stripeCreateSetupIntentFlow: 'b1c4e8a2-7f3d-4e9a-8c1b-2d5f6a9e0c31',
   stripeFinalizeSetupIntentFlow: 'c2d5f9b3-8e4a-4f0b-9d2c-3e6a7b0f1d42',
   stripeSetDefaultPaymentMethodFlow: 'd3e6a0c4-9f5b-4a1c-8e3d-4f7b8c1a2e53',
+  stripePreviewCheckoutFlow: 'e8f9a1b2-3c4d-4e5f-8a6b-7c8d9e0f1a2b',
 } as const;
 
 export function stripTrailingSlash(value: string): string {
@@ -81,6 +83,10 @@ function buildInitialConfig(overrides: Record<string, any> = {}): RuntimeConfig 
     stripeGetPricesFlow: overrides['stripeGetPricesFlow'] || environment.STRIPE_GET_PRICES_FLOW || '',
     stripeGetSubscriptionFlow: overrides['stripeGetSubscriptionFlow'] || environment.STRIPE_GET_SUBSCRIPTION_FLOW || '',
     stripeValidatePromoFlow: overrides['stripeValidatePromoFlow'] || environment.STRIPE_VALIDATE_PROMO_FLOW || '',
+    stripePreviewCheckoutFlow:
+      overrides['stripePreviewCheckoutFlow'] ??
+      ((environment as any).STRIPE_PREVIEW_CHECKOUT_FLOW ||
+        (isDevHost ? DEV_DIRECTUS_CARD_FLOWS.stripePreviewCheckoutFlow : '')),
     stripeCreateSubscriptionFlow:
       overrides['stripeCreateSubscriptionFlow'] || environment.STRIPE_CREATE_SUBSCRIPTION_FLOW || '',
     stripeChangeSubscriptionFlow:
@@ -156,6 +162,9 @@ export const runtimeConfig = {
         if (!currentConfig.stripeDetachPaymentMethodFlow) {
           currentConfig.stripeDetachPaymentMethodFlow = DEV_DIRECTUS_CARD_FLOWS.stripeDetachPaymentMethodFlow;
         }
+        if (!currentConfig.stripePreviewCheckoutFlow) {
+          currentConfig.stripePreviewCheckoutFlow = DEV_DIRECTUS_CARD_FLOWS.stripePreviewCheckoutFlow;
+        }
       } else {
         if (currentConfig.stripeCreateSetupIntentFlow === DEV_DIRECTUS_CARD_FLOWS.stripeCreateSetupIntentFlow) {
           currentConfig.stripeCreateSetupIntentFlow = (environment as any).STRIPE_CREATE_SETUP_INTENT_FLOW || '';
@@ -169,6 +178,9 @@ export const runtimeConfig = {
         ) {
           currentConfig.stripeSetDefaultPaymentMethodFlow =
             (environment as any).STRIPE_SET_DEFAULT_PAYMENT_METHOD_FLOW || '';
+        }
+        if (currentConfig.stripePreviewCheckoutFlow === DEV_DIRECTUS_CARD_FLOWS.stripePreviewCheckoutFlow) {
+          currentConfig.stripePreviewCheckoutFlow = (environment as any).STRIPE_PREVIEW_CHECKOUT_FLOW || '';
         }
       }
     }
@@ -184,6 +196,9 @@ export const runtimeConfig = {
   },
   get stripeValidatePromoFlow(): string {
     return currentConfig.stripeValidatePromoFlow;
+  },
+  get stripePreviewCheckoutFlow(): string {
+    return currentConfig.stripePreviewCheckoutFlow;
   },
   get stripeCreateSubscriptionFlow(): string {
     return currentConfig.stripeCreateSubscriptionFlow;
