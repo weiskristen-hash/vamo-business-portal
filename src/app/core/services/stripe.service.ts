@@ -4,8 +4,129 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 import { runtimeConfig } from '../config/runtime-config';
 import { AuthService } from './auth.service';
 import { I18nService } from '../i18n/i18n.service';
+import { CheckoutAuditService } from './checkout-audit.service';
 import { readItems } from '@directus/sdk';
 import { directusClient } from '../directus/directus-client';
+
+export type CouponVerificationState =
+  | 'not_applied'
+  | 'validating'
+  | 'verified_applied'
+  | 'invalid_or_ineligible'
+  | 'expired_or_changed'
+  | 'verification_unavailable';
+
+export type CheckoutVerificationStatus =
+  | 'unverified'
+  | 'verifying'
+  | 'verified'
+  | 'expired'
+  | 'mismatch_blocked'
+  | 'unavailable';
+
+export type CouponDurationType = 'once' | 'repeating' | 'forever';
+
+export interface CheckoutPreviewRequest {
+  priceId: string;
+  planAmount?: number;
+  planCurrency?: string;
+  planInterval?: string;
+  planName?: string;
+  promotionCode?: string | null;
+  promotionCodeId?: string | null;
+  customerEmail?: string | null;
+  customerRef?: string | null;
+  businessRef?: string | null;
+}
+
+export interface CheckoutPreviewResult {
+  verified: boolean;
+  verificationStatus: CheckoutVerificationStatus;
+  couponState: CouponVerificationState;
+  verificationReference: string | null;
+  priceId: string;
+  planName: string;
+  interval: string;
+  currency: string;
+  subtotal: number;
+  discountAmount: number;
+  tax: number;
+  amountDueToday: number;
+  renewalAmount: number | null;
+  renewalInterval: string | null;
+  promoCode?: string | null;
+  promoCodeId?: string | null;
+  promoCodeName?: string | null;
+  couponDuration?: CouponDurationType | null;
+  couponDurationInMonths?: number | null;
+  expiresAt?: number | null;
+  errorCode?: string | null;
+  message?: string | null;
+}
+
+export interface VerifiedCreateSubscriptionRequest {
+  email: string;
+  name: string;
+  priceId: string;
+  promotionCodeId?: string | null;
+  verificationReference: string;
+  approvedAmountDue: number;
+  approvedCurrency: string;
+  paymentMethodId?: string | null;
+  idempotencyKey?: string;
+  expiresAt?: number | null;
+  customerRef?: string | null;
+  businessRef?: string | null;
+}
+
+export interface VerifiedCreateSubscriptionResult {
+  clientSecret: string | null;
+  subscriptionId: string;
+  requiresSetup: boolean;
+  invoiceId: string | null;
+  invoiceAmountDue: number;
+  invoiceSubtotal: number;
+  invoiceDiscountAmount: number;
+  invoiceTax: number;
+  invoiceCurrency: string;
+  appliedPromotionCodeId: string | null;
+  verifiedByServer: boolean;
+}
+
+export type CheckoutProtectionErrorCode =
+  | 'UNVERIFIED_CHECKOUT'
+  | 'VERIFICATION_EXPIRED'
+  | 'UNAPPLIED_COUPON_PRESENT'
+  | 'PROMO_NOT_APPLIED'
+  | 'AMOUNT_MISMATCH_BLOCKED'
+  | 'CURRENCY_MISMATCH_BLOCKED'
+  | 'UNEXPECTED_PAYMENT_INTENT_FOR_FREE_CHECKOUT'
+  | 'UNEXPECTED_PRE_VERIFICATION_CHARGE'
+  | 'MISSING_INVOICE_VERIFICATION';
+
+export class CheckoutChargeProtectionError extends Error {
+  readonly code: CheckoutProtectionErrorCode;
+  readonly approvedAmount?: number | null;
+  readonly actualAmount?: number | null;
+  readonly currency?: string | null;
+
+  constructor(
+    code: CheckoutProtectionErrorCode,
+    message: string,
+    details?: {
+      approvedAmount?: number | null;
+      actualAmount?: number | null;
+      currency?: string | null;
+    },
+  ) {
+    super(message);
+    this.name = 'CheckoutChargeProtectionError';
+    this.code = code;
+    this.approvedAmount = details?.approvedAmount ?? null;
+    this.actualAmount = details?.actualAmount ?? null;
+    this.currency = details?.currency ?? null;
+  }
+}
 
 export interface StripeSubscriptionSchedulePhase {
   startDate?: number | null;
@@ -257,10 +378,13 @@ export function getCanonicalTierFeatures(tier: 'starter' | 'basic' | 'advanced',
 export class StripeService {
   private authService = inject(AuthService);
   private i18n = inject(I18nService);
+  private auditService = inject(CheckoutAuditService);
   private stripePromise: Promise<Stripe | null> | null = null;
   private activeElements: StripeElements | null = null;
   private cardSetupElements: StripeElements | null = null;
   private cardSetupPaymentElement: any = null;
+  private inFlightCheckoutPreviews = new Map<string, Promise<CheckoutPreviewResult>>();
+  private inFlightVerifiedSubscriptions = new Map<string, Promise<VerifiedCreateSubscriptionResult>>();
 
   getStripe(): Promise<Stripe | null> {
     const pubKey = runtimeConfig.stripePublishableKey;
@@ -303,6 +427,60 @@ export class StripeService {
       } catch {
         throw new Error('Flow returned invalid JSON.');
       }
+    });
+  }
+
+  /**
+   * Calls the isolated portal checkout backend (`/api/checkout/preview` or `/api/checkout/create-subscription`)
+   * with the authenticated Directus user's Bearer token and correlation ID.
+   * Never invokes or mutates shared Directus Flows.
+   */
+  async checkoutApiPost(
+    endpoint: 'preview' | 'create-subscription',
+    payload: object,
+  ): Promise<any> {
+    const baseUrl = runtimeConfig.checkoutApiBaseUrl;
+    if (!baseUrl) {
+      throw new Error('Verified checkout API is not configured.');
+    }
+    return this.authService.safeRequest(async () => {
+      const url = `${baseUrl.replace(/\/+$/, '')}/${endpoint}`;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-Correlation-Id': this.auditService.getCorrelationId(),
+        ...(await this.authHeaders()),
+      };
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const text = await response.text();
+      if (response.status === 401) {
+        const authErr: any = new Error('Authentication expired (401)');
+        authErr.status = 401;
+        authErr.code = 'TOKEN_EXPIRED';
+        throw authErr;
+      }
+      let parsed: any = null;
+      if (text) {
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          parsed = null;
+        }
+      }
+      if (!response.ok) {
+        // Structured business/security rejection from the isolated checkout backend (e.g. 409 / 422 / 403)
+        if (parsed && typeof parsed === 'object' && ('aborted' in parsed || 'verified' in parsed || 'code' in parsed)) {
+          return parsed;
+        }
+        const err: any = new Error(parsed?.error || parsed?.message || `Checkout API request failed (${response.status})`);
+        err.status = response.status;
+        if (parsed?.code) err.code = parsed.code;
+        throw err;
+      }
+      return parsed;
     });
   }
 
@@ -445,12 +623,893 @@ export class StripeService {
   }
 
   async validatePromoCode(code: string): Promise<PromoResult> {
+    const cleanCode = (code ?? '').trim();
+    this.auditService.record('promotion_submitted', {
+      promotionCode: cleanCode,
+    });
     const flowId = runtimeConfig.stripeValidatePromoFlow;
-    if (!flowId) {
+    if (!flowId || !cleanCode) {
+      this.auditService.record('promotion_validation_failed', {
+        promotionCode: cleanCode,
+        reason: !flowId ? 'PROMO_FLOW_UNCONFIGURED' : 'EMPTY_PROMO_CODE',
+      });
       return { valid: false };
     }
-    const data = await this.flowPost(flowId, { code });
-    return data?.extract_promo ?? data ?? { valid: false };
+    const data = await this.flowPost(flowId, { code: cleanCode });
+    const res: PromoResult = data?.extract_promo ?? data ?? { valid: false };
+    if (res?.valid) {
+      this.auditService.record('promotion_validation_succeeded', {
+        promotionCode: cleanCode,
+        promotionCodeId: res.promoCodeId ?? null,
+      });
+    } else {
+      this.auditService.record('promotion_validation_failed', {
+        promotionCode: cleanCode,
+        reason: 'INVALID_OR_INELIGIBLE',
+      });
+    }
+    return res;
+  }
+
+  async previewSubscriptionCheckout(
+    request: CheckoutPreviewRequest,
+  ): Promise<CheckoutPreviewResult> {
+    const cleanPriceId = (request.priceId ?? '').trim();
+    const cleanPromoCode = request.promotionCode ? request.promotionCode.trim() : null;
+    const defaultSubtotal =
+      typeof request.planAmount === 'number' && Number.isFinite(request.planAmount) && request.planAmount >= 0
+        ? request.planAmount
+        : 0;
+    const defaultCurrency = (request.planCurrency || 'usd').toLowerCase();
+    const defaultInterval = request.planInterval || 'month';
+    const defaultPlanName = request.planName || '';
+
+    if (!cleanPriceId || !cleanPriceId.startsWith('price_')) {
+      return {
+        verified: false,
+        verificationStatus: 'unverified',
+        couponState: cleanPromoCode ? 'not_applied' : 'not_applied',
+        verificationReference: null,
+        priceId: cleanPriceId,
+        planName: defaultPlanName,
+        interval: defaultInterval,
+        currency: defaultCurrency,
+        subtotal: defaultSubtotal,
+        discountAmount: 0,
+        tax: 0,
+        amountDueToday: defaultSubtotal,
+        renewalAmount: null,
+        renewalInterval: defaultInterval,
+        promoCode: cleanPromoCode,
+        promoCodeId: null,
+        promoCodeName: null,
+        couponDuration: null,
+        couponDurationInMonths: null,
+        expiresAt: null,
+        errorCode: 'INVALID_PRICE_ID',
+        message: 'Invalid plan selection. Please select an active plan.',
+      };
+    }
+
+    const lockKey = `${cleanPriceId}:${cleanPromoCode ?? ''}:${request.customerEmail ?? ''}`;
+    const existing = this.inFlightCheckoutPreviews.get(lockKey);
+    if (existing) {
+      return existing;
+    }
+
+    const execution = (async (): Promise<CheckoutPreviewResult> => {
+      this.auditService.startNewCorrelation();
+      if (cleanPromoCode) {
+        this.auditService.record('promotion_submitted', {
+          priceId: cleanPriceId,
+          promotionCode: cleanPromoCode,
+          customerRef: request.customerRef ?? null,
+          businessRef: request.businessRef ?? null,
+        });
+      }
+
+      if (!runtimeConfig.checkoutApiBaseUrl) {
+        return this.buildUnavailablePreviewResult(request, cleanPromoCode, 'CHECKOUT_API_UNCONFIGURED');
+      }
+
+      try {
+        const raw = await this.checkoutApiPost('preview', {
+          priceId: cleanPriceId,
+          promotionCode: cleanPromoCode,
+          promotionCodeId: request.promotionCodeId ?? null,
+          email: request.customerEmail ?? null,
+        });
+        return this.normalizeCheckoutPreviewResponse(raw, request, cleanPromoCode);
+      } catch {
+        if (cleanPromoCode) {
+          this.auditService.record('promotion_validation_failed', {
+            priceId: cleanPriceId,
+            promotionCode: cleanPromoCode,
+            customerRef: request.customerRef ?? null,
+            businessRef: request.businessRef ?? null,
+            reason: 'PREVIEW_REQUEST_FAILED',
+          });
+        }
+        return this.buildUnavailablePreviewResult(request, cleanPromoCode, 'PREVIEW_REQUEST_FAILED');
+      }
+    })();
+
+    this.inFlightCheckoutPreviews.set(lockKey, execution);
+    try {
+      return await execution;
+    } finally {
+      this.inFlightCheckoutPreviews.delete(lockKey);
+    }
+  }
+
+  private buildUnavailablePreviewResult(
+    request: CheckoutPreviewRequest,
+    cleanPromoCode: string | null,
+    errorCode: string,
+    extraPromoMeta?: {
+      promoCodeId?: string | null;
+      promoCodeName?: string | null;
+      couponDuration?: CouponDurationType | null;
+      couponDurationInMonths?: number | null;
+    },
+  ): CheckoutPreviewResult {
+    const defaultSubtotal =
+      typeof request.planAmount === 'number' && Number.isFinite(request.planAmount) && request.planAmount >= 0
+        ? request.planAmount
+        : 0;
+    const defaultCurrency = (request.planCurrency || 'usd').toLowerCase();
+    const defaultInterval = request.planInterval || 'month';
+    return {
+      verified: false,
+      verificationStatus: 'unavailable',
+      couponState: cleanPromoCode ? 'verification_unavailable' : 'not_applied',
+      verificationReference: null,
+      priceId: (request.priceId ?? '').trim(),
+      planName: request.planName || '',
+      interval: defaultInterval,
+      currency: defaultCurrency,
+      subtotal: defaultSubtotal,
+      discountAmount: 0,
+      tax: 0,
+      amountDueToday: defaultSubtotal,
+      renewalAmount: null,
+      renewalInterval: defaultInterval,
+      promoCode: cleanPromoCode,
+      promoCodeId: extraPromoMeta?.promoCodeId ?? null,
+      promoCodeName: extraPromoMeta?.promoCodeName ?? null,
+      couponDuration: extraPromoMeta?.couponDuration ?? null,
+      couponDurationInMonths: extraPromoMeta?.couponDurationInMonths ?? null,
+      expiresAt: null,
+      errorCode,
+      message: 'Authoritative Stripe price verification is currently unavailable.',
+    };
+  }
+
+  private normalizeCheckoutPreviewResponse(
+    raw: any,
+    request: CheckoutPreviewRequest,
+    cleanPromoCode: string | null,
+  ): CheckoutPreviewResult {
+    const cleanPriceId = (request.priceId ?? '').trim();
+    const defaultSubtotal =
+      typeof request.planAmount === 'number' && Number.isFinite(request.planAmount) && request.planAmount >= 0
+        ? request.planAmount
+        : 0;
+    const defaultCurrency = (request.planCurrency || 'usd').toLowerCase();
+    const defaultInterval = request.planInterval || 'month';
+    const defaultPlanName = request.planName || '';
+
+    const body =
+      raw?.preview_result ??
+      raw?.checkout_preview ??
+      raw?.extract_preview ??
+      raw?.extract_promo ??
+      raw?.data ??
+      raw;
+
+    if (!body || typeof body !== 'object') {
+      return this.buildUnavailablePreviewResult(request, cleanPromoCode, 'EMPTY_PREVIEW_RESPONSE');
+    }
+
+    const rawErrorCode = typeof body.errorCode === 'string'
+      ? body.errorCode
+      : typeof body.code === 'string'
+        ? body.code
+        : null;
+
+    // Case 1: Promotion code was submitted and the server explicitly rejected it as invalid or ineligible
+    const isExplicitlyInvalidPromo =
+      Boolean(cleanPromoCode) &&
+      (body.couponState === 'invalid_or_ineligible' ||
+        body.valid === false ||
+        body.promoValid === false ||
+        body.couponValid === false ||
+        (rawErrorCode !== null &&
+          (rawErrorCode.startsWith('PROMO_') ||
+            rawErrorCode.startsWith('PROMOTION_') ||
+            rawErrorCode === 'STRIPE_PREVIEW_REJECTED_PROMOTION' ||
+            rawErrorCode === 'COUPON_MISSING' ||
+            rawErrorCode === 'COUPON_INVALID' ||
+            rawErrorCode === 'COUPON_INELIGIBLE' ||
+            rawErrorCode === 'COUPON_EXPIRED' ||
+            rawErrorCode === 'MAX_REDEMPTIONS_REACHED' ||
+            rawErrorCode === 'MINIMUM_AMOUNT_NOT_MET' ||
+            rawErrorCode === 'FIRST_TIME_CUSTOMER_ONLY' ||
+            rawErrorCode === 'PRODUCT_RESTRICTION_MISMATCH')));
+
+    if (isExplicitlyInvalidPromo) {
+      this.auditService.record('promotion_validation_failed', {
+        priceId: cleanPriceId,
+        promotionCode: cleanPromoCode,
+        promotionCodeId: body.promoCodeId ?? body.promotionCodeId ?? null,
+        customerRef: request.customerRef ?? null,
+        businessRef: request.businessRef ?? null,
+        reason: rawErrorCode || body.error || body.message || 'INVALID_OR_INELIGIBLE_PROMO',
+      });
+      return {
+        verified: false,
+        verificationStatus: 'unverified',
+        couponState: 'invalid_or_ineligible',
+        verificationReference: null,
+        priceId: cleanPriceId,
+        planName: defaultPlanName,
+        interval: defaultInterval,
+        currency: defaultCurrency,
+        subtotal: defaultSubtotal,
+        discountAmount: 0,
+        tax: 0,
+        amountDueToday: defaultSubtotal,
+        renewalAmount: defaultSubtotal > 0 ? defaultSubtotal : null,
+        renewalInterval: defaultInterval,
+        promoCode: cleanPromoCode,
+        promoCodeId: null,
+        promoCodeName: null,
+        couponDuration: null,
+        couponDurationInMonths: null,
+        expiresAt: null,
+        errorCode: rawErrorCode || 'PROMO_INVALID_OR_INELIGIBLE',
+        message: typeof (body.error ?? body.message) === 'string' ? (body.error ?? body.message) : null,
+      };
+    }
+
+    // Extract authoritative Stripe invoice preview fields
+    const verificationRef =
+      typeof body.verificationReference === 'string' && body.verificationReference.trim()
+        ? body.verificationReference.trim()
+        : typeof body.verificationId === 'string' && body.verificationId.trim()
+          ? body.verificationId.trim()
+          : typeof body.verificationToken === 'string' && body.verificationToken.trim()
+            ? body.verificationToken.trim()
+            : null;
+
+    const invoiceObj = body.invoicePreview ?? body.invoice ?? body;
+    const returnedPriceId =
+      typeof body.priceId === 'string' && body.priceId.trim()
+        ? body.priceId.trim()
+        : typeof body.price_id === 'string' && body.price_id.trim()
+          ? body.price_id.trim()
+          : typeof invoiceObj?.lines?.data?.[0]?.price?.id === 'string'
+            ? invoiceObj.lines.data[0].price.id.trim()
+            : null;
+
+    const rawSubtotal = body.subtotal ?? invoiceObj?.subtotal;
+    const rawAmountDue =
+      body.amountDueToday ??
+      body.amount_due_today ??
+      body.amountDue ??
+      invoiceObj?.amount_due;
+    const rawTax = body.tax ?? invoiceObj?.tax ?? 0;
+    const rawDiscount =
+      body.discountAmount ??
+      body.discount_amount ??
+      invoiceObj?.total_discount_amounts?.[0]?.amount ??
+      (typeof rawSubtotal === 'number' &&
+      typeof rawAmountDue === 'number' &&
+      typeof rawTax === 'number'
+        ? Math.max(0, rawSubtotal + rawTax - rawAmountDue)
+        : undefined);
+
+    const promoCodeId =
+      typeof body.promoCodeId === 'string' && body.promoCodeId.trim()
+        ? body.promoCodeId.trim()
+        : typeof body.promotionCodeId === 'string' && body.promotionCodeId.trim()
+          ? body.promotionCodeId.trim()
+          : null;
+    const promoCodeName =
+      typeof body.promoCodeName === 'string' && body.promoCodeName.trim()
+        ? body.promoCodeName.trim()
+        : typeof body.promotionName === 'string' && body.promotionName.trim()
+          ? body.promotionName.trim()
+          : typeof body.name === 'string' && body.name.trim()
+            ? body.name.trim()
+            : cleanPromoCode;
+
+    const rawDuration = body.couponDuration ?? body.duration ?? null;
+    const couponDuration: CouponDurationType | null =
+      rawDuration === 'once' || rawDuration === 'repeating' || rawDuration === 'forever'
+        ? rawDuration
+        : null;
+    const rawDurationMonths = body.couponDurationInMonths ?? body.durationInMonths ?? null;
+    const couponDurationInMonths =
+      typeof rawDurationMonths === 'number' && Number.isFinite(rawDurationMonths) && rawDurationMonths > 0
+        ? rawDurationMonths
+        : null;
+
+    // CRITICAL REQUIREMENT:
+    // Never treat a local calculation or a bare percentOff/amountOff response as sufficient proof of the amount due.
+    const hasAuthoritativeAmounts =
+      typeof rawSubtotal === 'number' &&
+      Number.isFinite(rawSubtotal) &&
+      rawSubtotal >= 0 &&
+      typeof rawDiscount === 'number' &&
+      Number.isFinite(rawDiscount) &&
+      rawDiscount >= 0 &&
+      typeof rawTax === 'number' &&
+      Number.isFinite(rawTax) &&
+      rawTax >= 0 &&
+      typeof rawAmountDue === 'number' &&
+      Number.isFinite(rawAmountDue) &&
+      rawAmountDue >= 0;
+
+    const expectedMathAmountDue = hasAuthoritativeAmounts
+      ? Math.max(0, rawSubtotal - rawDiscount + rawTax)
+      : -1;
+
+    const isMathConsistent =
+      hasAuthoritativeAmounts && Math.abs(rawAmountDue - expectedMathAmountDue) <= 1;
+
+    const isPromoVerified = !cleanPromoCode || (
+      Boolean(promoCodeId && promoCodeId.startsWith('promo_')) &&
+      (rawDiscount > 0 || rawAmountDue < rawSubtotal)
+    );
+
+    if (
+      body.error === true ||
+      body.verified === false ||
+      !verificationRef ||
+      !hasAuthoritativeAmounts ||
+      !isMathConsistent ||
+      returnedPriceId !== cleanPriceId ||
+      !isPromoVerified
+    ) {
+      if (cleanPromoCode) {
+        this.auditService.record('promotion_validation_failed', {
+          priceId: cleanPriceId,
+          promotionCode: cleanPromoCode,
+          promotionCodeId: promoCodeId,
+          customerRef: request.customerRef ?? null,
+          businessRef: request.businessRef ?? null,
+          reason: 'MISSING_AUTHORITATIVE_INVOICE_PREVIEW',
+        });
+      }
+      return this.buildUnavailablePreviewResult(
+        request,
+        cleanPromoCode,
+        rawErrorCode || 'VERIFICATION_UNAVAILABLE',
+        {
+          promoCodeId,
+          promoCodeName,
+          couponDuration,
+          couponDurationInMonths,
+        },
+      );
+    }
+
+    const currency = String(body.currency ?? invoiceObj?.currency ?? defaultCurrency).toLowerCase();
+    const interval = String(body.interval ?? body.renewalInterval ?? defaultInterval);
+    const expiresAt =
+      typeof body.expiresAt === 'number' && Number.isFinite(body.expiresAt)
+        ? body.expiresAt
+        : Date.now() + 10 * 60 * 1000;
+
+    // Renewal disclosure: only populate renewalAmount when authoritative billing data establishes it
+    let renewalAmount: number | null = null;
+    if (typeof body.renewalAmount === 'number' && Number.isFinite(body.renewalAmount) && body.renewalAmount >= 0) {
+      renewalAmount = body.renewalAmount;
+    } else if (!cleanPromoCode) {
+      renewalAmount = rawSubtotal;
+    } else if (couponDuration === 'forever') {
+      renewalAmount = rawAmountDue;
+    } else if (
+      couponDuration === 'once' ||
+      (couponDuration === 'repeating' && couponDurationInMonths !== null)
+    ) {
+      renewalAmount = rawSubtotal;
+    }
+
+    if (cleanPromoCode) {
+      this.auditService.record('promotion_validation_succeeded', {
+        priceId: cleanPriceId,
+        promotionCode: cleanPromoCode,
+        promotionCodeId: promoCodeId,
+        verificationReference: verificationRef,
+        currency,
+        discountAmount: rawDiscount,
+        approvedAmount: rawAmountDue,
+        customerRef: request.customerRef ?? null,
+        businessRef: request.businessRef ?? null,
+      });
+    }
+
+    this.auditService.record('invoice_preview_created', {
+      priceId: cleanPriceId,
+      promotionCode: cleanPromoCode,
+      promotionCodeId: promoCodeId,
+      verificationReference: verificationRef,
+      currency,
+      approvedAmount: rawAmountDue,
+      discountAmount: rawDiscount,
+      customerRef: request.customerRef ?? null,
+      businessRef: request.businessRef ?? null,
+    });
+
+    this.auditService.record('amount_displayed_for_approval', {
+      priceId: cleanPriceId,
+      promotionCode: cleanPromoCode,
+      promotionCodeId: promoCodeId,
+      verificationReference: verificationRef,
+      currency,
+      approvedAmount: rawAmountDue,
+      discountAmount: rawDiscount,
+      customerRef: request.customerRef ?? null,
+      businessRef: request.businessRef ?? null,
+    });
+
+    return {
+      verified: true,
+      verificationStatus: 'verified',
+      couponState: cleanPromoCode ? 'verified_applied' : 'not_applied',
+      verificationReference: verificationRef,
+      priceId: cleanPriceId,
+      planName: String(body.planName || defaultPlanName),
+      interval,
+      currency,
+      subtotal: rawSubtotal,
+      discountAmount: rawDiscount,
+      tax: rawTax,
+      amountDueToday: rawAmountDue,
+      renewalAmount,
+      renewalInterval: interval,
+      promoCode: cleanPromoCode,
+      promoCodeId,
+      promoCodeName: cleanPromoCode ? promoCodeName : null,
+      couponDuration: cleanPromoCode ? couponDuration : null,
+      couponDurationInMonths: cleanPromoCode ? couponDurationInMonths : null,
+      expiresAt,
+      errorCode: null,
+      message: null,
+    };
+  }
+
+  async createVerifiedSubscription(
+    request: VerifiedCreateSubscriptionRequest,
+  ): Promise<VerifiedCreateSubscriptionResult> {
+    const cleanPriceId = (request.priceId ?? '').trim();
+    if (!cleanPriceId || !cleanPriceId.startsWith('price_')) {
+      throw new Error('Invalid plan selection. Please select an active plan.');
+    }
+
+    const verificationRef = (request.verificationReference ?? '').trim();
+    const approvedCurrency = (request.approvedCurrency ?? '').trim().toLowerCase();
+    const approvedAmountDue = request.approvedAmountDue;
+    const cleanPromoId = request.promotionCodeId ? request.promotionCodeId.trim() : null;
+
+    if (
+      !verificationRef ||
+      typeof approvedAmountDue !== 'number' ||
+      !Number.isFinite(approvedAmountDue) ||
+      approvedAmountDue < 0 ||
+      !approvedCurrency
+    ) {
+      this.auditService.record('amount_mismatch_blocked', {
+        priceId: cleanPriceId,
+        promotionCodeId: cleanPromoId,
+        verificationReference: verificationRef || null,
+        approvedAmount: Number.isFinite(approvedAmountDue) ? approvedAmountDue : null,
+        currency: approvedCurrency || null,
+        customerRef: request.customerRef ?? null,
+        businessRef: request.businessRef ?? null,
+        reason: 'UNVERIFIED_CHECKOUT',
+      });
+      throw new CheckoutChargeProtectionError(
+        'UNVERIFIED_CHECKOUT',
+        'Checkout price must be verified with Stripe before creating a subscription.',
+        { approvedAmount: approvedAmountDue, currency: approvedCurrency },
+      );
+    }
+
+    if (
+      typeof request.expiresAt === 'number' &&
+      Number.isFinite(request.expiresAt) &&
+      Date.now() > request.expiresAt
+    ) {
+      this.auditService.record('amount_mismatch_blocked', {
+        priceId: cleanPriceId,
+        promotionCodeId: cleanPromoId,
+        verificationReference: verificationRef,
+        approvedAmount: approvedAmountDue,
+        currency: approvedCurrency,
+        customerRef: request.customerRef ?? null,
+        businessRef: request.businessRef ?? null,
+        reason: 'VERIFICATION_EXPIRED',
+      });
+      throw new CheckoutChargeProtectionError(
+        'VERIFICATION_EXPIRED',
+        'Price verification has expired. Please review the updated total before continuing.',
+        { approvedAmount: approvedAmountDue, currency: approvedCurrency },
+      );
+    }
+
+    const checkoutApiUrl = runtimeConfig.checkoutApiBaseUrl;
+    if (!checkoutApiUrl) {
+      throw new Error('Verified checkout API is not configured.');
+    }
+
+    const lockKey = `${request.email}:${cleanPriceId}:${cleanPromoId ?? 'none'}:${approvedAmountDue}:${verificationRef}`;
+    const existing = this.inFlightVerifiedSubscriptions.get(lockKey);
+    if (existing) {
+      return existing;
+    }
+
+    const idempotencyKey =
+      (request.idempotencyKey && request.idempotencyKey.trim()) ||
+      `sub_${verificationRef}_${cleanPriceId}_${cleanPromoId ?? 'nopromo'}_${approvedAmountDue}`;
+
+    const execution = (async (): Promise<VerifiedCreateSubscriptionResult> => {
+      this.auditService.record('subscription_creation_attempted', {
+        priceId: cleanPriceId,
+        promotionCodeId: cleanPromoId,
+        verificationReference: verificationRef,
+        approvedAmount: approvedAmountDue,
+        currency: approvedCurrency,
+        customerRef: request.customerRef ?? null,
+        businessRef: request.businessRef ?? null,
+      });
+
+      const data = await this.checkoutApiPost('create-subscription', {
+        email: request.email,
+        name: request.name,
+        priceId: cleanPriceId,
+        promotionCode: cleanPromoId,
+        promotionCodeId: cleanPromoId,
+        verificationReference: verificationRef,
+        approvedAmountDue,
+        approvedCurrency,
+        paymentMethodId: request.paymentMethodId ?? null,
+        idempotencyKey,
+      });
+
+      const result =
+        data?.extract_result ??
+        data?.extract_result_existing ??
+        data?.extract_sub_error_new ??
+        data?.extract_sub_error_existing ??
+        data?.data ??
+        data;
+
+      const subscriptionId =
+        typeof result?.subscriptionId === 'string' && result.subscriptionId.trim()
+          ? result.subscriptionId.trim()
+          : '';
+      const invoiceObj = result?.latestInvoice ?? result?.latest_invoice ?? result?.invoice ?? null;
+      const invoiceId =
+        typeof result?.invoiceId === 'string' && result.invoiceId.trim()
+          ? result.invoiceId.trim()
+          : typeof invoiceObj?.id === 'string' && invoiceObj.id.trim()
+            ? invoiceObj.id.trim()
+            : null;
+
+      const serverCode =
+        typeof result?.errorCode === 'string'
+          ? result.errorCode
+          : typeof result?.code === 'string'
+            ? result.code
+            : null;
+
+      // Check if isolated server explicitly blocked or aborted checkout
+      if (
+        result?.aborted === true ||
+        result?.blocked === true ||
+        result?.mismatchBlocked === true ||
+        serverCode === 'AMOUNT_MISMATCH_BLOCKED' ||
+        serverCode === 'AMOUNT_EXCEEDS_APPROVED' ||
+        serverCode === 'AMOUNT_CHANGED_AFTER_APPROVAL' ||
+        serverCode === 'PRICE_CHANGED_AFTER_APPROVAL' ||
+        serverCode === 'ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED' ||
+        serverCode === 'UNEXPECTED_PRE_VERIFICATION_CHARGE' ||
+        serverCode === 'PROMOTION_NOT_APPLIED_ON_INVOICE' ||
+        serverCode === 'PROMOTION_CHANGED_AFTER_APPROVAL' ||
+        serverCode === 'PROMOTION_NO_LONGER_ELIGIBLE' ||
+        serverCode === 'EXPIRED_VERIFICATION_REFERENCE' ||
+        serverCode === 'TAMPERED_VERIFICATION_REFERENCE' ||
+        serverCode === 'CURRENCY_MISMATCH' ||
+        serverCode === 'UNVERIFIED_FIRST_INVOICE_AMOUNT'
+      ) {
+        const reportedActual =
+          result?.actualAmountDue ?? result?.invoiceAmountDue ?? invoiceObj?.amount_due ?? null;
+
+        let mappedProtectionCode: CheckoutProtectionErrorCode = 'AMOUNT_MISMATCH_BLOCKED';
+        if (serverCode === 'UNEXPECTED_PRE_VERIFICATION_CHARGE') {
+          mappedProtectionCode = 'UNEXPECTED_PRE_VERIFICATION_CHARGE';
+        } else if (serverCode === 'ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED') {
+          mappedProtectionCode = 'UNEXPECTED_PAYMENT_INTENT_FOR_FREE_CHECKOUT';
+        } else if (serverCode === 'EXPIRED_VERIFICATION_REFERENCE') {
+          mappedProtectionCode = 'VERIFICATION_EXPIRED';
+        } else if (serverCode === 'TAMPERED_VERIFICATION_REFERENCE' || serverCode === 'MISSING_VERIFICATION_FIELDS') {
+          mappedProtectionCode = 'UNVERIFIED_CHECKOUT';
+        } else if (
+          serverCode === 'PROMOTION_NOT_APPLIED_ON_INVOICE' ||
+          serverCode === 'PROMOTION_CHANGED_AFTER_APPROVAL' ||
+          serverCode === 'PROMOTION_NO_LONGER_ELIGIBLE'
+        ) {
+          mappedProtectionCode = 'PROMO_NOT_APPLIED';
+        } else if (serverCode === 'CURRENCY_MISMATCH') {
+          mappedProtectionCode = 'CURRENCY_MISMATCH_BLOCKED';
+        } else if (serverCode === 'UNVERIFIED_FIRST_INVOICE_AMOUNT') {
+          mappedProtectionCode = 'MISSING_INVOICE_VERIFICATION';
+        }
+
+        const serverMessage =
+          (typeof result?.error === 'string' && result.error) ||
+          (typeof result?.message === 'string' && result.message) ||
+          (serverCode === 'UNEXPECTED_PRE_VERIFICATION_CHARGE'
+            ? 'We detected an unexpected payment state while verifying your subscription. Please do not submit payment again — contact VAMO support so our team can review your billing account.'
+            : 'The invoice total returned by Stripe did not match the approved checkout amount. No payment was collected.');
+
+        this.auditService.record('amount_mismatch_blocked', {
+          priceId: cleanPriceId,
+          promotionCodeId: cleanPromoId,
+          verificationReference: verificationRef,
+          subscriptionId: subscriptionId || null,
+          invoiceId,
+          approvedAmount: approvedAmountDue,
+          actualAmount: typeof reportedActual === 'number' ? reportedActual : null,
+          currency: approvedCurrency,
+          customerRef: request.customerRef ?? null,
+          businessRef: request.businessRef ?? null,
+          reason: serverCode || serverMessage,
+        });
+
+        // For non-protection business errors (like EXISTING_ACTIVE_SUBSCRIPTION or DUPLICATE_CHECKOUT_SUBMISSION), throw standard Error
+        if (
+          serverCode &&
+          ![
+            'AMOUNT_MISMATCH_BLOCKED',
+            'AMOUNT_EXCEEDS_APPROVED',
+            'AMOUNT_CHANGED_AFTER_APPROVAL',
+            'PRICE_CHANGED_AFTER_APPROVAL',
+            'ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED',
+            'UNEXPECTED_PRE_VERIFICATION_CHARGE',
+            'PROMOTION_NOT_APPLIED_ON_INVOICE',
+            'PROMOTION_CHANGED_AFTER_APPROVAL',
+            'PROMOTION_NO_LONGER_ELIGIBLE',
+            'EXPIRED_VERIFICATION_REFERENCE',
+            'TAMPERED_VERIFICATION_REFERENCE',
+            'MISSING_VERIFICATION_FIELDS',
+            'CURRENCY_MISMATCH',
+            'UNVERIFIED_FIRST_INVOICE_AMOUNT',
+          ].includes(serverCode) &&
+          result?.mismatchBlocked !== true
+        ) {
+          const businessErr: any = new Error(serverMessage);
+          businessErr.code = serverCode;
+          throw businessErr;
+        }
+
+        throw new CheckoutChargeProtectionError(mappedProtectionCode, serverMessage, {
+          approvedAmount: approvedAmountDue,
+          actualAmount: typeof reportedActual === 'number' ? reportedActual : null,
+          currency: approvedCurrency,
+        });
+      }
+
+      if (result?.stripeError || result?.error === true || (typeof result?.error === 'string' && result.error)) {
+        throw new Error(
+          result?.stripeError ||
+            (typeof result?.error === 'string' ? result.error : null) ||
+            result?.message ||
+            'Could not create subscription.',
+        );
+      }
+
+      const clientSecret =
+        typeof result?.clientSecret === 'string' && result.clientSecret.trim()
+          ? result.clientSecret.trim()
+          : null;
+      const requiresSetup = Boolean(result?.requiresSetup);
+
+      const rawActualAmount =
+        result?.invoiceAmountDue ??
+        result?.amountDueToday ??
+        result?.amountDue ??
+        result?.amount_due ??
+        invoiceObj?.amount_due ??
+        result?.paymentIntentAmount ??
+        result?.payment_intent?.amount;
+
+      const actualCurrency = String(
+        result?.invoiceCurrency ??
+          result?.currency ??
+          invoiceObj?.currency ??
+          approvedCurrency,
+      ).toLowerCase();
+
+      const appliedPromoId =
+        typeof result?.appliedPromotionCodeId === 'string' && result.appliedPromotionCodeId.trim()
+          ? result.appliedPromotionCodeId.trim()
+          : typeof result?.promotionCodeId === 'string' && result.promotionCodeId.trim()
+            ? result.promotionCodeId.trim()
+            : typeof invoiceObj?.discount?.promotion_code === 'string'
+              ? invoiceObj.discount.promotion_code.trim()
+              : null;
+
+      const abortClientSideHardStop = async (
+        code: CheckoutProtectionErrorCode,
+        reason: string,
+        actualAmount: number | null,
+      ): Promise<never> => {
+        this.auditService.record('amount_mismatch_blocked', {
+          priceId: cleanPriceId,
+          promotionCodeId: cleanPromoId,
+          verificationReference: verificationRef,
+          subscriptionId: subscriptionId || null,
+          invoiceId,
+          approvedAmount: approvedAmountDue,
+          actualAmount,
+          currency: actualCurrency,
+          customerRef: request.customerRef ?? null,
+          businessRef: request.businessRef ?? null,
+          reason,
+        });
+
+        throw new CheckoutChargeProtectionError(
+          code,
+          'The invoice total returned by Stripe did not match the approved checkout amount. Checkout was stopped before collecting payment.',
+          {
+            approvedAmount: approvedAmountDue,
+            actualAmount,
+            currency: actualCurrency,
+          },
+        );
+      };
+
+      // HARD STOP 1: Customer approved $0.00, but backend returned a chargeable PaymentIntent (pi_...)
+      // or requiresSetup === false with a non-SetupIntent secret!
+      if (approvedAmountDue === 0) {
+        if (
+          (clientSecret && clientSecret.startsWith('pi_')) ||
+          (clientSecret && !clientSecret.startsWith('seti_') && !requiresSetup)
+        ) {
+          const suspectedAmount =
+            typeof rawActualAmount === 'number' && Number.isFinite(rawActualAmount)
+              ? rawActualAmount
+              : null;
+          return await abortClientSideHardStop(
+            'UNEXPECTED_PAYMENT_INTENT_FOR_FREE_CHECKOUT',
+            'Chargeable PaymentIntent returned for a $0.00 approved checkout',
+            suspectedAmount,
+          );
+        }
+      }
+
+      // HARD STOP 2: Require authoritative first-invoice amount from the backend
+      if (typeof rawActualAmount !== 'number' || !Number.isFinite(rawActualAmount) || rawActualAmount < 0) {
+        return await abortClientSideHardStop(
+          'MISSING_INVOICE_VERIFICATION',
+          'Subscription response omitted authoritative first-invoice amount_due verification',
+          null,
+        );
+      }
+
+      // HARD STOP 3: Actual first-invoice amount exceeds customer-approved amount, or > 0 when $0.00 was approved
+      if (rawActualAmount > approvedAmountDue || (approvedAmountDue === 0 && rawActualAmount > 0)) {
+        return await abortClientSideHardStop(
+          'AMOUNT_MISMATCH_BLOCKED',
+          `First invoice amount (${rawActualAmount}) exceeded customer-approved amount (${approvedAmountDue})`,
+          rawActualAmount,
+        );
+      }
+
+      // HARD STOP 4: Currency mismatch
+      if (actualCurrency !== approvedCurrency) {
+        return await abortClientSideHardStop(
+          'CURRENCY_MISMATCH_BLOCKED',
+          `Invoice currency (${actualCurrency}) did not match approved currency (${approvedCurrency})`,
+          rawActualAmount,
+        );
+      }
+
+      // HARD STOP 5: Promotion code was approved, but backend indicates discount was not applied or applied a different promo
+      if (cleanPromoId) {
+        if (
+          result?.discountApplied === false ||
+          !appliedPromoId ||
+          appliedPromoId !== cleanPromoId
+        ) {
+          return await abortClientSideHardStop(
+            'PROMO_NOT_APPLIED',
+            `Expected promotion code ${cleanPromoId} was not verified on the first invoice`,
+            rawActualAmount,
+          );
+        }
+      }
+
+      const invoiceSubtotal =
+        typeof result?.invoiceSubtotal === 'number' && Number.isFinite(result.invoiceSubtotal)
+          ? result.invoiceSubtotal
+          : typeof invoiceObj?.subtotal === 'number'
+            ? invoiceObj.subtotal
+            : rawActualAmount;
+      const invoiceDiscountAmount =
+        typeof result?.invoiceDiscountAmount === 'number' && Number.isFinite(result.invoiceDiscountAmount)
+          ? result.invoiceDiscountAmount
+          : typeof invoiceObj?.total_discount_amounts?.[0]?.amount === 'number'
+            ? invoiceObj.total_discount_amounts[0].amount
+            : Math.max(0, invoiceSubtotal - rawActualAmount);
+      const invoiceTax =
+        typeof result?.invoiceTax === 'number' && Number.isFinite(result.invoiceTax)
+          ? result.invoiceTax
+          : typeof invoiceObj?.tax === 'number'
+            ? invoiceObj.tax
+            : 0;
+
+      this.auditService.record('first_invoice_verified', {
+        priceId: cleanPriceId,
+        promotionCodeId: cleanPromoId,
+        verificationReference: verificationRef,
+        subscriptionId: subscriptionId || null,
+        invoiceId,
+        approvedAmount: approvedAmountDue,
+        actualAmount: rawActualAmount,
+        discountAmount: invoiceDiscountAmount,
+        currency: actualCurrency,
+        customerRef: request.customerRef ?? null,
+        businessRef: request.businessRef ?? null,
+      });
+
+      return {
+        clientSecret,
+        subscriptionId,
+        requiresSetup,
+        invoiceId,
+        invoiceAmountDue: rawActualAmount,
+        invoiceSubtotal,
+        invoiceDiscountAmount,
+        invoiceTax,
+        invoiceCurrency: actualCurrency,
+        appliedPromotionCodeId: appliedPromoId,
+        verifiedByServer: true,
+      };
+    })();
+
+    this.inFlightVerifiedSubscriptions.set(lockKey, execution);
+    try {
+      return await execution;
+    } finally {
+      this.inFlightVerifiedSubscriptions.delete(lockKey);
+    }
+  }
+
+  recordPaymentOutcome(
+    outcome: 'succeeded' | 'failed',
+    details: {
+      priceId?: string | null;
+      promotionCodeId?: string | null;
+      verificationReference?: string | null;
+      subscriptionId?: string | null;
+      invoiceId?: string | null;
+      approvedAmount?: number | null;
+      actualAmount?: number | null;
+      currency?: string | null;
+      customerRef?: string | null;
+      businessRef?: string | null;
+      reason?: string | null;
+    },
+  ): void {
+    this.auditService.record(
+      outcome === 'succeeded' ? 'payment_succeeded' : 'payment_failed',
+      details,
+    );
   }
 
   async createSubscription(
@@ -1566,6 +2625,16 @@ export class StripeService {
       currency: (currency || 'usd').toUpperCase(),
       minimumFractionDigits: 0,
     }).format(amount / 100);
+  }
+
+  formatExactPrice(amount: number, currency: string): string {
+    const safeAmount = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: (currency || 'usd').toUpperCase(),
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(safeAmount / 100);
   }
 
   cleanup(): void {

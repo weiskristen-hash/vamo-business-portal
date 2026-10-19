@@ -2,6 +2,7 @@ import { environment } from '../../../environments/environment';
 
 export interface RuntimeConfig {
   directusUrl: string;
+  checkoutApiBaseUrl: string;
   googleClientId: string;
   googleSignInFlow: string;
   stripePublishableKey: string;
@@ -66,9 +67,14 @@ const windowConfig = (typeof window !== 'undefined' ? (window as any).__VAMO_CON
 function buildInitialConfig(overrides: Record<string, any> = {}): RuntimeConfig {
   const resolvedDirectusUrl = stripTrailingSlash(overrides['directusUrl'] || environment.directusUrl);
   const isDevHost = isDevelopmentDirectusUrl(resolvedDirectusUrl);
+  const rawCheckoutUrl =
+    overrides['checkoutApiBaseUrl'] ??
+    (environment as any).checkoutApiBaseUrl ??
+    '/api/checkout';
 
   return {
     directusUrl: resolvedDirectusUrl,
+    checkoutApiBaseUrl: typeof rawCheckoutUrl === 'string' ? stripTrailingSlash(rawCheckoutUrl.trim()) : '/api/checkout',
     googleClientId:
       overrides['googleClientId'] ||
       (environment as any).googleClientId ||
@@ -129,6 +135,9 @@ let currentConfig: RuntimeConfig = buildInitialConfig(windowConfig);
 export const runtimeConfig = {
   get directusUrl(): string {
     return currentConfig.directusUrl;
+  },
+  get checkoutApiBaseUrl(): string {
+    return currentConfig.checkoutApiBaseUrl;
   },
   get googleClientId(): string {
     return currentConfig.googleClientId;

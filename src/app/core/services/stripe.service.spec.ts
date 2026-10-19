@@ -1016,6 +1016,284 @@ describe('StripeService', () => {
       expect(runtimeConfig.stripeSetDefaultPaymentMethodFlow).toBe('');
     });
   });
+
+  describe('Verified Stripe Checkout & Charge Protection (Isolated Portal Checkout Backend)', () => {
+    beforeEach(() => {
+      runtimeConfig.updateConfig({
+        checkoutApiBaseUrl: '/api/checkout',
+        stripeValidatePromoFlow: 'flow-validate-promo',
+        stripeCreateSubscriptionFlow: 'flow-create-sub',
+        stripeCancelSubscriptionFlow: 'flow-cancel-sub',
+      });
+    });
+
+    it('previewSubscriptionCheckout calls isolated /api/checkout/preview and never invokes Directus flowPost', async () => {
+      const flowSpy = vi.spyOn(service, 'flowPost');
+      const apiSpy = vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
+        verified: true,
+        priceId: 'price_basic_59',
+        planName: 'Basic Plan',
+        interval: 'month',
+        currency: 'usd',
+        subtotal: 5900,
+        discountAmount: 5900,
+        tax: 0,
+        amountDueToday: 0,
+        renewalAmount: 5900,
+        promoCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        promoCodeName: 'LT Founders club',
+        couponDuration: 'repeating',
+        couponDurationInMonths: 3,
+        verificationReference: 'vref_2_valid_zero_5900',
+      });
+
+      const preview = await service.previewSubscriptionCheckout({
+        customerEmail: 'adminapple@admin.com',
+        priceId: 'price_basic_59',
+        planAmount: 5900,
+        promotionCode: 'FOUNDERS90',
+      });
+
+      expect(flowSpy).not.toHaveBeenCalled();
+      expect(apiSpy).toHaveBeenCalledWith('preview', {
+        priceId: 'price_basic_59',
+        promotionCode: 'FOUNDERS90',
+        promotionCodeId: null,
+        email: 'adminapple@admin.com',
+      });
+      expect(preview.verified).toBe(true);
+      expect(preview.verificationStatus).toBe('verified');
+      expect(preview.couponState).toBe('verified_applied');
+      expect(preview.subtotal).toBe(5900);
+      expect(preview.discountAmount).toBe(5900);
+      expect(preview.amountDueToday).toBe(0);
+      expect(preview.renewalAmount).toBe(5900);
+      expect(preview.couponDuration).toBe('repeating');
+      expect(preview.couponDurationInMonths).toBe(3);
+      expect(preview.verificationReference).toBe('vref_2_valid_zero_5900');
+    });
+
+    it('previewSubscriptionCheckout returns verified preview for valid partial coupon (e.g. $20 off)', async () => {
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
+        verified: true,
+        priceId: 'price_basic_59',
+        planName: 'Basic Plan',
+        interval: 'month',
+        currency: 'usd',
+        subtotal: 5900,
+        discountAmount: 2000,
+        tax: 0,
+        amountDueToday: 3900,
+        renewalAmount: 5900,
+        promoCodeId: 'promo_save20',
+        promoCodeName: '$20 Off First Month',
+        couponDuration: 'once',
+        verificationReference: 'vref_2_partial_3900',
+      });
+
+      const preview = await service.previewSubscriptionCheckout({
+        customerEmail: 'sofia@restaurant.com',
+        priceId: 'price_basic_59',
+        planAmount: 5900,
+        promotionCode: 'SAVE20',
+      });
+
+      expect(preview.verified).toBe(true);
+      expect(preview.couponState).toBe('verified_applied');
+      expect(preview.amountDueToday).toBe(3900);
+      expect(preview.discountAmount).toBe(2000);
+      expect(preview.couponDuration).toBe('once');
+    });
+
+    it('previewSubscriptionCheckout never accepts bare coupon metadata without an authoritative invoice preview total', async () => {
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
+        valid: true,
+        promoCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        name: 'LT Founders club',
+        percentOff: 100,
+        duration: 'repeating',
+        durationInMonths: 3,
+      });
+
+      const preview = await service.previewSubscriptionCheckout({
+        customerEmail: 'adminapple@admin.com',
+        priceId: 'price_basic_59',
+        planAmount: 5900,
+        promotionCode: 'FOUNDERS90',
+      });
+
+      expect(preview.verified).toBe(false);
+      expect(preview.verificationStatus).toBe('unavailable');
+      expect(preview.couponState).toBe('verification_unavailable');
+      expect(preview.verificationReference).toBeNull();
+    });
+
+    it('previewSubscriptionCheckout marks expired, exhausted, customer-restricted, or product-ineligible coupons as invalid_or_ineligible', async () => {
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
+        verified: false,
+        couponState: 'invalid_or_ineligible',
+        code: 'PROMOTION_EXPIRED',
+        priceId: 'price_basic_59',
+      });
+
+      const preview = await service.previewSubscriptionCheckout({
+        customerEmail: 'sofia@restaurant.com',
+        priceId: 'price_basic_59',
+        planAmount: 5900,
+        promotionCode: 'EXPIRED99',
+      });
+
+      expect(preview.verified).toBe(false);
+      expect(preview.couponState).toBe('invalid_or_ineligible');
+    });
+
+    it('CRITICAL ACCEPTANCE TEST: Given a customer who approved a $0.00 checkout, if subscription creation produces a $59 invoice or chargeable PaymentIntent, checkout stops immediately without collecting $59 and never touches Directus Flows', async () => {
+      const flowSpy = vi.spyOn(service, 'flowPost');
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
+        aborted: true,
+        blocked: true,
+        code: 'ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED',
+        error: 'Customer approved $0.00 due today, but Stripe generated a payable invoice or PaymentIntent.',
+        subscriptionId: 'sub_oct19_incident',
+        clientSecret: null,
+        requiresSetup: false,
+        invoiceAmountDue: 5900,
+        invoiceCurrency: 'usd',
+        appliedPromotionCodeId: null,
+        discountApplied: false,
+      });
+
+      await expect(
+        service.createVerifiedSubscription({
+          email: 'adminapple@admin.com',
+          name: 'Admin Apple',
+          priceId: 'price_basic_59',
+          promotionCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+          approvedAmountDue: 0,
+          approvedCurrency: 'usd',
+          verificationReference: 'vref_2_approved_zero',
+        })
+      ).rejects.toMatchObject({
+        name: 'CheckoutChargeProtectionError',
+        code: 'UNEXPECTED_PAYMENT_INTENT_FOR_FREE_CHECKOUT',
+        approvedAmount: 0,
+        actualAmount: 5900,
+      });
+
+      expect(flowSpy).not.toHaveBeenCalled();
+    });
+
+    it('createVerifiedSubscription blocks when first invoice amount exceeds approved amount (e.g. approved $29.50, invoice is $59.00)', async () => {
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
+        aborted: true,
+        blocked: true,
+        code: 'AMOUNT_EXCEEDS_APPROVED',
+        subscriptionId: 'sub_mismatch_1',
+        clientSecret: null,
+        requiresSetup: false,
+        invoiceAmountDue: 5900,
+        invoiceCurrency: 'usd',
+        appliedPromotionCodeId: null,
+        discountApplied: false,
+      });
+
+      await expect(
+        service.createVerifiedSubscription({
+          email: 'sofia@restaurant.com',
+          name: 'Sofia',
+          priceId: 'price_basic_59',
+          promotionCodeId: 'promo_half_off',
+          approvedAmountDue: 2950,
+          approvedCurrency: 'usd',
+          verificationReference: 'vref_2_approved_2950',
+        })
+      ).rejects.toMatchObject({
+        name: 'CheckoutChargeProtectionError',
+        code: 'AMOUNT_MISMATCH_BLOCKED',
+        approvedAmount: 2950,
+        actualAmount: 5900,
+      });
+    });
+
+    it('createVerifiedSubscription blocks when backend omits authoritative first-invoice amountDue', async () => {
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
+        subscriptionId: 'sub_legacy_1',
+        clientSecret: 'pi_3Legacy_secret_xyz',
+        requiresSetup: false,
+      });
+
+      await expect(
+        service.createVerifiedSubscription({
+          email: 'sofia@restaurant.com',
+          name: 'Sofia',
+          priceId: 'price_basic_59',
+          promotionCodeId: null,
+          approvedAmountDue: 5900,
+          approvedCurrency: 'usd',
+          verificationReference: 'vref_2_approved_5900',
+        })
+      ).rejects.toMatchObject({
+        name: 'CheckoutChargeProtectionError',
+        code: 'MISSING_INVOICE_VERIFICATION',
+      });
+    });
+
+    it('createVerifiedSubscription blocks on currency mismatch between approved preview and first invoice', async () => {
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
+        subscriptionId: 'sub_curr_1',
+        clientSecret: 'pi_3Curr_secret_xyz',
+        requiresSetup: false,
+        invoiceAmountDue: 5900,
+        invoiceCurrency: 'eur',
+      });
+
+      await expect(
+        service.createVerifiedSubscription({
+          email: 'sofia@restaurant.com',
+          name: 'Sofia',
+          priceId: 'price_basic_59',
+          promotionCodeId: null,
+          approvedAmountDue: 5900,
+          approvedCurrency: 'usd',
+          verificationReference: 'vref_2_approved_5900',
+        })
+      ).rejects.toMatchObject({
+        name: 'CheckoutChargeProtectionError',
+        code: 'CURRENCY_MISMATCH_BLOCKED',
+      });
+    });
+
+    it('createVerifiedSubscription allows verified $0.00 checkout when SetupIntent or null clientSecret is returned with invoiceAmountDue === 0 and appliedPromotionCodeId matching', async () => {
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
+        subscriptionId: 'sub_zero_ok',
+        clientSecret: 'seti_1ZeroOk_secret_safe',
+        requiresSetup: true,
+        invoiceAmountDue: 0,
+        invoiceSubtotal: 5900,
+        invoiceDiscountAmount: 5900,
+        invoiceCurrency: 'usd',
+        appliedPromotionCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        discountApplied: true,
+      });
+
+      const res = await service.createVerifiedSubscription({
+        email: 'adminapple@admin.com',
+        name: 'Admin Apple',
+        priceId: 'price_basic_59',
+        promotionCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        approvedAmountDue: 0,
+        approvedCurrency: 'usd',
+        verificationReference: 'vref_2_approved_zero',
+      });
+
+      expect(res.subscriptionId).toBe('sub_zero_ok');
+      expect(res.requiresSetup).toBe(true);
+      expect(res.invoiceAmountDue).toBe(0);
+      expect(res.appliedPromotionCodeId).toBe('promo_1UKiYz2aqrJCvAj3rpoKa3Kf');
+      expect(res.verifiedByServer).toBe(true);
+    });
+  });
 });
+
 
 

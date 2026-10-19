@@ -11,6 +11,8 @@ import {
   StripeSubscription,
   BillingHistoryItem,
   SavedPaymentMethod,
+  CheckoutChargeProtectionError,
+  CheckoutPreviewResult,
 } from '../../core/services/stripe.service';
 import {
   capturePromoCode,
@@ -1616,7 +1618,318 @@ describe('BillingComponent', () => {
     });
   });
 
+  describe('Verified Stripe Checkout & Charge Protection (Order Summary, Coupon States & Hard Stop)', () => {
+    const basic59Plan: StripePlan = {
+      id: 'price_basic_5900',
+      name: 'Basic Plan',
+      description: 'Up to 4 active posts',
+      amount: 5900,
+      currency: 'usd',
+      interval: 'month',
+      tier: 'basic',
+      maxPosts: 4,
+      features: ['Up to 4 active posts'],
+    };
+
+    const makeVerifiedPreview = (overrides: Partial<CheckoutPreviewResult> = {}): CheckoutPreviewResult => ({
+      verified: true,
+      verificationStatus: 'verified',
+      couponState: 'not_applied',
+      verificationReference: 'vref_1_basic_5900',
+      priceId: basic59Plan.id,
+      planName: basic59Plan.name,
+      interval: 'month',
+      currency: 'usd',
+      subtotal: 5900,
+      discountAmount: 0,
+      tax: 0,
+      amountDueToday: 5900,
+      renewalAmount: 5900,
+      renewalInterval: 'month',
+      promoCode: null,
+      promoCodeId: null,
+      promoCodeName: null,
+      couponDuration: null,
+      couponDurationInMonths: null,
+      expiresAt: Date.now() + 600_000,
+      errorCode: null,
+      message: null,
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      component.subscription.set(null);
+      component.subscriptionLoadError.set(false);
+      stripeServiceSpy.formatExactPrice = vi.fn((amount: number, currency: string) =>
+        StripeService.prototype.formatExactPrice(amount, currency)
+      );
+      stripeServiceSpy.recordPaymentOutcome = vi.fn();
+      stripeServiceSpy.previewSubscriptionCheckout = vi.fn().mockResolvedValue(makeVerifiedPreview());
+      stripeServiceSpy.createVerifiedSubscription = vi.fn().mockResolvedValue({
+        subscriptionId: 'sub_verified_1',
+        clientSecret: 'pi_verified_secret',
+        requiresSetup: false,
+        invoiceId: 'in_verified_1',
+        invoiceAmountDue: 5900,
+        invoiceSubtotal: 5900,
+        invoiceDiscountAmount: 0,
+        invoiceTax: 0,
+        invoiceCurrency: 'usd',
+        appliedPromotionCodeId: null,
+        verifiedByServer: true,
+      });
+    });
+
+    it('1. renders Order Summary with original price, verified discount, amount due today, renewal disclosure, and exact button label for 100% coupon ($0.00 due today)', async () => {
+      const zeroPreview = makeVerifiedPreview({
+        couponState: 'verified_applied',
+        discountAmount: 5900,
+        amountDueToday: 0,
+        renewalAmount: 5900,
+        promoCode: 'FOUNDERS90',
+        promoCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        promoCodeName: 'LT Founders club',
+        couponDuration: 'repeating',
+        couponDurationInMonths: 3,
+        verificationReference: 'vref_1_zero_5900',
+      });
+
+      stripeServiceSpy.previewSubscriptionCheckout
+        .mockResolvedValueOnce(makeVerifiedPreview()) // on selectPlan
+        .mockResolvedValueOnce(zeroPreview); // on applyPromoCode
+
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+      component.couponCode.set('FOUNDERS90');
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      expect(component.couponState()).toBe('verified_applied');
+      expect(component.checkoutVerificationStatus()).toBe('verified');
+
+      const summaryEl: HTMLElement = fixture.nativeElement.querySelector('.verified-order-summary');
+      expect(summaryEl).toBeTruthy();
+      expect(summaryEl.textContent).toContain('$59.00'); // Original price
+      expect(summaryEl.textContent).toContain('-$59.00'); // Verified discount
+      expect(summaryEl.textContent).toContain('$0.00'); // Amount due today
+      expect(summaryEl.textContent).toContain('Verified with Stripe');
+      expect(summaryEl.textContent).toContain('Discount applies for 3 month(s), then renews at $59.00 / month.');
+
+      const checkoutBtn: HTMLButtonElement = fixture.nativeElement.querySelector('.checkout-submit-btn');
+      expect(checkoutBtn).toBeTruthy();
+      expect(checkoutBtn.textContent?.trim()).toBe('Activate subscription — $0.00');
+    });
+
+    it('2. renders Order Summary and exact button label for valid partial coupon ($39.00 due today, once duration)', async () => {
+      const partialPreview = makeVerifiedPreview({
+        couponState: 'verified_applied',
+        discountAmount: 2000,
+        amountDueToday: 3900,
+        renewalAmount: 5900,
+        promoCode: 'SAVE20',
+        promoCodeId: 'promo_save20',
+        promoCodeName: 'SAVE20',
+        couponDuration: 'once',
+        verificationReference: 'vref_1_partial_3900',
+      });
+
+      stripeServiceSpy.previewSubscriptionCheckout
+        .mockResolvedValueOnce(makeVerifiedPreview())
+        .mockResolvedValueOnce(partialPreview);
+
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+      component.couponCode.set('SAVE20');
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      const summaryEl: HTMLElement = fixture.nativeElement.querySelector('.verified-order-summary');
+      expect(summaryEl.textContent).toContain('-$20.00');
+      expect(summaryEl.textContent).toContain('Discount applies to the first billing period only, then renews at $59.00 / month.');
+
+      const checkoutBtn: HTMLButtonElement = fixture.nativeElement.querySelector('.checkout-submit-btn');
+      expect(checkoutBtn.textContent?.trim()).toBe('Pay $39.00 and subscribe');
+    });
+
+    it('3. prefilled coupon (?promo=FOUNDERS90) never appears applied until server verification succeeds and shows unapplied hint', async () => {
+      capturePromoCode('FOUNDERS90');
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.couponCode()).toBe('FOUNDERS90');
+      expect(component.couponState()).toBe('not_applied');
+      expect(component.promoResult()).toBeNull();
+
+      const hintEl: HTMLElement = fixture.nativeElement.querySelector('.coupon-unapplied-hint');
+      expect(hintEl).toBeTruthy();
+      expect(hintEl.textContent).toContain('Click Apply to verify this promotion code with Stripe');
+
+      const checkoutBtn: HTMLButtonElement = fixture.nativeElement.querySelector('.checkout-submit-btn');
+      expect(checkoutBtn.textContent?.trim()).toBe('Pay $59.00 and subscribe');
+    });
+
+    it('4. changing coupon or switching plan invalidates prior verified discount total and requires recalculation', async () => {
+      const zeroPreview = makeVerifiedPreview({
+        couponState: 'verified_applied',
+        discountAmount: 5900,
+        amountDueToday: 0,
+        promoCode: 'FOUNDERS90',
+        promoCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        couponDuration: 'once',
+        verificationReference: 'vref_1_zero_5900',
+      });
+
+      stripeServiceSpy.previewSubscriptionCheckout
+        .mockResolvedValueOnce(makeVerifiedPreview())
+        .mockResolvedValueOnce(zeroPreview)
+        .mockResolvedValueOnce(makeVerifiedPreview());
+
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+      component.couponCode.set('FOUNDERS90');
+      await component.applyPromoCode();
+      expect(component.checkoutPreview()?.amountDueToday).toBe(0);
+      expect(component.couponState()).toBe('verified_applied');
+
+      // User edits coupon input -> invalidates applied discount and recalculates undiscounted total
+      component.onCouponCodeChange('OTHERCODE');
+      await fixture.whenStable();
+      expect(component.promoResult()).toBeNull();
+      expect(component.couponState()).toBe('not_applied');
+      expect(component.checkoutPreview()?.amountDueToday).toBe(5900);
+    });
+
+    it('5. CRITICAL ACCEPTANCE TEST: Given a customer who approved a $0.00 checkout, if subscription creation produces a $59 invoice, the checkout stops without collecting $59 (neither confirmWithSavedMethod nor mountPaymentElement is called)', async () => {
+      const zeroPreview = makeVerifiedPreview({
+        couponState: 'verified_applied',
+        discountAmount: 5900,
+        amountDueToday: 0,
+        promoCode: 'FOUNDERS90',
+        promoCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        couponDuration: 'repeating',
+        couponDurationInMonths: 3,
+        verificationReference: 'vref_1_zero_5900',
+      });
+
+      stripeServiceSpy.previewSubscriptionCheckout
+        .mockResolvedValueOnce(makeVerifiedPreview())
+        .mockResolvedValueOnce(zeroPreview);
+
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+      component.selectedSavedMethod.set(mockSavedMethods[0]); // Even with a saved card on file!
+      component.couponCode.set('FOUNDERS90');
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      expect(component.checkoutPreview()?.amountDueToday).toBe(0);
+
+      // Simulate createVerifiedSubscription throwing UNEXPECTED_PAYMENT_INTENT_FOR_FREE_CHECKOUT when backend produced a $59 invoice
+      stripeServiceSpy.createVerifiedSubscription.mockRejectedValueOnce(
+        new CheckoutChargeProtectionError(
+          'UNEXPECTED_PAYMENT_INTENT_FOR_FREE_CHECKOUT',
+          'Chargeable PaymentIntent returned for a $0.00 approved checkout',
+          {
+            approvedAmount: 0,
+            actualAmount: 5900,
+            currency: 'usd',
+          }
+        )
+      );
+
+      await component.proceedToPayment();
+      fixture.detectChanges();
+
+      // Payment must NEVER be confirmed or mounted
+      expect(stripeServiceSpy.confirmWithSavedMethod).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.confirmSetupWithSavedMethod).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.mountPaymentElement).not.toHaveBeenCalled();
+      expect(component.paymentActive()).toBe(false);
+      expect(component.clientSecret()).toBeNull();
+      expect(component.checkoutVerificationStatus()).toBe('mismatch_blocked');
+      expect(component.couponState()).toBe('expired_or_changed');
+      expect(component.errorMessage()).toBe(
+        'Checkout stopped for your protection: You approved a $0.00 checkout, but a chargeable invoice was generated. Your card was not charged.'
+      );
+    });
+
+    it('6. blocks payment when first invoice amount exceeds approved discounted amount ($39.00 approved vs $59.00 invoice)', async () => {
+      const partialPreview = makeVerifiedPreview({
+        couponState: 'verified_applied',
+        discountAmount: 2000,
+        amountDueToday: 3900,
+        promoCode: 'SAVE20',
+        promoCodeId: 'promo_save20',
+        verificationReference: 'vref_1_partial_3900',
+      });
+
+      stripeServiceSpy.previewSubscriptionCheckout.mockResolvedValue(partialPreview);
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+
+      stripeServiceSpy.createVerifiedSubscription.mockRejectedValueOnce(
+        new CheckoutChargeProtectionError(
+          'AMOUNT_MISMATCH_BLOCKED',
+          'Amount mismatch',
+          {
+            approvedAmount: 3900,
+            actualAmount: 5900,
+            currency: 'usd',
+          }
+        )
+      );
+
+      await component.proceedToPayment();
+      fixture.detectChanges();
+
+      expect(stripeServiceSpy.confirmWithSavedMethod).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.mountPaymentElement).not.toHaveBeenCalled();
+      expect(component.errorMessage()).toBe(
+        'Checkout stopped for your protection: Stripe returned an invoice total ($59.00) that did not match your approved total ($39.00). Your card was not charged.'
+      );
+    });
+
+    it('7. renders Spanish verified checkout labels, renewal disclosures, and charge protection errors accurately', async () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+
+      const zeroPreview = makeVerifiedPreview({
+        couponState: 'verified_applied',
+        discountAmount: 5900,
+        amountDueToday: 0,
+        renewalAmount: 5900,
+        promoCode: 'FOUNDERS90',
+        promoCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        couponDuration: 'repeating',
+        couponDurationInMonths: 3,
+        verificationReference: 'vref_1_zero_5900',
+      });
+
+      stripeServiceSpy.previewSubscriptionCheckout
+        .mockResolvedValueOnce(makeVerifiedPreview())
+        .mockResolvedValueOnce(zeroPreview);
+
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+      component.couponCode.set('FOUNDERS90');
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      const checkoutBtn: HTMLButtonElement = fixture.nativeElement.querySelector('.checkout-submit-btn');
+      expect(checkoutBtn.textContent?.trim()).toBe('Activar suscripción — $0.00');
+
+      const summaryEl: HTMLElement = fixture.nativeElement.querySelector('.verified-order-summary');
+      expect(summaryEl.textContent).toContain('Resumen del pedido');
+      expect(summaryEl.textContent).toContain('Total a pagar hoy');
+      expect(summaryEl.textContent).toContain('Verificado con Stripe');
+
+      i18n.setLang('en');
+    });
+  });
+
 });
+
 
 
 
