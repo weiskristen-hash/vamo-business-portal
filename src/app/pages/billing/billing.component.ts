@@ -2953,6 +2953,7 @@ export class BillingComponent implements OnInit, OnDestroy {
           approvedAmountDue: preview.amountDueToday,
           approvedCurrency: preview.currency,
           verificationReference: preview.verificationReference,
+          paymentMethodId: this.selectedSavedMethod()?.id ?? null,
           expiresAt: preview.expiresAt,
         });
       } else {

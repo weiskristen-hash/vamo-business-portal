@@ -72,6 +72,7 @@ export interface VerifiedCreateSubscriptionRequest {
   verificationReference: string;
   approvedAmountDue: number;
   approvedCurrency: string;
+  paymentMethodId?: string | null;
   idempotencyKey?: string;
   expiresAt?: number | null;
   customerRef?: string | null;
@@ -428,6 +429,60 @@ export class StripeService {
     });
   }
 
+  /**
+   * Calls the isolated portal checkout backend (`/api/checkout/preview` or `/api/checkout/create-subscription`)
+   * with the authenticated Directus user's Bearer token and correlation ID.
+   * Never invokes or mutates shared Directus Flows.
+   */
+  async checkoutApiPost(
+    endpoint: 'preview' | 'create-subscription',
+    payload: object,
+  ): Promise<any> {
+    const baseUrl = runtimeConfig.checkoutApiBaseUrl;
+    if (!baseUrl) {
+      throw new Error('Verified checkout API is not configured.');
+    }
+    return this.authService.safeRequest(async () => {
+      const url = `${baseUrl.replace(/\/+$/, '')}/${endpoint}`;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-Correlation-Id': this.auditService.getCorrelationId(),
+        ...(await this.authHeaders()),
+      };
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const text = await response.text();
+      if (response.status === 401) {
+        const authErr: any = new Error('Authentication expired (401)');
+        authErr.status = 401;
+        authErr.code = 'TOKEN_EXPIRED';
+        throw authErr;
+      }
+      let parsed: any = null;
+      if (text) {
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          parsed = null;
+        }
+      }
+      if (!response.ok) {
+        // Structured business/security rejection from the isolated checkout backend (e.g. 409 / 422 / 403)
+        if (parsed && typeof parsed === 'object' && ('aborted' in parsed || 'verified' in parsed || 'code' in parsed)) {
+          return parsed;
+        }
+        const err: any = new Error(parsed?.error || parsed?.message || `Checkout API request failed (${response.status})`);
+        err.status = response.status;
+        if (parsed?.code) err.code = parsed.code;
+        throw err;
+      }
+      return parsed;
+    });
+  }
+
   async getPlans(): Promise<StripePlan[]> {
     const flowId = runtimeConfig.stripeGetPricesFlow;
     if (!flowId) {
@@ -652,44 +707,16 @@ export class StripeService {
         });
       }
 
-      const previewFlowId = runtimeConfig.stripePreviewCheckoutFlow;
-      const validateFlowId = runtimeConfig.stripeValidatePromoFlow;
-
-      // If no preview flow is configured:
-      // - If a promo code was supplied and validatePromoFlow is configured, call it so we can
-      //   distinguish an explicitly invalid coupon vs. missing invoice-preview capability,
-      //   or accept an upgraded validate flow that returns a full invoice preview.
-      // - Never treat a bare percentOff/amountOff response without an authoritative Stripe
-      //   invoice preview + verificationReference as verified!
-      if (!previewFlowId) {
-        if (cleanPromoCode && validateFlowId) {
-          try {
-            const raw = await this.flowPost(validateFlowId, {
-              code: cleanPromoCode,
-              priceId: cleanPriceId,
-              customerEmail: request.customerEmail ?? null,
-            });
-            return this.normalizeCheckoutPreviewResponse(raw, request, cleanPromoCode);
-          } catch {
-            this.auditService.record('promotion_validation_failed', {
-              priceId: cleanPriceId,
-              promotionCode: cleanPromoCode,
-              customerRef: request.customerRef ?? null,
-              businessRef: request.businessRef ?? null,
-              reason: 'PREVIEW_REQUEST_FAILED',
-            });
-            return this.buildUnavailablePreviewResult(request, cleanPromoCode, 'PREVIEW_REQUEST_FAILED');
-          }
-        }
-        return this.buildUnavailablePreviewResult(request, cleanPromoCode, 'PREVIEW_FLOW_UNCONFIGURED');
+      if (!runtimeConfig.checkoutApiBaseUrl) {
+        return this.buildUnavailablePreviewResult(request, cleanPromoCode, 'CHECKOUT_API_UNCONFIGURED');
       }
 
       try {
-        const raw = await this.flowPost(previewFlowId, {
+        const raw = await this.checkoutApiPost('preview', {
           priceId: cleanPriceId,
           promotionCode: cleanPromoCode,
           promotionCodeId: request.promotionCodeId ?? null,
-          customerEmail: request.customerEmail ?? null,
+          email: request.customerEmail ?? null,
         });
         return this.normalizeCheckoutPreviewResponse(raw, request, cleanPromoCode);
       } catch {
@@ -792,11 +819,15 @@ export class StripeService {
     // Case 1: Promotion code was submitted and the server explicitly rejected it as invalid or ineligible
     const isExplicitlyInvalidPromo =
       Boolean(cleanPromoCode) &&
-      (body.valid === false ||
+      (body.couponState === 'invalid_or_ineligible' ||
+        body.valid === false ||
         body.promoValid === false ||
         body.couponValid === false ||
         (rawErrorCode !== null &&
           (rawErrorCode.startsWith('PROMO_') ||
+            rawErrorCode.startsWith('PROMOTION_') ||
+            rawErrorCode === 'STRIPE_PREVIEW_REJECTED_PROMOTION' ||
+            rawErrorCode === 'COUPON_MISSING' ||
             rawErrorCode === 'COUPON_INVALID' ||
             rawErrorCode === 'COUPON_INELIGIBLE' ||
             rawErrorCode === 'COUPON_EXPIRED' ||
@@ -812,7 +843,7 @@ export class StripeService {
         promotionCodeId: body.promoCodeId ?? body.promotionCodeId ?? null,
         customerRef: request.customerRef ?? null,
         businessRef: request.businessRef ?? null,
-        reason: rawErrorCode || body.message || 'INVALID_OR_INELIGIBLE_PROMO',
+        reason: rawErrorCode || body.error || body.message || 'INVALID_OR_INELIGIBLE_PROMO',
       });
       return {
         verified: false,
@@ -836,7 +867,7 @@ export class StripeService {
         couponDurationInMonths: null,
         expiresAt: null,
         errorCode: rawErrorCode || 'PROMO_INVALID_OR_INELIGIBLE',
-        message: typeof body.message === 'string' ? body.message : null,
+        message: typeof (body.error ?? body.message) === 'string' ? (body.error ?? body.message) : null,
       };
     }
 
@@ -886,9 +917,11 @@ export class StripeService {
     const promoCodeName =
       typeof body.promoCodeName === 'string' && body.promoCodeName.trim()
         ? body.promoCodeName.trim()
-        : typeof body.name === 'string' && body.name.trim()
-          ? body.name.trim()
-          : cleanPromoCode;
+        : typeof body.promotionName === 'string' && body.promotionName.trim()
+          ? body.promotionName.trim()
+          : typeof body.name === 'string' && body.name.trim()
+            ? body.name.trim()
+            : cleanPromoCode;
 
     const rawDuration = body.couponDuration ?? body.duration ?? null;
     const couponDuration: CouponDurationType | null =
@@ -1106,9 +1139,9 @@ export class StripeService {
       );
     }
 
-    const flowId = runtimeConfig.stripeCreateSubscriptionFlow;
-    if (!flowId) {
-      throw new Error('Subscription creation flow is not configured.');
+    const checkoutApiUrl = runtimeConfig.checkoutApiBaseUrl;
+    if (!checkoutApiUrl) {
+      throw new Error('Verified checkout API is not configured.');
     }
 
     const lockKey = `${request.email}:${cleanPriceId}:${cleanPromoId ?? 'none'}:${approvedAmountDue}:${verificationRef}`;
@@ -1132,7 +1165,7 @@ export class StripeService {
         businessRef: request.businessRef ?? null,
       });
 
-      const data = await this.flowPost(flowId, {
+      const data = await this.checkoutApiPost('create-subscription', {
         email: request.email,
         name: request.name,
         priceId: cleanPriceId,
@@ -1141,6 +1174,7 @@ export class StripeService {
         verificationReference: verificationRef,
         approvedAmountDue,
         approvedCurrency,
+        paymentMethodId: request.paymentMethodId ?? null,
         idempotencyKey,
       });
 
@@ -1164,14 +1198,58 @@ export class StripeService {
             ? invoiceObj.id.trim()
             : null;
 
-      // Check if server explicitly reported an amount mismatch block
+      const serverCode =
+        typeof result?.errorCode === 'string'
+          ? result.errorCode
+          : typeof result?.code === 'string'
+            ? result.code
+            : null;
+
+      // Check if isolated server explicitly blocked or aborted checkout
       if (
+        result?.aborted === true ||
+        result?.blocked === true ||
         result?.mismatchBlocked === true ||
-        result?.errorCode === 'AMOUNT_MISMATCH_BLOCKED' ||
-        result?.code === 'AMOUNT_MISMATCH_BLOCKED'
+        serverCode === 'AMOUNT_MISMATCH_BLOCKED' ||
+        serverCode === 'AMOUNT_EXCEEDS_APPROVED' ||
+        serverCode === 'AMOUNT_CHANGED_AFTER_APPROVAL' ||
+        serverCode === 'PRICE_CHANGED_AFTER_APPROVAL' ||
+        serverCode === 'ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED' ||
+        serverCode === 'PROMOTION_NOT_APPLIED_ON_INVOICE' ||
+        serverCode === 'PROMOTION_CHANGED_AFTER_APPROVAL' ||
+        serverCode === 'PROMOTION_NO_LONGER_ELIGIBLE' ||
+        serverCode === 'EXPIRED_VERIFICATION_REFERENCE' ||
+        serverCode === 'TAMPERED_VERIFICATION_REFERENCE' ||
+        serverCode === 'CURRENCY_MISMATCH' ||
+        serverCode === 'UNVERIFIED_FIRST_INVOICE_AMOUNT'
       ) {
         const reportedActual =
           result?.actualAmountDue ?? result?.invoiceAmountDue ?? invoiceObj?.amount_due ?? null;
+
+        let mappedProtectionCode: CheckoutProtectionErrorCode = 'AMOUNT_MISMATCH_BLOCKED';
+        if (serverCode === 'ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED') {
+          mappedProtectionCode = 'UNEXPECTED_PAYMENT_INTENT_FOR_FREE_CHECKOUT';
+        } else if (serverCode === 'EXPIRED_VERIFICATION_REFERENCE') {
+          mappedProtectionCode = 'VERIFICATION_EXPIRED';
+        } else if (serverCode === 'TAMPERED_VERIFICATION_REFERENCE' || serverCode === 'MISSING_VERIFICATION_FIELDS') {
+          mappedProtectionCode = 'UNVERIFIED_CHECKOUT';
+        } else if (
+          serverCode === 'PROMOTION_NOT_APPLIED_ON_INVOICE' ||
+          serverCode === 'PROMOTION_CHANGED_AFTER_APPROVAL' ||
+          serverCode === 'PROMOTION_NO_LONGER_ELIGIBLE'
+        ) {
+          mappedProtectionCode = 'PROMO_NOT_APPLIED';
+        } else if (serverCode === 'CURRENCY_MISMATCH') {
+          mappedProtectionCode = 'CURRENCY_MISMATCH_BLOCKED';
+        } else if (serverCode === 'UNVERIFIED_FIRST_INVOICE_AMOUNT') {
+          mappedProtectionCode = 'MISSING_INVOICE_VERIFICATION';
+        }
+
+        const serverMessage =
+          (typeof result?.error === 'string' && result.error) ||
+          (typeof result?.message === 'string' && result.message) ||
+          'The invoice total returned by Stripe did not match the approved checkout amount. No payment was collected.';
+
         this.auditService.record('amount_mismatch_blocked', {
           priceId: cleanPriceId,
           promotionCodeId: cleanPromoId,
@@ -1183,22 +1261,48 @@ export class StripeService {
           currency: approvedCurrency,
           customerRef: request.customerRef ?? null,
           businessRef: request.businessRef ?? null,
-          reason: result?.message || 'SERVER_AMOUNT_MISMATCH_BLOCKED',
+          reason: serverCode || serverMessage,
         });
-        throw new CheckoutChargeProtectionError(
-          'AMOUNT_MISMATCH_BLOCKED',
-          result?.message ||
-            'The invoice total returned by Stripe did not match the approved checkout amount. No payment was collected.',
-          {
-            approvedAmount: approvedAmountDue,
-            actualAmount: typeof reportedActual === 'number' ? reportedActual : null,
-            currency: approvedCurrency,
-          },
-        );
+
+        // For non-protection business errors (like EXISTING_ACTIVE_SUBSCRIPTION or DUPLICATE_CHECKOUT_SUBMISSION), throw standard Error
+        if (
+          serverCode &&
+          ![
+            'AMOUNT_MISMATCH_BLOCKED',
+            'AMOUNT_EXCEEDS_APPROVED',
+            'AMOUNT_CHANGED_AFTER_APPROVAL',
+            'PRICE_CHANGED_AFTER_APPROVAL',
+            'ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED',
+            'PROMOTION_NOT_APPLIED_ON_INVOICE',
+            'PROMOTION_CHANGED_AFTER_APPROVAL',
+            'PROMOTION_NO_LONGER_ELIGIBLE',
+            'EXPIRED_VERIFICATION_REFERENCE',
+            'TAMPERED_VERIFICATION_REFERENCE',
+            'MISSING_VERIFICATION_FIELDS',
+            'CURRENCY_MISMATCH',
+            'UNVERIFIED_FIRST_INVOICE_AMOUNT',
+          ].includes(serverCode) &&
+          result?.mismatchBlocked !== true
+        ) {
+          const businessErr: any = new Error(serverMessage);
+          businessErr.code = serverCode;
+          throw businessErr;
+        }
+
+        throw new CheckoutChargeProtectionError(mappedProtectionCode, serverMessage, {
+          approvedAmount: approvedAmountDue,
+          actualAmount: typeof reportedActual === 'number' ? reportedActual : null,
+          currency: approvedCurrency,
+        });
       }
 
-      if (result?.stripeError || result?.error === true) {
-        throw new Error(result?.stripeError || result?.message || 'Could not create subscription.');
+      if (result?.stripeError || result?.error === true || (typeof result?.error === 'string' && result.error)) {
+        throw new Error(
+          result?.stripeError ||
+            (typeof result?.error === 'string' ? result.error : null) ||
+            result?.message ||
+            'Could not create subscription.',
+        );
       }
 
       const clientSecret =
@@ -1232,7 +1336,7 @@ export class StripeService {
               ? invoiceObj.discount.promotion_code.trim()
               : null;
 
-      const abortAndCleanupSubscription = async (
+      const abortClientSideHardStop = async (
         code: CheckoutProtectionErrorCode,
         reason: string,
         actualAmount: number | null,
@@ -1250,15 +1354,6 @@ export class StripeService {
           businessRef: request.businessRef ?? null,
           reason,
         });
-
-        // Best-effort immediate cancellation of the incomplete subscription so it can never be charged
-        if (subscriptionId && runtimeConfig.stripeCancelSubscriptionFlow) {
-          try {
-            await this.cancelSubscription(subscriptionId, false);
-          } catch {
-            // Ignore cleanup errors; we still hard-stop before payment confirmation
-          }
-        }
 
         throw new CheckoutChargeProtectionError(
           code,
@@ -1282,7 +1377,7 @@ export class StripeService {
             typeof rawActualAmount === 'number' && Number.isFinite(rawActualAmount)
               ? rawActualAmount
               : null;
-          return await abortAndCleanupSubscription(
+          return await abortClientSideHardStop(
             'UNEXPECTED_PAYMENT_INTENT_FOR_FREE_CHECKOUT',
             'Chargeable PaymentIntent returned for a $0.00 approved checkout',
             suspectedAmount,
@@ -1292,7 +1387,7 @@ export class StripeService {
 
       // HARD STOP 2: Require authoritative first-invoice amount from the backend
       if (typeof rawActualAmount !== 'number' || !Number.isFinite(rawActualAmount) || rawActualAmount < 0) {
-        return await abortAndCleanupSubscription(
+        return await abortClientSideHardStop(
           'MISSING_INVOICE_VERIFICATION',
           'Subscription response omitted authoritative first-invoice amount_due verification',
           null,
@@ -1301,7 +1396,7 @@ export class StripeService {
 
       // HARD STOP 3: Actual first-invoice amount exceeds customer-approved amount, or > 0 when $0.00 was approved
       if (rawActualAmount > approvedAmountDue || (approvedAmountDue === 0 && rawActualAmount > 0)) {
-        return await abortAndCleanupSubscription(
+        return await abortClientSideHardStop(
           'AMOUNT_MISMATCH_BLOCKED',
           `First invoice amount (${rawActualAmount}) exceeded customer-approved amount (${approvedAmountDue})`,
           rawActualAmount,
@@ -1310,7 +1405,7 @@ export class StripeService {
 
       // HARD STOP 4: Currency mismatch
       if (actualCurrency !== approvedCurrency) {
-        return await abortAndCleanupSubscription(
+        return await abortClientSideHardStop(
           'CURRENCY_MISMATCH_BLOCKED',
           `Invoice currency (${actualCurrency}) did not match approved currency (${approvedCurrency})`,
           rawActualAmount,
@@ -1324,7 +1419,7 @@ export class StripeService {
           !appliedPromoId ||
           appliedPromoId !== cleanPromoId
         ) {
-          return await abortAndCleanupSubscription(
+          return await abortClientSideHardStop(
             'PROMO_NOT_APPLIED',
             `Expected promotion code ${cleanPromoId} was not verified on the first invoice`,
             rawActualAmount,

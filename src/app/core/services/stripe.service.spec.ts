@@ -1017,18 +1017,19 @@ describe('StripeService', () => {
     });
   });
 
-  describe('Verified Stripe Checkout & Charge Protection', () => {
+  describe('Verified Stripe Checkout & Charge Protection (Isolated Portal Checkout Backend)', () => {
     beforeEach(() => {
       runtimeConfig.updateConfig({
-        stripePreviewCheckoutFlow: 'flow-preview-checkout',
+        checkoutApiBaseUrl: '/api/checkout',
         stripeValidatePromoFlow: 'flow-validate-promo',
         stripeCreateSubscriptionFlow: 'flow-create-sub',
         stripeCancelSubscriptionFlow: 'flow-cancel-sub',
       });
     });
 
-    it('previewSubscriptionCheckout returns verified preview for valid 100% coupon ($0.00 due today) with verificationReference', async () => {
-      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+    it('previewSubscriptionCheckout calls isolated /api/checkout/preview and never invokes Directus flowPost', async () => {
+      const flowSpy = vi.spyOn(service, 'flowPost');
+      const apiSpy = vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
         verified: true,
         priceId: 'price_basic_59',
         planName: 'Basic Plan',
@@ -1043,7 +1044,7 @@ describe('StripeService', () => {
         promoCodeName: 'LT Founders club',
         couponDuration: 'repeating',
         couponDurationInMonths: 3,
-        verificationReference: 'vref_1_valid_zero_5900',
+        verificationReference: 'vref_2_valid_zero_5900',
       });
 
       const preview = await service.previewSubscriptionCheckout({
@@ -1053,6 +1054,13 @@ describe('StripeService', () => {
         promotionCode: 'FOUNDERS90',
       });
 
+      expect(flowSpy).not.toHaveBeenCalled();
+      expect(apiSpy).toHaveBeenCalledWith('preview', {
+        priceId: 'price_basic_59',
+        promotionCode: 'FOUNDERS90',
+        promotionCodeId: null,
+        email: 'adminapple@admin.com',
+      });
       expect(preview.verified).toBe(true);
       expect(preview.verificationStatus).toBe('verified');
       expect(preview.couponState).toBe('verified_applied');
@@ -1062,11 +1070,11 @@ describe('StripeService', () => {
       expect(preview.renewalAmount).toBe(5900);
       expect(preview.couponDuration).toBe('repeating');
       expect(preview.couponDurationInMonths).toBe(3);
-      expect(preview.verificationReference).toBe('vref_1_valid_zero_5900');
+      expect(preview.verificationReference).toBe('vref_2_valid_zero_5900');
     });
 
-    it('previewSubscriptionCheckout returns verified preview for valid partial coupon (e.g. 50% / $20 off)', async () => {
-      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+    it('previewSubscriptionCheckout returns verified preview for valid partial coupon (e.g. $20 off)', async () => {
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
         verified: true,
         priceId: 'price_basic_59',
         planName: 'Basic Plan',
@@ -1080,7 +1088,7 @@ describe('StripeService', () => {
         promoCodeId: 'promo_save20',
         promoCodeName: '$20 Off First Month',
         couponDuration: 'once',
-        verificationReference: 'vref_1_partial_3900',
+        verificationReference: 'vref_2_partial_3900',
       });
 
       const preview = await service.previewSubscriptionCheckout({
@@ -1098,8 +1106,7 @@ describe('StripeService', () => {
     });
 
     it('previewSubscriptionCheckout never accepts bare coupon metadata without an authoritative invoice preview total', async () => {
-      // Simulates legacy 3b580ce9-5023-446f-ad4c-55c8ee5db4fd response that only returns percentOff without amountDueToday or verificationReference
-      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
         valid: true,
         promoCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
         name: 'LT Founders club',
@@ -1121,10 +1128,11 @@ describe('StripeService', () => {
       expect(preview.verificationReference).toBeNull();
     });
 
-    it('previewSubscriptionCheckout marks expired, exhausted, or product-ineligible coupons as invalid_or_ineligible', async () => {
-      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
-        valid: false,
-        errorCode: 'COUPON_INELIGIBLE',
+    it('previewSubscriptionCheckout marks expired, exhausted, customer-restricted, or product-ineligible coupons as invalid_or_ineligible', async () => {
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
+        verified: false,
+        couponState: 'invalid_or_ineligible',
+        code: 'PROMOTION_EXPIRED',
         priceId: 'price_basic_59',
       });
 
@@ -1139,20 +1147,20 @@ describe('StripeService', () => {
       expect(preview.couponState).toBe('invalid_or_ineligible');
     });
 
-    it('CRITICAL ACCEPTANCE TEST: Given a customer who approved a $0.00 checkout, if subscription creation produces a $59 invoice or chargeable PaymentIntent, checkout stops immediately without collecting $59 and cancels the incomplete subscription', async () => {
-      const flowSpy = vi.spyOn(service, 'flowPost').mockImplementation(async (flowId: string) => {
-        if (flowId === 'flow-create-sub') {
-          return {
-            subscriptionId: 'sub_oct19_incident',
-            clientSecret: 'pi_3Oct19Incident_secret_sensitive999',
-            requiresSetup: false,
-            invoiceAmountDue: 5900,
-            invoiceCurrency: 'usd',
-            appliedPromotionCodeId: null,
-            discountApplied: false,
-          };
-        }
-        return { status: 'canceled' };
+    it('CRITICAL ACCEPTANCE TEST: Given a customer who approved a $0.00 checkout, if subscription creation produces a $59 invoice or chargeable PaymentIntent, checkout stops immediately without collecting $59 and never touches Directus Flows', async () => {
+      const flowSpy = vi.spyOn(service, 'flowPost');
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
+        aborted: true,
+        blocked: true,
+        code: 'ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED',
+        error: 'Customer approved $0.00 due today, but Stripe generated a payable invoice or PaymentIntent.',
+        subscriptionId: 'sub_oct19_incident',
+        clientSecret: null,
+        requiresSetup: false,
+        invoiceAmountDue: 5900,
+        invoiceCurrency: 'usd',
+        appliedPromotionCodeId: null,
+        discountApplied: false,
       });
 
       await expect(
@@ -1163,7 +1171,7 @@ describe('StripeService', () => {
           promotionCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
           approvedAmountDue: 0,
           approvedCurrency: 'usd',
-          verificationReference: 'vref_1_approved_zero',
+          verificationReference: 'vref_2_approved_zero',
         })
       ).rejects.toMatchObject({
         name: 'CheckoutChargeProtectionError',
@@ -1172,17 +1180,16 @@ describe('StripeService', () => {
         actualAmount: 5900,
       });
 
-      // Must have triggered best-effort cancellation of the incomplete subscription
-      expect(flowSpy).toHaveBeenCalledWith('flow-cancel-sub', {
-        subscriptionId: 'sub_oct19_incident',
-        cancelAtPeriodEnd: false,
-      });
+      expect(flowSpy).not.toHaveBeenCalled();
     });
 
     it('createVerifiedSubscription blocks when first invoice amount exceeds approved amount (e.g. approved $29.50, invoice is $59.00)', async () => {
-      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
+        aborted: true,
+        blocked: true,
+        code: 'AMOUNT_EXCEEDS_APPROVED',
         subscriptionId: 'sub_mismatch_1',
-        clientSecret: 'pi_3Mismatch_secret_abc',
+        clientSecret: null,
         requiresSetup: false,
         invoiceAmountDue: 5900,
         invoiceCurrency: 'usd',
@@ -1198,7 +1205,7 @@ describe('StripeService', () => {
           promotionCodeId: 'promo_half_off',
           approvedAmountDue: 2950,
           approvedCurrency: 'usd',
-          verificationReference: 'vref_1_approved_2950',
+          verificationReference: 'vref_2_approved_2950',
         })
       ).rejects.toMatchObject({
         name: 'CheckoutChargeProtectionError',
@@ -1209,8 +1216,7 @@ describe('StripeService', () => {
     });
 
     it('createVerifiedSubscription blocks when backend omits authoritative first-invoice amountDue', async () => {
-      // Simulates legacy 0a31e459-0909-41b0-8286-2aecc763fe29 response that omits invoiceAmountDue
-      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
         subscriptionId: 'sub_legacy_1',
         clientSecret: 'pi_3Legacy_secret_xyz',
         requiresSetup: false,
@@ -1224,7 +1230,7 @@ describe('StripeService', () => {
           promotionCodeId: null,
           approvedAmountDue: 5900,
           approvedCurrency: 'usd',
-          verificationReference: 'vref_1_approved_5900',
+          verificationReference: 'vref_2_approved_5900',
         })
       ).rejects.toMatchObject({
         name: 'CheckoutChargeProtectionError',
@@ -1233,7 +1239,7 @@ describe('StripeService', () => {
     });
 
     it('createVerifiedSubscription blocks on currency mismatch between approved preview and first invoice', async () => {
-      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
         subscriptionId: 'sub_curr_1',
         clientSecret: 'pi_3Curr_secret_xyz',
         requiresSetup: false,
@@ -1249,7 +1255,7 @@ describe('StripeService', () => {
           promotionCodeId: null,
           approvedAmountDue: 5900,
           approvedCurrency: 'usd',
-          verificationReference: 'vref_1_approved_5900',
+          verificationReference: 'vref_2_approved_5900',
         })
       ).rejects.toMatchObject({
         name: 'CheckoutChargeProtectionError',
@@ -1258,7 +1264,7 @@ describe('StripeService', () => {
     });
 
     it('createVerifiedSubscription allows verified $0.00 checkout when SetupIntent or null clientSecret is returned with invoiceAmountDue === 0 and appliedPromotionCodeId matching', async () => {
-      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+      vi.spyOn(service, 'checkoutApiPost').mockResolvedValueOnce({
         subscriptionId: 'sub_zero_ok',
         clientSecret: 'seti_1ZeroOk_secret_safe',
         requiresSetup: true,
@@ -1277,7 +1283,7 @@ describe('StripeService', () => {
         promotionCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
         approvedAmountDue: 0,
         approvedCurrency: 'usd',
-        verificationReference: 'vref_1_approved_zero',
+        verificationReference: 'vref_2_approved_zero',
       });
 
       expect(res.subscriptionId).toBe('sub_zero_ok');
