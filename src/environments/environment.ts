@@ -6,6 +6,11 @@ export const environment = {
   googleLoginEnabled: true,
   googleClientId: '654016609429-5995je1smpgrlov4uv92pn637a7dlp0t.apps.googleusercontent.com',
   googleSignInFlow: 'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',
+  appleLoginEnabled: true,
+  appleClientId: 'com.vamoapp.vamomobile.signin',
+  appleSignInFlow: '7adc18dc-af9b-43d5-a2b7-2c7770760ec8',
+  appleRedirectUri: 'https://business.vamo-app.com/auth/callback',
+  stagingAppleRedirectUri: 'https://staging-business.vamo-app.com/auth/callback',
   allowedHosts: ['api.vamo-app.com', 'quepasa-api.c1oud7.de', 'vamo-app.com'],
 
   // Stripe & Billing Flow Configuration (canonical source keys from Isla-Labs-DR/vamo-app)

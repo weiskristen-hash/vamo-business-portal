@@ -370,7 +370,7 @@ describe('Google SSO Flow — Phase 3B Parity Specifications', () => {
 
   // 19. Existing guards remain unchanged
   it('19. Existing guards (authGuard, noAuthGuard, businessGuard) function properly', async () => {
-    vi.spyOn(authService, 'waitForInitialAuth').mockResolvedValue();
+    vi.spyOn(authService, 'waitForInitialAuth').mockResolvedValue(null);
     vi.spyOn(authService, 'restoreSession').mockResolvedValue(null);
     const canActivateAuth = await TestBed.runInInjectionContext(() => (authGuard as any)({} as any, { url: '/app/overview' } as any));
     expect(canActivateAuth).toBeInstanceOf(Object); // UrlTree redirect to /login
@@ -382,16 +382,16 @@ describe('Google SSO Flow — Phase 3B Parity Specifications', () => {
     expect(canActivateBusiness).toBeInstanceOf(Object); // UrlTree redirect to /login
   });
 
-  // 20. Apple behavior is untouched
-  it('20. Apple behavior is untouched and preserves loginWithProvider', () => {
+  // 20. Apple behavior uses loginWithApple
+  it('20. Apple login triggers loginWithApple', () => {
     const fixture = TestBed.createComponent(LoginComponent);
     const comp = fixture.componentInstance;
 
-    const ssoProviderSpy = vi.spyOn(authService, 'loginWithProvider').mockImplementation(() => {});
+    const appleSpy = vi.spyOn(authService, 'loginWithApple').mockReturnValue(new Promise(() => {}));
 
     comp.onAppleLogin();
 
-    expect(ssoProviderSpy).toHaveBeenCalledWith('apple', '/app/overview');
+    expect(appleSpy).toHaveBeenCalledOnce();
     expect(comp.loading).toBe(true);
   });
 

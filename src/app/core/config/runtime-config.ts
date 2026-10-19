@@ -4,6 +4,9 @@ export interface RuntimeConfig {
   directusUrl: string;
   googleClientId: string;
   googleSignInFlow: string;
+  appleClientId: string;
+  appleSignInFlow: string;
+  appleRedirectUri: string;
   stripePublishableKey: string;
   stripeGetPricesFlow: string;
   stripeGetSubscriptionFlow: string;
@@ -28,6 +31,9 @@ export interface RuntimeConfig {
 }
 
 export const DEV_DIRECTUS_HOST = 'quepasa-api.c1oud7.de';
+export const STAGING_PORTAL_HOST = 'staging-business.vamo-app.com';
+export const STAGING_APPLE_REDIRECT_URI = 'https://staging-business.vamo-app.com/auth/callback';
+export const PROD_APPLE_REDIRECT_URI = 'https://business.vamo-app.com/auth/callback';
 
 export const DEV_DIRECTUS_CARD_FLOWS = {
   stripeGetPaymentMethodsFlow: '44946457-c8cd-42e2-98b2-a7a0672d59d3',
@@ -61,6 +67,32 @@ export function isDevelopmentDirectusUrl(value: string): boolean {
   }
 }
 
+export function isStagingPortalHost(hostname?: string | null): boolean {
+  const normalized = (
+    hostname ?? (typeof window !== 'undefined' ? window.location?.hostname : '') ?? ''
+  )
+    .trim()
+    .toLowerCase();
+  return (
+    normalized === STAGING_PORTAL_HOST ||
+    normalized === 'business-staging.islavibe-dr.workers.dev' ||
+    normalized.endsWith('-business-staging.islavibe-dr.workers.dev')
+  );
+}
+
+export function resolveAppleRedirectUri(
+  overrides: Record<string, any> = {},
+  hostname?: string | null
+): string {
+  if (typeof overrides['appleRedirectUri'] === 'string' && overrides['appleRedirectUri'].trim()) {
+    return stripTrailingSlash(overrides['appleRedirectUri'].trim());
+  }
+  if (isStagingPortalHost(hostname)) {
+    return (environment as any).stagingAppleRedirectUri || STAGING_APPLE_REDIRECT_URI;
+  }
+  return (environment as any).appleRedirectUri || PROD_APPLE_REDIRECT_URI;
+}
+
 const windowConfig = (typeof window !== 'undefined' ? (window as any).__VAMO_CONFIG__ : null) || {};
 
 function buildInitialConfig(overrides: Record<string, any> = {}): RuntimeConfig {
@@ -77,6 +109,15 @@ function buildInitialConfig(overrides: Record<string, any> = {}): RuntimeConfig 
       overrides['googleSignInFlow'] ||
       (environment as any).googleSignInFlow ||
       'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',
+    appleClientId:
+      overrides['appleClientId'] ||
+      (environment as any).appleClientId ||
+      'com.vamoapp.vamomobile.signin',
+    appleSignInFlow:
+      overrides['appleSignInFlow'] ||
+      (environment as any).appleSignInFlow ||
+      '7adc18dc-af9b-43d5-a2b7-2c7770760ec8',
+    appleRedirectUri: resolveAppleRedirectUri(overrides),
     stripePublishableKey: overrides['stripePublishableKey'] || environment.STRIPE_PUBLISHABLE_KEY || '',
     stripeGetPricesFlow: overrides['stripeGetPricesFlow'] || environment.STRIPE_GET_PRICES_FLOW || '',
     stripeGetSubscriptionFlow: overrides['stripeGetSubscriptionFlow'] || environment.STRIPE_GET_SUBSCRIPTION_FLOW || '',
@@ -135,6 +176,20 @@ export const runtimeConfig = {
   },
   get googleSignInFlow(): string {
     return currentConfig.googleSignInFlow;
+  },
+  get appleClientId(): string {
+    return currentConfig.appleClientId;
+  },
+  get appleSignInFlow(): string {
+    return currentConfig.appleSignInFlow;
+  },
+  get appleRedirectUri(): string {
+    return currentConfig.appleRedirectUri;
+  },
+  setAppleRedirectUri(uri: string): void {
+    if (isAllowedApiUrl(uri)) {
+      currentConfig.appleRedirectUri = stripTrailingSlash(uri);
+    }
   },
   setDirectusUrl(url: string): void {
     if (isAllowedApiUrl(url)) {

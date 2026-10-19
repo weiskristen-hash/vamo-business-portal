@@ -49,6 +49,8 @@ describe('OnboardingComponent (Canonical Source Parity)', () => {
       loginWithProvider: vi.fn(),
       loginWithGoogle: vi.fn().mockResolvedValue({ id: 'google-user', first_name: 'Mateo', last_name: 'Peralta', email: 'mateo@google.com', provider_link: null }),
       loginWithGoogleCredential: vi.fn().mockResolvedValue({ id: 'google-user', first_name: 'Mateo', last_name: 'Peralta', email: 'mateo@google.com', provider_link: null }),
+      loginWithApple: vi.fn().mockResolvedValue({ id: 'apple-user', first_name: 'Camila', last_name: 'Rojas', email: 'camila@apple.com', provider_link: null }),
+      loginWithAppleCredential: vi.fn().mockResolvedValue({ id: 'apple-user', first_name: 'Camila', last_name: 'Rojas', email: 'camila@apple.com', provider_link: null }),
     };
 
     businessServiceSpy = {
@@ -315,17 +317,18 @@ describe('OnboardingComponent (Canonical Source Parity)', () => {
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/app/listings/create'], { replaceUrl: true });
   });
 
-  it('15. Google signup avoids hosted OAuth and keeps Apple hidden in business registration', async () => {
+  it('15. Google and Apple signup avoid hosted OAuth and render in business registration', async () => {
     component.currentStep.set('business-register');
     fixture.detectChanges();
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('.ob-social-row button')) as HTMLButtonElement[];
+    expect(buttons.some((b) => b.textContent?.includes('Google'))).toBe(true);
+    expect(buttons.some((b) => b.textContent?.includes('Apple'))).toBe(true);
     await component.onGoogleSignUp();
     expect(authServiceSpy.loginWithGoogle).toHaveBeenCalledOnce();
     expect(authServiceSpy.loginWithProvider).not.toHaveBeenCalled();
-    const buttons = Array.from(fixture.nativeElement.querySelectorAll('.ob-social-row button')) as HTMLButtonElement[];
-    expect(buttons.some((b) => b.textContent?.includes('Apple'))).toBe(false);
-    expect(buttons.some((b) => b.textContent?.includes('Google'))).toBe(true);
-    component.onAppleSignUp();
-    expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('apple', '/app/listings/create');
+    component.currentStep.set('business-register');
+    await component.onAppleSignUp();
+    expect(authServiceSpy.loginWithApple).toHaveBeenCalledOnce();
   });
 
   it('16. progress dots match pitch, account, area, and business details', () => {
