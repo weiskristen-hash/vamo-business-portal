@@ -1470,7 +1470,7 @@ describe('Isolated Verified Stripe Checkout Backend (src/server/verified-checkou
     expect(postVerifyAttachBody).toContain('default_payment_method=pm_saved_card_zero');
   });
 
-  it('21. Premature auto-charge protection -> refunds, cancels incomplete subscription, and blocks if Stripe ever returns an already-succeeded PaymentIntent before client confirmation', async () => {
+  it('21. Already-paid unexpected invoice -> NEVER initiates automatic refund, does NOT claim charge was prevented, leaves subscription for manual review, and records critical payment_safety_incident with Stripe IDs', async () => {
     const signedRef = await signVerificationReference(
       {
         v: 2,
@@ -1478,29 +1478,35 @@ describe('Isolated Verified Stripe Checkout Backend (src/server/verified-checkou
         email: mockDirectusUser.email,
         customerId: 'cus_apple_1',
         priceId: 'price_basic_5900',
-        promotionCode: null,
-        promotionCodeId: null,
+        promotionCode: 'FOUNDERS90',
+        promotionCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
         originalPrice: 5900,
         subtotal: 5900,
-        discountAmount: 0,
+        discountAmount: 5900,
         tax: 0,
-        amountDueToday: 5900,
+        amountDueToday: 0,
         renewalAmount: 5900,
         currency: 'usd',
         issuedAt: currentNowMs,
         expiresAt: currentNowMs + 600_000,
-        nonce: 'nonce_premature_charge',
+        nonce: 'nonce_already_paid_incident',
       },
       testEnv.STRIPE_CHECKOUT_VERIFICATION_SECRET!,
     );
 
-    let refundBody = '';
-    let canceledSubId: string | null = null;
+    let refundCalled = false;
+    let deleteCalled = false;
 
     const mockFetch: typeof fetch = async (input, init) => {
       const url = String(input);
       const method = init?.method || 'GET';
-      const bodyText = typeof init?.body === 'string' ? init.body : '';
+      if (url.includes('/refunds')) {
+        refundCalled = true;
+        throw new Error('Automatic refunds (POST /v1/refunds) must NEVER be called');
+      }
+      if (method === 'DELETE') {
+        deleteCalled = true;
+      }
       if (url.startsWith('https://api.vamo-app.com/users/me')) return jsonRes(200, { data: mockDirectusUser });
       if (url.startsWith('https://api.stripe.com/v1/customers')) {
         return jsonRes(200, { data: [{ id: 'cus_apple_1', email: 'adminapple@admin.com' }] });
@@ -1509,6 +1515,7 @@ describe('Isolated Verified Stripe Checkout Backend (src/server/verified-checkou
         return jsonRes(200, { data: [] });
       }
       if (url.startsWith('https://api.stripe.com/v1/prices/')) return jsonRes(200, mockBasicPrice);
+      if (url.startsWith('https://api.stripe.com/v1/promotion_codes/')) return jsonRes(200, mockFoundersPromo);
       if (url === 'https://api.stripe.com/v1/subscriptions' && method === 'POST') {
         return jsonRes(200, {
           id: 'sub_premature_charged',
@@ -1517,6 +1524,7 @@ describe('Isolated Verified Stripe Checkout Backend (src/server/verified-checkou
             id: 'in_premature_charged',
             status: 'paid',
             paid: true,
+            charge: 'ch_premature_5900',
             subtotal: 5900,
             tax: 0,
             amount_due: 5900,
@@ -1527,18 +1535,11 @@ describe('Isolated Verified Stripe Checkout Backend (src/server/verified-checkou
               id: 'pi_premature_5900',
               amount: 5900,
               status: 'succeeded',
+              latest_charge: 'ch_premature_5900',
               client_secret: 'pi_premature_5900_secret',
             },
           },
         });
-      }
-      if (url === 'https://api.stripe.com/v1/refunds' && method === 'POST') {
-        refundBody = bodyText;
-        return jsonRes(200, { id: 're_premature_1', status: 'succeeded' });
-      }
-      if (url === 'https://api.stripe.com/v1/subscriptions/sub_premature_charged' && method === 'DELETE') {
-        canceledSubId = 'sub_premature_charged';
-        return jsonRes(200, { id: 'sub_premature_charged', status: 'canceled' });
       }
       throw new Error(`Unexpected fetch: ${method} ${url}`);
     };
@@ -1548,21 +1549,56 @@ describe('Isolated Verified Stripe Checkout Backend (src/server/verified-checkou
         email: 'adminapple@admin.com',
         name: 'Admin Apple',
         priceId: 'price_basic_5900',
-        promotionCodeId: null,
-        approvedAmountDue: 5900,
+        promotionCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        approvedAmountDue: 0,
         approvedCurrency: 'usd',
         verificationReference: signedRef,
       }),
-      { env: testEnv, fetchImpl: mockFetch, nowFn: () => currentNowMs + 1000, idempotencyStore },
+      {
+        env: testEnv,
+        fetchImpl: mockFetch,
+        nowFn: () => currentNowMs + 1000,
+        onAuditEvent: (e) => auditEvents.push(e),
+        idempotencyStore,
+      },
     );
 
     expect(res?.status).toBe(409);
     const body = await res!.json();
     expect(body.blocked).toBe(true);
     expect(body.code).toBe('UNEXPECTED_PRE_VERIFICATION_CHARGE');
+    expect(body.chargePrevented).toBe(false);
+    expect(body.manualInvestigationRequired).toBe(true);
+    expect(body.manualRefundAuthorizationRequired).toBe(true);
     expect(body.clientSecret).toBeNull();
-    expect(refundBody).toContain('payment_intent=pi_premature_5900');
-    expect(canceledSubId).toBe('sub_premature_charged');
+    expect(body.customerId).toBe('cus_apple_1');
+    expect(body.subscriptionId).toBe('sub_premature_charged');
+    expect(body.invoiceId).toBe('in_premature_charged');
+    expect(body.paymentIntentId).toBe('pi_premature_5900');
+    expect(body.chargeId).toBe('ch_premature_5900');
+    // Must NOT claim that the charge was prevented
+    expect(String(body.error)).not.toMatch(/not charged|before charging|no payment was collected/i);
+    // Must NEVER call POST /v1/refunds or cancel an already-paid subscription
+    expect(refundCalled).toBe(false);
+    expect(deleteCalled).toBe(false);
+
+    // Must record a critical payment-safety incident with the relevant Stripe IDs
+    const safetyIncident = auditEvents.find((e) => e.eventType === 'payment_safety_incident');
+    expect(safetyIncident).toBeDefined();
+    expect(safetyIncident?.metadata).toMatchObject({
+      severity: 'CRITICAL',
+      customerId: 'cus_apple_1',
+      subscriptionId: 'sub_premature_charged',
+      invoiceId: 'in_premature_charged',
+      paymentIntentId: 'pi_premature_5900',
+      chargeId: 'ch_premature_5900',
+      approvedAmountDue: 0,
+      invoiceAmountDue: 5900,
+      invoiceAmountPaid: 5900,
+      chargePrevented: false,
+      manualInvestigationRequired: true,
+      manualRefundAuthorizationRequired: true,
+    });
   });
 
   it('22. Cross-isolate retry of interrupted checkout -> reuses existing incomplete subscription with matching metadata.verification_nonce without creating a duplicate', async () => {
@@ -1918,6 +1954,132 @@ describe('Isolated Verified Stripe Checkout Backend (src/server/verified-checkou
     expect(assetsFetchedUrl).toBeNull();
     const apiBody = await apiRes.json();
     expect(apiBody.code).toBe('AUTH_REQUIRED');
+  });
+
+  it('27. Customer with saved card & customer-level default payment method on $0.00-approved checkout -> cannot bypass verification or initiate $59 payment, makes zero refund calls, and cancels only the unpaid incomplete subscription', async () => {
+    const signedZeroRef = await signVerificationReference(
+      {
+        v: 2,
+        userId: mockDirectusUser.id,
+        email: mockDirectusUser.email,
+        customerId: 'cus_apple_1',
+        priceId: 'price_basic_5900',
+        promotionCode: 'FOUNDERS90',
+        promotionCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        originalPrice: 5900,
+        subtotal: 5900,
+        discountAmount: 5900,
+        tax: 0,
+        amountDueToday: 0,
+        renewalAmount: 5900,
+        currency: 'usd',
+        issuedAt: currentNowMs,
+        expiresAt: currentNowMs + 600_000,
+        nonce: 'nonce_saved_card_zero_mismatch',
+      },
+      testEnv.STRIPE_CHECKOUT_VERIFICATION_SECRET!,
+    );
+
+    let refundCalled = false;
+    let createSubBody = '';
+    const deletedSubIds: string[] = [];
+
+    const mockFetch: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const method = init?.method || 'GET';
+      const bodyText = typeof init?.body === 'string' ? init.body : '';
+      if (url.includes('/refunds')) {
+        refundCalled = true;
+        throw new Error('Automatic refunds must NEVER be called');
+      }
+      if (url.startsWith('https://api.vamo-app.com/users/me')) return jsonRes(200, { data: mockDirectusUser });
+      if (url.startsWith('https://api.stripe.com/v1/customers')) {
+        return jsonRes(200, {
+          data: [
+            {
+              id: 'cus_apple_1',
+              email: 'adminapple@admin.com',
+              default_source: 'card_legacy_default',
+              invoice_settings: { default_payment_method: 'pm_saved_default_1' },
+            },
+          ],
+        });
+      }
+      if (url.startsWith('https://api.stripe.com/v1/subscriptions?customer=')) {
+        return jsonRes(200, {
+          data: [{ id: 'sub_historical_canceled_old', status: 'canceled' }],
+        });
+      }
+      if (url.startsWith('https://api.stripe.com/v1/payment_methods/pm_saved_default_1')) {
+        return jsonRes(200, { id: 'pm_saved_default_1', customer: 'cus_apple_1' });
+      }
+      if (url.startsWith('https://api.stripe.com/v1/prices/')) return jsonRes(200, mockBasicPrice);
+      if (url.startsWith('https://api.stripe.com/v1/promotion_codes/')) return jsonRes(200, mockFoundersPromo);
+      if (url === 'https://api.stripe.com/v1/subscriptions' && method === 'POST') {
+        createSubBody = bodyText;
+        // Because payment_behavior=default_incomplete and no default_payment_method was attached,
+        // Stripe leaves the subscription incomplete and the $59 invoice open/unpaid.
+        return jsonRes(200, {
+          id: 'sub_saved_card_unpaid_5900',
+          status: 'incomplete',
+          latest_invoice: {
+            id: 'in_saved_card_unpaid_5900',
+            status: 'open',
+            paid: false,
+            subtotal: 5900,
+            tax: 0,
+            amount_due: 5900,
+            amount_paid: 0,
+            currency: 'usd',
+            total_discount_amounts: [],
+            discounts: [],
+            payment_intent: {
+              id: 'pi_saved_card_unpaid_5900',
+              amount: 5900,
+              status: 'requires_payment_method',
+              client_secret: 'pi_saved_card_unpaid_5900_secret_never_return',
+            },
+          },
+        });
+      }
+      if (url.startsWith('https://api.stripe.com/v1/subscriptions/') && method === 'DELETE') {
+        deletedSubIds.push(url.split('/').pop()!);
+        return jsonRes(200, { status: 'canceled' });
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`);
+    };
+
+    const res = await handleCheckoutApiRequest(
+      buildPostRequest('/api/checkout/create-subscription', {
+        email: 'adminapple@admin.com',
+        name: 'Admin Apple',
+        priceId: 'price_basic_5900',
+        promotionCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        approvedAmountDue: 0,
+        approvedCurrency: 'usd',
+        paymentMethodId: 'pm_saved_default_1',
+        verificationReference: signedZeroRef,
+      }),
+      {
+        env: testEnv,
+        fetchImpl: mockFetch,
+        nowFn: () => currentNowMs + 1000,
+        onAuditEvent: (e) => auditEvents.push(e),
+        idempotencyStore,
+      },
+    );
+
+    expect(res?.status).toBe(409);
+    const body = await res!.json();
+    expect(body.blocked).toBe(true);
+    expect(body.code).toBe('ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED');
+    expect(body.chargePrevented).toBe(true);
+    expect(body.clientSecret).toBeNull();
+    expect(createSubBody).toContain('payment_behavior=default_incomplete');
+    expect(createSubBody).not.toContain('default_payment_method=');
+    expect(refundCalled).toBe(false);
+    expect(deletedSubIds).toEqual(['sub_saved_card_unpaid_5900']);
+    expect(deletedSubIds).not.toContain('sub_historical_canceled_old');
   });
 });
 

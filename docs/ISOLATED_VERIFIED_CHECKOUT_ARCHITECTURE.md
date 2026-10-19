@@ -72,18 +72,24 @@ To prevent duplicate subscriptions across concurrent requests, multi-tab submiss
 
 ## 4. Pre-Charge Payment Safety Analysis
 
-1. **Saved Cards Never Attached Before Invoice Verification:**
-   - `POST /v1/subscriptions` is always called with `payment_behavior: 'default_incomplete'` and **without** `default_payment_method`, even when the customer selected a saved card (`paymentMethodId`).
-   - This guarantees Stripe cannot automatically charge a saved card during subscription creation before the Worker inspects `latest_invoice`.
-2. **Server-Side `latest_invoice` & `PaymentIntent` Gate:**
+1. **Saved & Customer-Level Default Cards Never Charged Before Invoice Verification:**
+   - `POST /v1/subscriptions` is always called with `payment_behavior: 'default_incomplete'` and **without** `default_payment_method` or `default_source`, even when the customer selected a saved card (`paymentMethodId`) or has a customer-level default payment method.
+   - Under `payment_behavior: 'default_incomplete'`, Stripe creates the subscription in `status: 'incomplete'` (whenever `amount_due > 0`) and creates `latest_invoice.payment_intent` unconfirmed (`requires_payment_method`), preventing synchronous server-side charges during subscription creation.
+2. **Server-Side `latest_invoice` & `PaymentIntent` Gate (Zero Automatic Refunds):**
    - Before returning any `clientSecret` to the browser, the Worker verifies:
      - `actualCurrency === approvedCurrency`
      - `actualAmountDue <= approvedAmountDue`
      - `paymentIntent.amount <= approvedAmountDue`
      - If `approvedAmountDue === 0`: `actualAmountDue === 0` and no chargeable `PaymentIntent` (`pi_...` or `amount > 0`) exists
      - If `promotionCodeId` was approved: `isPromotionPresentOnSubscriptionOrInvoice` confirms the exact promotion/coupon is applied on the created subscription/invoice
-3. **Abnormal Premature Charge Detection & Reversal:**
-   - If Stripe ever returned an already-paid/succeeded payable invoice (`amount_due > 0`) during `default_incomplete` before client confirmation, the Worker immediately issues a refund (`POST /v1/refunds`), cancels the newly created subscription (`DELETE /v1/subscriptions/:id`), logs `amount_mismatch_blocked`, and returns `409 UNEXPECTED_PRE_VERIFICATION_CHARGE` with `clientSecret: null`.
+   - If any unpaid invoice check fails, the Worker blocks checkout, returns `clientSecret: null`, cancels **only** the newly created unpaid (`incomplete`) subscription, and logs `amount_mismatch_blocked` (`chargePrevented: true`).
+3. **Already-Paid Unexpected Invoice Incident Handling (No Automatic Refunds):**
+   - No automatic `POST /v1/refunds` calls exist anywhere in the checkout workflow.
+   - If Stripe ever reports that a charge has **already occurred** (`invoiceAmountPaid > 0`, `latest_invoice.status === 'paid'`, or `paymentIntent.status` in `['succeeded', 'processing', 'requires_capture']`), the Worker:
+     - Does **not** initiate a refund and does **not** cancel the already-paid subscription.
+     - Does **not** claim that the charge was prevented (`chargePrevented: false`).
+     - Emits a critical `payment_safety_incident` audit event containing `customerId`, `subscriptionId`, `invoiceId`, `paymentIntentId`, and `chargeId`, flagging `manualInvestigationRequired: true` and `manualRefundAuthorizationRequired: true`.
+     - Returns `409 UNEXPECTED_PRE_VERIFICATION_CHARGE` with `clientSecret: null` and a safe customer-facing message instructing the customer not to pay again while support reviews the account.
 4. **Post-Verification Saved Card Attachment for `$0.00` Subscriptions:**
    - For `$0.00` checkouts where a saved `paymentMethodId` was verified and no `pending_setup_intent` is required, the Worker attaches `default_payment_method` to the subscription via `POST /v1/subscriptions/:id` strictly **after** `latest_invoice` verification succeeds.
 

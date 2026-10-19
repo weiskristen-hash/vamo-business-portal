@@ -1438,6 +1438,7 @@ export const esTranslations: Record<string, any> = {
       "WARN_CARD_SAVED_RENEWAL_FAILED": "La tarjeta se guardó, pero no pudimos actualizar tu tarjeta de renovación.",
       "ERROR_AMOUNT_MISMATCH_BLOCKED": "Pago detenido por tu seguridad: Stripe devolvió un total de factura ({{actual}}) que no coincidió con el monto aprobado ({{approved}}). No se realizó ningún cargo a tu tarjeta.",
       "ERROR_UNEXPECTED_CHARGE_FOR_FREE": "Pago detenido por tu seguridad: Aprobaste un total de $0.00, pero se generó una factura con cargo. No se realizó ningún cargo a tu tarjeta.",
+      "ERROR_UNEXPECTED_PRE_VERIFICATION_CHARGE": "Detectamos un estado de pago inesperado al verificar tu suscripción. Por favor no envíes el pago de nuevo — contacta al soporte de VAMO para que nuestro equipo revise tu cuenta de facturación.",
       "ERROR_PROMO_NOT_APPLIED_BLOCKED": "Pago detenido por tu seguridad: Tu código promocional no pudo aplicarse a la primera factura. No se realizó ningún cargo a tu tarjeta.",
       "ERROR_VERIFICATION_EXPIRED": "El total verificado ha vencido o cambió. Por favor revisa y vuelve a verificar el precio antes de continuar.",
       "ERROR_VERIFICATION_UNAVAILABLE": "No pudimos verificar el total exacto con Stripe en este momento. El pago está en pausa para evitar un cargo no verificado en tu tarjeta.",

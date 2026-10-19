@@ -3058,6 +3058,10 @@ export class BillingComponent implements OnInit, OnDestroy {
         : this.formatExactPrice(0, currency);
 
     switch (err.code) {
+      case 'UNEXPECTED_PRE_VERIFICATION_CHARGE':
+        this.checkoutVerificationStatus.set('mismatch_blocked');
+        this.setTranslatedError('PORTAL.BILLING.ERROR_UNEXPECTED_PRE_VERIFICATION_CHARGE');
+        break;
       case 'UNEXPECTED_PAYMENT_INTENT_FOR_FREE_CHECKOUT':
         this.checkoutVerificationStatus.set('mismatch_blocked');
         this.couponState.set('expired_or_changed');

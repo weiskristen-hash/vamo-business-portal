@@ -40,6 +40,7 @@ export type CheckoutBackendAuditEventType =
   | 'subscription_creation_attempted'
   | 'first_invoice_verified'
   | 'amount_mismatch_blocked'
+  | 'payment_safety_incident'
   | 'payment_succeeded'
   | 'payment_failed';
 
@@ -2209,10 +2210,26 @@ export async function handleCreateVerifiedSubscriptionRequest(
       latestInvoice?.payment_intent && typeof latestInvoice.payment_intent === 'object'
         ? latestInvoice.payment_intent
         : null;
+    const paymentIntentId =
+      paymentIntent && typeof paymentIntent.id === 'string'
+        ? paymentIntent.id
+        : typeof latestInvoice?.payment_intent === 'string'
+          ? latestInvoice.payment_intent
+          : null;
     const paymentIntentAmount =
       paymentIntent && typeof paymentIntent.amount === 'number' && Number.isFinite(paymentIntent.amount)
         ? paymentIntent.amount
         : null;
+    const chargeId =
+      typeof latestInvoice?.charge === 'string'
+        ? latestInvoice.charge
+        : typeof latestInvoice?.charge?.id === 'string'
+          ? latestInvoice.charge.id
+          : typeof paymentIntent?.latest_charge === 'string'
+            ? paymentIntent.latest_charge
+            : typeof paymentIntent?.latest_charge?.id === 'string'
+              ? paymentIntent.latest_charge.id
+              : null;
     const pendingSetupIntent =
       sub?.pending_setup_intent && typeof sub.pending_setup_intent === 'object'
         ? sub.pending_setup_intent
@@ -2240,13 +2257,80 @@ export async function handleCreateVerifiedSubscriptionRequest(
       invoiceAmountDue !== null &&
       invoiceAmountDue > invoiceTax;
 
-    const prematureChargeOccurred =
-      (invoiceAmountDue !== null && invoiceAmountDue > 0 && latestInvoice?.status === 'paid') ||
+    const chargeAlreadyOccurred =
       invoiceAmountPaid > 0 ||
+      (invoiceAmountDue !== null &&
+        invoiceAmountDue > 0 &&
+        (latestInvoice?.status === 'paid' || latestInvoice?.paid === true)) ||
       (paymentIntent &&
         typeof paymentIntent.status === 'string' &&
-        ['succeeded', 'processing', 'requires_capture'].includes(paymentIntent.status));
+        ['succeeded', 'processing', 'requires_capture'].includes(paymentIntent.status)) ||
+      (Boolean(chargeId) &&
+        (invoiceAmountPaid > 0 || (invoiceAmountDue !== null && invoiceAmountDue > 0)));
 
+    // 7a. If Stripe reports that a charge has ALREADY occurred before verification/confirmation:
+    // - Do NOT initiate an automatic refund (no POST /v1/refunds).
+    // - Do NOT claim that the charge was prevented.
+    // - Do NOT cancel an already-paid subscription automatically.
+    // - Record a critical payment-safety incident with the relevant Stripe IDs.
+    // - Return a safe customer-facing error and require manual investigation and refund authorization.
+    if (chargeAlreadyOccurred) {
+      const incidentMetadata = {
+        severity: 'CRITICAL',
+        userId: authUser.id,
+        customerId: customer.id,
+        subscriptionId: newlyCreatedSubscriptionId,
+        invoiceId,
+        paymentIntentId,
+        chargeId,
+        approvedAmountDue,
+        invoiceAmountDue,
+        invoiceAmountPaid,
+        invoiceDiscountAmount,
+        promotionCodeId,
+        discountApplied,
+        chargePrevented: false,
+        manualInvestigationRequired: true,
+        manualRefundAuthorizationRequired: true,
+        reason: 'UNEXPECTED_PRE_VERIFICATION_CHARGE',
+      };
+
+      emitAudit(options, 'payment_safety_incident', correlationId, incidentMetadata);
+      emitAudit(options, 'amount_mismatch_blocked', correlationId, incidentMetadata);
+
+      return jsonResponse(
+        409,
+        {
+          aborted: true,
+          blocked: true,
+          code: 'UNEXPECTED_PRE_VERIFICATION_CHARGE',
+          error:
+            'We detected an unexpected payment state while verifying your subscription. Please do not submit payment again — contact VAMO support so our team can review your billing account.',
+          chargePrevented: false,
+          manualInvestigationRequired: true,
+          manualRefundAuthorizationRequired: true,
+          customerId: customer.id,
+          subscriptionId: newlyCreatedSubscriptionId,
+          invoiceId,
+          paymentIntentId,
+          chargeId,
+          clientSecret: null,
+          requiresSetup: false,
+          invoiceAmountDue,
+          invoiceAmountPaid,
+          invoiceSubtotal,
+          invoiceDiscountAmount,
+          invoiceTax,
+          invoiceCurrency: invoiceCurrency || approvedCurrency,
+          appliedPromotionCodeId: null,
+          discountApplied: false,
+          verificationReference,
+        },
+        corsHeaders,
+      );
+    }
+
+    // 7b. Unpaid first-invoice verification checks (no charge has occurred)
     let blockCode: string | null = null;
     let blockMessage: string | null = null;
 
@@ -2275,52 +2359,42 @@ export async function handleCreateVerifiedSubscriptionRequest(
       blockCode = 'PROMOTION_NOT_APPLIED_ON_INVOICE';
       blockMessage =
         'Approved promotion code was not applied to the first invoice. Subscription was canceled before charging.';
-    } else if (prematureChargeOccurred) {
-      blockCode = 'UNEXPECTED_PRE_VERIFICATION_CHARGE';
-      blockMessage =
-        'Stripe attempted to collect payment before server-side invoice verification completed. Subscription was canceled and any premature charge was reversed.';
     }
 
-    if (blockCode) {
-      // If Stripe abnormally collected payment during subscription creation, immediately refund it
-      if (prematureChargeOccurred && paymentIntent && typeof paymentIntent.id === 'string') {
-        try {
-          await stripe.request(
-            'refunds',
-            'POST',
-            {
-              payment_intent: paymentIntent.id,
-              reason: 'duplicate',
-            },
-            `refund_abort_${newlyCreatedSubscriptionId}`,
-          );
-        } catch {
-          // Best-effort automatic refund on premature charge
-        }
-      }
+    const isUnpaidIncompleteSubscription =
+      sub?.status === 'incomplete' &&
+      !chargeAlreadyOccurred &&
+      invoiceAmountPaid === 0 &&
+      latestInvoice?.status !== 'paid' &&
+      latestInvoice?.paid !== true;
 
-      // Cancel ONLY the newly created (or same-checkout incomplete) subscription, NEVER a preexisting subscription
-      if (!preexistingSubscriptionIds.has(newlyCreatedSubscriptionId)) {
+    if (blockCode) {
+      // Cancel ONLY a newly created, unpaid incomplete subscription — NEVER a preexisting or already-paid subscription
+      if (!preexistingSubscriptionIds.has(newlyCreatedSubscriptionId) && isUnpaidIncompleteSubscription) {
         try {
           await stripe.request(
             `subscriptions/${encodeURIComponent(newlyCreatedSubscriptionId)}`,
             'DELETE',
           );
         } catch {
-          // Best-effort cleanup of incomplete subscription
+          // Best-effort cleanup of newly created unpaid incomplete subscription
         }
       }
 
       emitAudit(options, 'amount_mismatch_blocked', correlationId, {
         userId: authUser.id,
+        customerId: customer.id,
         subscriptionId: newlyCreatedSubscriptionId,
         invoiceId,
+        paymentIntentId,
         approvedAmountDue,
         invoiceAmountDue,
+        invoiceAmountPaid,
         invoiceDiscountAmount,
         promotionCodeId,
         discountApplied,
-        prematureChargeOccurred,
+        chargePrevented: true,
+        manualInvestigationRequired: false,
         reason: blockCode,
       });
 
@@ -2333,6 +2407,8 @@ export async function handleCreateVerifiedSubscriptionRequest(
           blocked: true,
           code: blockCode,
           error: blockMessage,
+          chargePrevented: true,
+          manualInvestigationRequired: false,
           subscriptionId: newlyCreatedSubscriptionId,
           clientSecret: null,
           requiresSetup: false,
@@ -2390,7 +2466,7 @@ export async function handleCreateVerifiedSubscriptionRequest(
       requiresSetup = false;
     } else {
       // Payable subscription ($ > 0) is missing a valid PaymentIntent clientSecret -> fail closed
-      if (!preexistingSubscriptionIds.has(newlyCreatedSubscriptionId)) {
+      if (!preexistingSubscriptionIds.has(newlyCreatedSubscriptionId) && isUnpaidIncompleteSubscription) {
         try {
           await stripe.request(
             `subscriptions/${encodeURIComponent(newlyCreatedSubscriptionId)}`,

@@ -101,6 +101,7 @@ export type CheckoutProtectionErrorCode =
   | 'AMOUNT_MISMATCH_BLOCKED'
   | 'CURRENCY_MISMATCH_BLOCKED'
   | 'UNEXPECTED_PAYMENT_INTENT_FOR_FREE_CHECKOUT'
+  | 'UNEXPECTED_PRE_VERIFICATION_CHARGE'
   | 'MISSING_INVOICE_VERIFICATION';
 
 export class CheckoutChargeProtectionError extends Error {
@@ -1215,6 +1216,7 @@ export class StripeService {
         serverCode === 'AMOUNT_CHANGED_AFTER_APPROVAL' ||
         serverCode === 'PRICE_CHANGED_AFTER_APPROVAL' ||
         serverCode === 'ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED' ||
+        serverCode === 'UNEXPECTED_PRE_VERIFICATION_CHARGE' ||
         serverCode === 'PROMOTION_NOT_APPLIED_ON_INVOICE' ||
         serverCode === 'PROMOTION_CHANGED_AFTER_APPROVAL' ||
         serverCode === 'PROMOTION_NO_LONGER_ELIGIBLE' ||
@@ -1227,7 +1229,9 @@ export class StripeService {
           result?.actualAmountDue ?? result?.invoiceAmountDue ?? invoiceObj?.amount_due ?? null;
 
         let mappedProtectionCode: CheckoutProtectionErrorCode = 'AMOUNT_MISMATCH_BLOCKED';
-        if (serverCode === 'ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED') {
+        if (serverCode === 'UNEXPECTED_PRE_VERIFICATION_CHARGE') {
+          mappedProtectionCode = 'UNEXPECTED_PRE_VERIFICATION_CHARGE';
+        } else if (serverCode === 'ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED') {
           mappedProtectionCode = 'UNEXPECTED_PAYMENT_INTENT_FOR_FREE_CHECKOUT';
         } else if (serverCode === 'EXPIRED_VERIFICATION_REFERENCE') {
           mappedProtectionCode = 'VERIFICATION_EXPIRED';
@@ -1248,7 +1252,9 @@ export class StripeService {
         const serverMessage =
           (typeof result?.error === 'string' && result.error) ||
           (typeof result?.message === 'string' && result.message) ||
-          'The invoice total returned by Stripe did not match the approved checkout amount. No payment was collected.';
+          (serverCode === 'UNEXPECTED_PRE_VERIFICATION_CHARGE'
+            ? 'We detected an unexpected payment state while verifying your subscription. Please do not submit payment again — contact VAMO support so our team can review your billing account.'
+            : 'The invoice total returned by Stripe did not match the approved checkout amount. No payment was collected.');
 
         this.auditService.record('amount_mismatch_blocked', {
           priceId: cleanPriceId,
@@ -1273,6 +1279,7 @@ export class StripeService {
             'AMOUNT_CHANGED_AFTER_APPROVAL',
             'PRICE_CHANGED_AFTER_APPROVAL',
             'ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED',
+            'UNEXPECTED_PRE_VERIFICATION_CHARGE',
             'PROMOTION_NOT_APPLIED_ON_INVOICE',
             'PROMOTION_CHANGED_AFTER_APPROVAL',
             'PROMOTION_NO_LONGER_ELIGIBLE',

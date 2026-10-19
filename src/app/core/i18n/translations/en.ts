@@ -1438,6 +1438,7 @@ export const enTranslations: Record<string, any> = {
       "WARN_CARD_SAVED_RENEWAL_FAILED": "Card saved, but we couldn’t update your renewal card.",
       "ERROR_AMOUNT_MISMATCH_BLOCKED": "Checkout stopped for your protection: Stripe returned an invoice total ({{actual}}) that did not match your approved total ({{approved}}). Your card was not charged.",
       "ERROR_UNEXPECTED_CHARGE_FOR_FREE": "Checkout stopped for your protection: You approved a $0.00 checkout, but a chargeable invoice was generated. Your card was not charged.",
+      "ERROR_UNEXPECTED_PRE_VERIFICATION_CHARGE": "We detected an unexpected payment state while verifying your subscription. Please do not submit payment again — contact VAMO support so our team can review your billing account.",
       "ERROR_PROMO_NOT_APPLIED_BLOCKED": "Checkout stopped for your protection: Your promotion code could not be applied to the first invoice. Your card was not charged.",
       "ERROR_VERIFICATION_EXPIRED": "Your verified checkout total has expired or changed. Please review and re-verify the price before continuing.",
       "ERROR_VERIFICATION_UNAVAILABLE": "We couldn’t verify the exact checkout total with Stripe right now. Checkout is paused so your card is not charged an unverified amount.",
