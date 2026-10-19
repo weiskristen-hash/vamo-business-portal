@@ -823,44 +823,143 @@ function sumInvoiceDiscounts(invoice: any): number {
   return 0;
 }
 
-function isPromotionPresentOnSubscriptionOrInvoice(
+export function isPromotionPresentOnSubscriptionOrInvoice(
   sub: any,
   invoice: any,
   expectedPromoId: string,
   expectedCouponId?: string | null,
 ): boolean {
-  const discountTotal = sumInvoiceDiscounts(invoice);
-  const checkDiscountEntry = (entry: any): boolean => {
-    if (!entry) return false;
+  const cleanExpectedPromoId = typeof expectedPromoId === 'string' ? expectedPromoId.trim() : '';
+  const cleanExpectedCouponId =
+    typeof expectedCouponId === 'string' && expectedCouponId.trim()
+      ? expectedCouponId.trim()
+      : null;
+
+  if (!cleanExpectedPromoId) {
+    return false;
+  }
+
+  const extractIdsFromDiscountEntry = (
+    entry: any,
+  ): { promoId: string | null; couponId: string | null; hasUnrelatedDiscountObject: boolean } => {
+    if (!entry) {
+      return { promoId: null, couponId: null, hasUnrelatedDiscountObject: false };
+    }
     if (typeof entry === 'string') {
-      return entry === expectedPromoId;
+      const trimmed = entry.trim();
+      if (trimmed.startsWith('promo_')) {
+        return { promoId: trimmed, couponId: null, hasUnrelatedDiscountObject: false };
+      }
+      if (trimmed.startsWith('coupon_')) {
+        return { promoId: null, couponId: trimmed, hasUnrelatedDiscountObject: false };
+      }
+      return { promoId: null, couponId: null, hasUnrelatedDiscountObject: false };
     }
     if (typeof entry === 'object') {
       const promoId =
-        typeof entry.promotion_code === 'string'
-          ? entry.promotion_code
-          : entry.promotion_code?.id;
+        typeof entry.promotion_code === 'string' && entry.promotion_code.trim()
+          ? entry.promotion_code.trim()
+          : typeof entry.promotion_code?.id === 'string' && entry.promotion_code.id.trim()
+            ? entry.promotion_code.id.trim()
+            : typeof entry.source?.promotion_code === 'string' && entry.source.promotion_code.trim()
+              ? entry.source.promotion_code.trim()
+              : typeof entry.source?.promotion_code?.id === 'string' &&
+                  entry.source.promotion_code.id.trim()
+                ? entry.source.promotion_code.id.trim()
+                : null;
+
       const couponId =
-        typeof entry.coupon === 'string' ? entry.coupon : entry.coupon?.id;
-      if (promoId && promoId === expectedPromoId) return true;
-      if (expectedCouponId && couponId && couponId === expectedCouponId) return true;
+        typeof entry.coupon === 'string' && entry.coupon.trim()
+          ? entry.coupon.trim()
+          : typeof entry.coupon?.id === 'string' && entry.coupon.id.trim()
+            ? entry.coupon.id.trim()
+            : typeof entry.source?.coupon === 'string' && entry.source.coupon.trim()
+              ? entry.source.coupon.trim()
+              : typeof entry.source?.coupon?.id === 'string' && entry.source.coupon.id.trim()
+                ? entry.source.coupon.id.trim()
+                : null;
+
+      return {
+        promoId,
+        couponId,
+        hasUnrelatedDiscountObject: promoId === null && couponId === null,
+      };
     }
-    return false;
+    return { promoId: null, couponId: null, hasUnrelatedDiscountObject: false };
   };
 
-  if (Array.isArray(invoice?.discounts) && invoice.discounts.some(checkDiscountEntry)) {
-    return true;
+  const evaluateEntries = (entries: any[]): { matched: boolean; conflict: boolean } => {
+    let matched = false;
+    for (const entry of entries) {
+      const { promoId, couponId } = extractIdsFromDiscountEntry(entry);
+      if (promoId && promoId !== cleanExpectedPromoId) {
+        return { matched: false, conflict: true };
+      }
+      if (couponId && cleanExpectedCouponId && couponId !== cleanExpectedCouponId) {
+        return { matched: false, conflict: true };
+      }
+      if (couponId && !cleanExpectedCouponId && !promoId) {
+        return { matched: false, conflict: true };
+      }
+      if (promoId === cleanExpectedPromoId) {
+        matched = true;
+      } else if (!promoId && cleanExpectedCouponId && couponId === cleanExpectedCouponId) {
+        matched = true;
+      }
+    }
+    return { matched, conflict: false };
+  };
+
+  const invoiceEntries: any[] = [];
+  if (Array.isArray(invoice?.discounts)) {
+    invoiceEntries.push(...invoice.discounts);
   }
-  if (checkDiscountEntry(invoice?.discount)) {
-    return true;
+  if (invoice?.discount) {
+    invoiceEntries.push(invoice.discount);
   }
-  if (Array.isArray(sub?.discounts) && sub.discounts.some(checkDiscountEntry)) {
-    return true;
+  if (Array.isArray(invoice?.total_discount_amounts)) {
+    for (const item of invoice.total_discount_amounts) {
+      if (item?.discount) {
+        invoiceEntries.push(item.discount);
+      }
+    }
   }
-  if (checkDiscountEntry(sub?.discount)) {
-    return true;
+
+  const subEntries: any[] = [];
+  if (Array.isArray(sub?.discounts)) {
+    subEntries.push(...sub.discounts);
   }
-  return discountTotal > 0;
+  if (sub?.discount) {
+    subEntries.push(sub.discount);
+  }
+
+  const invoiceEval = evaluateEntries(invoiceEntries);
+  if (invoiceEval.conflict) {
+    return false;
+  }
+
+  const subEval = evaluateEntries(subEntries);
+  if (subEval.conflict) {
+    return false;
+  }
+
+  // If invoice has explicit discount entries, require the invoice itself to match the expected promotion/coupon
+  if (invoiceEntries.length > 0) {
+    return invoiceEval.matched;
+  }
+
+  // Otherwise, if only subscription-level discount entries are expanded, require an exact match there
+  // AND positive discount / $0 invoice on the invoice if an invoice object was provided
+  if (subEval.matched) {
+    if (!invoice) {
+      return true;
+    }
+    const discountTotal = sumInvoiceDiscounts(invoice);
+    return discountTotal > 0 || invoice.amount_due === 0;
+  }
+
+  // Fail closed: never treat an unverified positive discount amount as proof of the expected promotion
+  return false;
 }
 
 function buildCorsHeaders(request: Request, env: CheckoutBackendEnv): Record<string, string> {
@@ -1677,27 +1776,39 @@ export async function handleCreateVerifiedSubscriptionRequest(
     );
   }
 
-  // 3. Enforce Duplicate Checkout & Replay Protection
+  // 3. Enforce Duplicate Checkout & Replay Protection (In-Isolate + Cross-Isolate Stripe Coordination)
   const store = options.idempotencyStore ?? globalIdempotencyStore;
   const lockKey = `vref:${refPayload.nonce}`;
-  const existingLock = store.get(lockKey) ?? (clientIdempotencyKey ? store.get(`idem:${clientIdempotencyKey}`) : undefined);
+  const idemKey = clientIdempotencyKey ? `idem:${clientIdempotencyKey}` : null;
+  const STALE_IN_FLIGHT_LOCK_MS = 60_000;
+
+  const existingLock = store.get(lockKey) ?? (idemKey ? store.get(idemKey) : undefined);
   if (existingLock) {
-    emitAudit(options, 'amount_mismatch_blocked', correlationId, {
-      userId: authUser.id,
-      reason: 'DUPLICATE_CHECKOUT_SUBMISSION',
-      existingStatus: existingLock.status,
-    });
-    return jsonResponse(
-      409,
-      {
-        aborted: true,
-        blocked: true,
-        code: 'DUPLICATE_CHECKOUT_SUBMISSION',
-        error: 'This checkout submission is already being processed or has already been completed.',
-        clientSecret: null,
-      },
-      corsHeaders,
-    );
+    const isStaleInFlight =
+      existingLock.status === 'in_flight' && nowMs - existingLock.createdAt > STALE_IN_FLIGHT_LOCK_MS;
+    if (!isStaleInFlight) {
+      emitAudit(options, 'amount_mismatch_blocked', correlationId, {
+        userId: authUser.id,
+        reason: 'DUPLICATE_CHECKOUT_SUBMISSION',
+        existingStatus: existingLock.status,
+      });
+      return jsonResponse(
+        409,
+        {
+          aborted: true,
+          blocked: true,
+          code: 'DUPLICATE_CHECKOUT_SUBMISSION',
+          error: 'This checkout submission is already being processed or has already been completed.',
+          subscriptionId: existingLock.subscriptionId ?? null,
+          clientSecret: null,
+        },
+        corsHeaders,
+      );
+    }
+    store.delete(lockKey);
+    if (idemKey) {
+      store.delete(idemKey);
+    }
   }
 
   const lockEntry: IdempotencyEntry = {
@@ -1706,19 +1817,20 @@ export async function handleCreateVerifiedSubscriptionRequest(
     userId: authUser.id,
   };
   store.set(lockKey, lockEntry);
-  if (clientIdempotencyKey) {
-    store.set(`idem:${clientIdempotencyKey}`, lockEntry);
+  if (idemKey) {
+    store.set(idemKey, lockEntry);
   }
 
   const releaseLockOnFailure = () => {
     store.delete(lockKey);
-    if (clientIdempotencyKey) {
-      store.delete(`idem:${clientIdempotencyKey}`);
+    if (idemKey) {
+      store.delete(idemKey);
     }
   };
 
   const stripe = createStripeClient(stripeSecret, fetchImpl);
   let newlyCreatedSubscriptionId: string | null = null;
+  const preexistingSubscriptionIds = new Set<string>();
 
   try {
     // 4. Resolve or create Stripe Customer
@@ -1758,32 +1870,88 @@ export async function handleCreateVerifiedSubscriptionRequest(
       );
     }
 
-    // Check existing subscriptions on customer so we NEVER create a duplicate active subscription
-    // and NEVER touch preexisting active subscriptions
+    // Cross-isolate subscription state inspection:
+    // - Never create a duplicate active subscription
+    // - Never cancel or modify any preexisting subscription
+    // - Detect existing incomplete subscriptions created by this exact checkout (retries across Worker instances)
+    let existingSameCheckoutIncompleteSub: any | null = null;
+
     if (customer && customer.id) {
       const existingSubs = await stripe.request('subscriptions', 'GET', {
         customer: customer.id,
         status: 'all',
         limit: '10',
+        'expand[]': [
+          'data.latest_invoice.payment_intent',
+          'data.latest_invoice.discounts',
+          'data.pending_setup_intent',
+          'data.discounts',
+        ],
       });
-      const activeSub = Array.isArray(existingSubs?.data)
-        ? existingSubs.data.find(
-            (s: any) => s && (s.status === 'active' || s.status === 'trialing'),
-          )
-        : null;
-      if (activeSub) {
-        releaseLockOnFailure();
-        return jsonResponse(
-          409,
-          {
-            aborted: true,
-            blocked: true,
-            code: 'EXISTING_ACTIVE_SUBSCRIPTION',
-            error: 'Your account already has an active subscription. Use Change Plan to switch tiers.',
-            clientSecret: null,
-          },
-          corsHeaders,
-        );
+      const subList: any[] = Array.isArray(existingSubs?.data) ? existingSubs.data : [];
+
+      for (const s of subList) {
+        if (!s || typeof s.id !== 'string') continue;
+        const subNonce =
+          typeof s.metadata?.verification_nonce === 'string'
+            ? s.metadata.verification_nonce.trim()
+            : null;
+        const subIdemKey =
+          typeof s.metadata?.idempotency_key === 'string'
+            ? s.metadata.idempotency_key.trim()
+            : null;
+        const subUserId =
+          typeof s.metadata?.vamo_user_id === 'string' ? s.metadata.vamo_user_id.trim() : null;
+
+        const isSameCheckout =
+          (subNonce === refPayload.nonce ||
+            (Boolean(clientIdempotencyKey) && subIdemKey === clientIdempotencyKey)) &&
+          (!subUserId || subUserId === authUser.id);
+
+        if (!isSameCheckout) {
+          preexistingSubscriptionIds.add(s.id);
+          if (['active', 'trialing', 'past_due', 'unpaid'].includes(s.status)) {
+            releaseLockOnFailure();
+            return jsonResponse(
+              409,
+              {
+                aborted: true,
+                blocked: true,
+                code: 'EXISTING_ACTIVE_SUBSCRIPTION',
+                error: 'Your account already has an active subscription. Use Change Plan to switch tiers.',
+                clientSecret: null,
+              },
+              corsHeaders,
+            );
+          }
+        } else {
+          // Subscription was created by this exact checkout nonce
+          if (s.status === 'active' || s.status === 'trialing') {
+            lockEntry.status = 'completed';
+            lockEntry.subscriptionId = s.id;
+            emitAudit(options, 'amount_mismatch_blocked', correlationId, {
+              userId: authUser.id,
+              subscriptionId: s.id,
+              reason: 'DUPLICATE_CHECKOUT_SUBMISSION',
+              existingStatus: s.status,
+            });
+            return jsonResponse(
+              409,
+              {
+                aborted: true,
+                blocked: true,
+                code: 'DUPLICATE_CHECKOUT_SUBMISSION',
+                error: 'This checkout submission has already been completed.',
+                subscriptionId: s.id,
+                clientSecret: null,
+              },
+              corsHeaders,
+            );
+          }
+          if (s.status === 'incomplete' && !existingSameCheckoutIncompleteSub) {
+            existingSameCheckoutIncompleteSub = s;
+          }
+        }
       }
     }
 
@@ -1832,7 +2000,13 @@ export async function handleCreateVerifiedSubscriptionRequest(
         : typeof productObj?.id === 'string'
           ? productObj.id
           : '';
-    if (!price || price.active !== true || typeof price.unit_amount !== 'number' || !productId) {
+    if (
+      !price ||
+      price.active !== true ||
+      typeof price.unit_amount !== 'number' ||
+      !productId ||
+      (productObj && productObj.active === false)
+    ) {
       releaseLockOnFailure();
       return jsonResponse(
         422,
@@ -1848,6 +2022,7 @@ export async function handleCreateVerifiedSubscriptionRequest(
     }
 
     let validatedCouponId: string | null = null;
+    let validatedCouponPercentOff: number | null = null;
     if (promotionCodeId) {
       const promoCheck = await validatePromotionEligibility({
         stripe,
@@ -1878,6 +2053,10 @@ export async function handleCreateVerifiedSubscriptionRequest(
         );
       }
       validatedCouponId = promoCheck.couponObj?.id ?? null;
+      validatedCouponPercentOff =
+        typeof promoCheck.couponObj?.percent_off === 'number'
+          ? promoCheck.couponObj.percent_off
+          : null;
     }
 
     // Create Stripe customer if none existed yet (preserving canonical VAMO email & name linkage)
@@ -1894,38 +2073,95 @@ export async function handleCreateVerifiedSubscriptionRequest(
           ...(authUser.providerId ? { 'metadata[vamo_provider_id]': authUser.providerId } : {}),
           'metadata[source]': 'vamo-business-portal',
         },
-        `cust_create_${authUser.id}_${refPayload.nonce}`,
+        `cust_create_${authUser.id}`,
       );
     }
 
-    // 6. Create Stripe Subscription with payment_behavior=default_incomplete
-    const subParams: Record<string, string | string[]> = {
-      customer: customer.id,
-      'items[0][price]': priceId,
-      payment_behavior: 'default_incomplete',
-      'payment_settings[save_default_payment_method]': 'on_subscription',
-      'metadata[vamo_user_id]': authUser.id,
-      ...(authUser.providerId ? { 'metadata[vamo_provider_id]': authUser.providerId } : {}),
-      'metadata[source]': 'vamo-business-portal',
-      'metadata[approved_amount_due]': String(approvedAmountDue),
-      'metadata[approved_currency]': approvedCurrency,
-      'metadata[verification_nonce]': refPayload.nonce,
-      'expand[]': [
-        'latest_invoice.payment_intent',
-        'latest_invoice.discounts',
-        'pending_setup_intent',
-      ],
-    };
+    // 6. Create or Reuse Incomplete Stripe Subscription with payment_behavior=default_incomplete
+    // CRITICAL PRE-CHARGE SAFETY:
+    // Never pass `default_payment_method` during `POST /v1/subscriptions`.
+    // Payment authorization/collection must only happen AFTER the server verifies `latest_invoice`.
+    const stripeIdempotencyKey = `sub_create_${authUser.id}_${refPayload.nonce}`;
+    let sub: any = null;
+    let reusedExistingIncompleteSubscription = false;
 
-    if (promotionCodeId) {
-      subParams['discounts[0][promotion_code]'] = promotionCodeId;
-    }
-    if (paymentMethodId) {
-      subParams['default_payment_method'] = paymentMethodId;
+    if (existingSameCheckoutIncompleteSub) {
+      reusedExistingIncompleteSubscription = true;
+      if (
+        existingSameCheckoutIncompleteSub.latest_invoice &&
+        typeof existingSameCheckoutIncompleteSub.latest_invoice === 'object'
+      ) {
+        sub = existingSameCheckoutIncompleteSub;
+      } else {
+        sub = await stripe.request(
+          `subscriptions/${encodeURIComponent(existingSameCheckoutIncompleteSub.id)}`,
+          'GET',
+          {
+            'expand[]': [
+              'latest_invoice.payment_intent',
+              'latest_invoice.discounts',
+              'pending_setup_intent',
+              'discounts',
+            ],
+          },
+        );
+      }
+    } else {
+      const subParams: Record<string, string | string[]> = {
+        customer: customer.id,
+        'items[0][price]': priceId,
+        payment_behavior: 'default_incomplete',
+        'payment_settings[save_default_payment_method]': 'on_subscription',
+        'metadata[vamo_user_id]': authUser.id,
+        ...(authUser.providerId ? { 'metadata[vamo_provider_id]': authUser.providerId } : {}),
+        'metadata[source]': 'vamo-business-portal',
+        'metadata[approved_amount_due]': String(approvedAmountDue),
+        'metadata[approved_currency]': approvedCurrency,
+        'metadata[verification_nonce]': refPayload.nonce,
+        'metadata[idempotency_key]': clientIdempotencyKey || stripeIdempotencyKey,
+        'expand[]': [
+          'latest_invoice.payment_intent',
+          'latest_invoice.discounts',
+          'pending_setup_intent',
+          'discounts',
+        ],
+      };
+
+      if (promotionCodeId) {
+        subParams['discounts[0][promotion_code]'] = promotionCodeId;
+      }
+
+      try {
+        sub = await stripe.request('subscriptions', 'POST', subParams, stripeIdempotencyKey);
+      } catch (subErr: any) {
+        if (
+          subErr?.status === 409 ||
+          subErr?.code === 'idempotency_key_in_use' ||
+          subErr?.code === 'lock_timeout'
+        ) {
+          releaseLockOnFailure();
+          emitAudit(options, 'amount_mismatch_blocked', correlationId, {
+            userId: authUser.id,
+            reason: 'DUPLICATE_CHECKOUT_SUBMISSION',
+            stripeCode: subErr?.code,
+          });
+          return jsonResponse(
+            409,
+            {
+              aborted: true,
+              blocked: true,
+              retryable: true,
+              code: 'DUPLICATE_CHECKOUT_SUBMISSION',
+              error: 'This checkout submission is currently being processed. Please wait a moment.',
+              clientSecret: null,
+            },
+            corsHeaders,
+          );
+        }
+        throw subErr;
+      }
     }
 
-    const stripeIdempotencyKey = `sub_create_${refPayload.nonce}`;
-    const sub = await stripe.request('subscriptions', 'POST', subParams, stripeIdempotencyKey);
     newlyCreatedSubscriptionId = typeof sub?.id === 'string' ? sub.id : null;
 
     if (!newlyCreatedSubscriptionId) {
@@ -1951,6 +2187,10 @@ export async function handleCreateVerifiedSubscriptionRequest(
       typeof latestInvoice?.amount_due === 'number' && Number.isFinite(latestInvoice.amount_due)
         ? latestInvoice.amount_due
         : null;
+    const invoiceAmountPaid =
+      typeof latestInvoice?.amount_paid === 'number' && Number.isFinite(latestInvoice.amount_paid)
+        ? latestInvoice.amount_paid
+        : 0;
     const invoiceSubtotal =
       typeof latestInvoice?.subtotal === 'number' && Number.isFinite(latestInvoice.subtotal)
         ? latestInvoice.subtotal
@@ -1969,6 +2209,10 @@ export async function handleCreateVerifiedSubscriptionRequest(
       latestInvoice?.payment_intent && typeof latestInvoice.payment_intent === 'object'
         ? latestInvoice.payment_intent
         : null;
+    const paymentIntentAmount =
+      paymentIntent && typeof paymentIntent.amount === 'number' && Number.isFinite(paymentIntent.amount)
+        ? paymentIntent.amount
+        : null;
     const pendingSetupIntent =
       sub?.pending_setup_intent && typeof sub.pending_setup_intent === 'object'
         ? sub.pending_setup_intent
@@ -1986,10 +2230,22 @@ export async function handleCreateVerifiedSubscriptionRequest(
     const hasChargeableIntentForZeroApproval =
       approvedAmountDue === 0 &&
       ((invoiceAmountDue !== null && invoiceAmountDue > 0) ||
-        (paymentIntent && typeof paymentIntent.amount === 'number' && paymentIntent.amount > 0) ||
+        (paymentIntentAmount !== null && paymentIntentAmount > 0) ||
         (paymentIntent &&
           typeof paymentIntent.client_secret === 'string' &&
           paymentIntent.client_secret.startsWith('pi_')));
+
+    const unexpectedHundredPercentAmount =
+      validatedCouponPercentOff === 100 &&
+      invoiceAmountDue !== null &&
+      invoiceAmountDue > invoiceTax;
+
+    const prematureChargeOccurred =
+      (invoiceAmountDue !== null && invoiceAmountDue > 0 && latestInvoice?.status === 'paid') ||
+      invoiceAmountPaid > 0 ||
+      (paymentIntent &&
+        typeof paymentIntent.status === 'string' &&
+        ['succeeded', 'processing', 'requires_capture'].includes(paymentIntent.status));
 
     let blockCode: string | null = null;
     let blockMessage: string | null = null;
@@ -2005,24 +2261,54 @@ export async function handleCreateVerifiedSubscriptionRequest(
       blockCode = 'ZERO_AMOUNT_PAYMENT_INTENT_BLOCKED';
       blockMessage =
         'Customer approved $0.00 due today, but Stripe generated a payable invoice or PaymentIntent. Subscription was canceled before any charge could occur.';
-    } else if (invoiceAmountDue > approvedAmountDue) {
+    } else if (unexpectedHundredPercentAmount) {
+      blockCode = 'PROMOTION_NOT_APPLIED_ON_INVOICE';
+      blockMessage =
+        'Approved 100% promotion code did not produce a $0.00 invoice total. Subscription was canceled before charging.';
+    } else if (
+      invoiceAmountDue > approvedAmountDue ||
+      (paymentIntentAmount !== null && paymentIntentAmount > approvedAmountDue)
+    ) {
       blockCode = 'AMOUNT_EXCEEDS_APPROVED';
-      blockMessage = `First invoice amount (${invoiceAmountDue}) exceeded the customer-approved amount (${approvedAmountDue}). Subscription was canceled before charging.`;
+      blockMessage = `First invoice amount (${paymentIntentAmount ?? invoiceAmountDue}) exceeded the customer-approved amount (${approvedAmountDue}). Subscription was canceled before charging.`;
     } else if (promotionCodeId && !discountApplied) {
       blockCode = 'PROMOTION_NOT_APPLIED_ON_INVOICE';
       blockMessage =
         'Approved promotion code was not applied to the first invoice. Subscription was canceled before charging.';
+    } else if (prematureChargeOccurred) {
+      blockCode = 'UNEXPECTED_PRE_VERIFICATION_CHARGE';
+      blockMessage =
+        'Stripe attempted to collect payment before server-side invoice verification completed. Subscription was canceled and any premature charge was reversed.';
     }
 
     if (blockCode) {
-      // Cancel ONLY the newly created incomplete subscription in this request
-      try {
-        await stripe.request(
-          `subscriptions/${encodeURIComponent(newlyCreatedSubscriptionId)}`,
-          'DELETE',
-        );
-      } catch {
-        // Best-effort cleanup of incomplete subscription
+      // If Stripe abnormally collected payment during subscription creation, immediately refund it
+      if (prematureChargeOccurred && paymentIntent && typeof paymentIntent.id === 'string') {
+        try {
+          await stripe.request(
+            'refunds',
+            'POST',
+            {
+              payment_intent: paymentIntent.id,
+              reason: 'duplicate',
+            },
+            `refund_abort_${newlyCreatedSubscriptionId}`,
+          );
+        } catch {
+          // Best-effort automatic refund on premature charge
+        }
+      }
+
+      // Cancel ONLY the newly created (or same-checkout incomplete) subscription, NEVER a preexisting subscription
+      if (!preexistingSubscriptionIds.has(newlyCreatedSubscriptionId)) {
+        try {
+          await stripe.request(
+            `subscriptions/${encodeURIComponent(newlyCreatedSubscriptionId)}`,
+            'DELETE',
+          );
+        } catch {
+          // Best-effort cleanup of incomplete subscription
+        }
       }
 
       emitAudit(options, 'amount_mismatch_blocked', correlationId, {
@@ -2034,6 +2320,7 @@ export async function handleCreateVerifiedSubscriptionRequest(
         invoiceDiscountAmount,
         promotionCodeId,
         discountApplied,
+        prematureChargeOccurred,
         reason: blockCode,
       });
 
@@ -2078,6 +2365,21 @@ export async function handleCreateVerifiedSubscriptionRequest(
       } else {
         clientSecret = null;
         requiresSetup = false;
+        // Post-verification saved card attachment for $0.00 subscriptions without a SetupIntent
+        if (paymentMethodId) {
+          try {
+            await stripe.request(
+              `subscriptions/${encodeURIComponent(newlyCreatedSubscriptionId)}`,
+              'POST',
+              {
+                default_payment_method: paymentMethodId,
+              },
+              `sub_set_pm_${authUser.id}_${refPayload.nonce}`,
+            );
+          } catch {
+            // Non-fatal: subscription is already verified at $0.00
+          }
+        }
       }
     } else if (
       paymentIntent &&
@@ -2086,6 +2388,30 @@ export async function handleCreateVerifiedSubscriptionRequest(
     ) {
       clientSecret = paymentIntent.client_secret;
       requiresSetup = false;
+    } else {
+      // Payable subscription ($ > 0) is missing a valid PaymentIntent clientSecret -> fail closed
+      if (!preexistingSubscriptionIds.has(newlyCreatedSubscriptionId)) {
+        try {
+          await stripe.request(
+            `subscriptions/${encodeURIComponent(newlyCreatedSubscriptionId)}`,
+            'DELETE',
+          );
+        } catch {
+          // Best-effort cleanup
+        }
+      }
+      releaseLockOnFailure();
+      return jsonResponse(
+        502,
+        {
+          aborted: true,
+          blocked: true,
+          code: 'MISSING_PAYMENT_INTENT_SECRET',
+          error: 'Stripe did not return a valid payment confirmation secret for the verified invoice.',
+          clientSecret: null,
+        },
+        corsHeaders,
+      );
     }
 
     lockEntry.status = 'completed';
@@ -2105,6 +2431,7 @@ export async function handleCreateVerifiedSubscriptionRequest(
       appliedPromotionCodeId: promotionCodeId,
       discountApplied,
       requiresSetup,
+      reusedExistingIncompleteSubscription,
     });
 
     return jsonResponse(
@@ -2113,6 +2440,7 @@ export async function handleCreateVerifiedSubscriptionRequest(
         aborted: false,
         blocked: false,
         verifiedByServer: true,
+        reusedExistingIncompleteSubscription,
         subscriptionId: newlyCreatedSubscriptionId,
         customerId: customer.id,
         status: sub.status || 'incomplete',
