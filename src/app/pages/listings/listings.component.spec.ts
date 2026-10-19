@@ -577,13 +577,11 @@ describe('ListingsComponent', () => {
         'USD $150.00 / group',
       ]);
 
-      const viewLinks = Array.from(
-        fixture.nativeElement.querySelectorAll('.view-vamo-btn')
-      ) as HTMLAnchorElement[];
-      expect(viewLinks.map((a) => a.getAttribute('href'))).toEqual([
+      expect(eventsWithUnits.map((ev) => component.getPublicEventLink(ev))).toEqual([
         'https://app.vamo-app.com/event/ev-music-1',
         'https://app.vamo-app.com/event/ev-excursion-2',
       ]);
+      expect(fixture.nativeElement.querySelector('.view-vamo-btn')).toBeNull();
 
       // Switch to Spanish
       i18nService.setLang('es');

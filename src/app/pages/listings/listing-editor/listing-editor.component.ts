@@ -55,16 +55,6 @@ export interface ExistingImage {
         </div>
 
         <div class="header-actions">
-          <a
-            *ngIf="isEditMode && !isDraft && eventId"
-            [href]="getPublicEventLink()"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="btn btn-ghost view-on-vamo-btn"
-            [title]="'PORTAL.LISTINGS.VIEW_ON_VAMO_TITLE' | translate"
-          >
-            {{ 'PORTAL.LISTINGS.VIEW_ON_VAMO' | translate }}
-          </a>
           <button type="button" class="btn btn-secondary" (click)="onCancel()" [disabled]="submitting">
             {{ 'PORTAL.COMMON.CANCEL' | translate }}
           </button>

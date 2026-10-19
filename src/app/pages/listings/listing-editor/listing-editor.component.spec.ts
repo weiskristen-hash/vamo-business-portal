@@ -1830,7 +1830,7 @@ describe('ListingEditorComponent', () => {
       expect(fitImageEl.querySelector('.fit-image-backdrop')).toBeNull();
     });
 
-    it('renders the canonical View on VAMO link (https://app.vamo-app.com/event/:id) when editing a published active event', async () => {
+    it('resolves the canonical event URL (https://app.vamo-app.com/event/:id) without adding a public-facing View on VAMO button', async () => {
       businessServiceSpy.getEventById.mockResolvedValueOnce({
         id: 'ev-live-99',
         name: 'Published Beach Concert',
@@ -1846,10 +1846,8 @@ describe('ListingEditorComponent', () => {
       await component.loadExistingEvent('ev-live-99');
       fixture.detectChanges();
 
-      const viewLink = fixture.nativeElement.querySelector('.view-on-vamo-btn') as HTMLAnchorElement;
-      expect(viewLink).toBeTruthy();
-      expect(viewLink.getAttribute('href')).toBe('https://app.vamo-app.com/event/ev-live-99');
-      expect(viewLink.getAttribute('target')).toBe('_blank');
+      expect(component.getPublicEventLink()).toBe('https://app.vamo-app.com/event/ev-live-99');
+      expect(fixture.nativeElement.querySelector('.view-on-vamo-btn')).toBeNull();
     });
   });
 
