@@ -209,4 +209,22 @@ describe('SsoCallbackComponent', () => {
     await component.returnToLogin();
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/login']);
   });
+
+  it('should exchange id_token from URL hash fragment via loginWithGoogleCredential and route to preserved returnUrl', async () => {
+    authServiceSpy.loginWithGoogleCredential = vi.fn().mockResolvedValue({
+      id: 'usr-google-hash',
+      email: 'owner@beachbar.com',
+      provider_link: { id: 'prov-1', name: 'Las Terrenas Beach Bar' },
+    });
+
+    window.location.hash = '#id_token=google_jwt_id_token_999&state=xyz';
+    sessionStorage.setItem('vamo_auth_return_url', '/app/listings');
+
+    createComponent();
+    await component.ngOnInit();
+
+    expect(authServiceSpy.loginWithGoogleCredential).toHaveBeenCalledWith('google_jwt_id_token_999');
+    expect(routerSpy.navigateByUrl).toHaveBeenCalledWith('/app/listings');
+    expect(window.location.hash).toBe('');
+  });
 });

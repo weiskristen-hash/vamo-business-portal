@@ -413,7 +413,50 @@ describe('BusinessService', () => {
       });
       expect(normalized.description).toBe(expectedLf);
     });
+
+    it('includes price_unit in eventFields and persists/nulls price_unit matching mobile app semantics', async () => {
+      const fields = service.eventFields as readonly string[];
+      expect(fields.includes('price_unit')).toBe(true);
+
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({ id: 'created-ev-2' } as any);
+
+      // Paid event with per_group price_unit
+      await service.createEvent(
+        {
+          ...valid,
+          status: 'draft',
+          isFree: false,
+          contactForPrice: false,
+          price: 2500,
+          currency: 'DOP',
+          price_unit: 'per_group',
+        },
+        [],
+        ['area-lt']
+      );
+
+      const createCmd = request.mock.calls[0][0] as () => { body: string };
+      const createBody = JSON.parse(createCmd().body);
+      expect(createBody.price_unit).toBe('per_group');
+
+      // Free event should null out price_unit
+      request.mockClear();
+      await service.createEvent(
+        {
+          ...valid,
+          status: 'draft',
+          isFree: true,
+          contactForPrice: false,
+          price_unit: 'per_person',
+        },
+        [],
+        ['area-lt']
+      );
+      const freeBody = JSON.parse((request.mock.calls[0][0] as () => { body: string })().body);
+      expect(freeBody.price_unit).toBeNull();
+    });
   });
 
 });
+
 

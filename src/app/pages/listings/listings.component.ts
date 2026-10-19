@@ -20,12 +20,15 @@ import {
   calculateSharedEventStats,
   canEditEvent,
   validateEventForPublish,
+  formatEventPriceUnitSuffix,
+  getPublicEventUrl,
 } from '../../core/utils/event-display.util';
+import { FitImageComponent } from '../../shared/components/fit-image/fit-image.component';
 
 @Component({
   selector: 'app-listings',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, TranslatePipe],
+  imports: [CommonModule, RouterModule, FormsModule, TranslatePipe, FitImageComponent],
   template: `
     <div class="listings-page">
       <!-- Page Header -->
@@ -157,7 +160,7 @@ import {
             >
               <option value="all">{{ 'PORTAL.LISTINGS.ALL_CATEGORIES' | translate }}</option>
               <option *ngFor="let cat of categories" [value]="cat.value">
-                {{ cat.emoji }} {{ 'CATEGORIES.' + cat.value.toUpperCase() | translate }}
+                {{ 'CATEGORIES.' + cat.value.toUpperCase() | translate }}
               </option>
             </select>
 
@@ -230,15 +233,16 @@ import {
         <article *ngFor="let event of filteredEvents; trackBy: trackById" class="listing-card card card-interactive">
           <!-- Thumbnail / Cover Section -->
           <div class="listing-media">
-            <img
+            <app-fit-image
               [src]="getEventImageUrl(event)"
               [alt]="event.name"
-              class="listing-image"
+              imgClass="listing-image"
               loading="lazy"
-            />
+            ></app-fit-image>
             <div class="media-badges">
               <span class="category-badge badge">
-                {{ getCategoryEmoji(event.category) }} {{ getCategoryLabel(event.category) }}
+                <img [src]="getCategoryIcon(event.category)" alt="" aria-hidden="true" class="cat-badge-icon" />
+                <span>{{ getCategoryLabel(event.category) }}</span>
               </span>
               <span class="status-badge badge" [ngClass]="getStatusBadge(event).class">
                 {{ getStatusBadge(event).text }}
@@ -705,6 +709,7 @@ import {
       top: 12px;
       left: 12px;
       right: 12px;
+      z-index: 2;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -713,6 +718,9 @@ import {
     }
 
     .category-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       background: rgba(15, 23, 42, 0.75);
       backdrop-filter: blur(8px);
       color: #ffffff;
@@ -721,6 +729,14 @@ import {
       padding: 4px 10px;
       border-radius: var(--vamo-radius-full);
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .cat-badge-icon {
+      width: 16px;
+      height: 16px;
+      object-fit: contain;
+      flex-shrink: 0;
+      display: block;
     }
 
     .status-badge {
@@ -735,6 +751,7 @@ import {
       position: absolute;
       bottom: 10px;
       left: 12px;
+      z-index: 2;
       display: flex;
       gap: 6px;
       flex-wrap: wrap;
@@ -1254,8 +1271,17 @@ export class ListingsComponent implements OnInit {
     return found ? found.emoji : '📌';
   }
 
+  getCategoryIcon(categoryKey?: string): string {
+    const found = this.categories.find((c) => c.value === categoryKey);
+    return found ? found.icon : '/assets/category-icons/other.png';
+  }
+
   getEventImageUrl(event: VamoEvent): string {
     return getEventCoverImageUrl(event, this.businessService);
+  }
+
+  getPublicEventLink(event: VamoEvent): string {
+    return getPublicEventUrl(event.id);
   }
 
   getStatusBadge(event: VamoEvent): { text: string; class: string } {
@@ -1276,7 +1302,8 @@ export class ListingsComponent implements OnInit {
     if (event.contactForPrice) return this.i18n.t('PORTAL.LISTINGS.CONTACT_FOR_PRICE');
     if (event.price !== undefined && event.price !== null && Number(event.price) > 0) {
       const currency = event.currency || 'USD';
-      return `${currency} $${Number(event.price).toFixed(2)}`;
+      const suffix = formatEventPriceUnitSuffix(event.price_unit, this.i18n);
+      return `${currency} $${Number(event.price).toFixed(2)}${suffix}`;
     }
     return this.i18n.t('PORTAL.LISTINGS.FREE');
   }

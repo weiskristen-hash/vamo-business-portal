@@ -46,13 +46,37 @@ export function getEventCoverImageFileId(event: VamoEvent | null | undefined): s
   return null;
 }
 
+export const WEB_APP_ORIGIN = 'https://app.vamo-app.com';
+
+export function getPublicEventUrl(id: string | null | undefined): string {
+  if (!id) return '';
+  return `${WEB_APP_ORIGIN}/event/${encodeURIComponent(id)}`;
+}
+
+export function getPublicProviderUrl(id: string | null | undefined): string {
+  if (!id) return '';
+  return `${WEB_APP_ORIGIN}/provider/${encodeURIComponent(id)}`;
+}
+
+export function formatEventPriceUnitSuffix(
+  priceUnit: string | null | undefined,
+  i18n: I18nService
+): string {
+  if (!priceUnit) return '';
+  const key = 'EVENTS.PRICING.UNIT_SUFFIX.' + priceUnit.toUpperCase();
+  const translated = i18n.t(key);
+  if (!translated || translated === key) return '';
+  return ` ${translated}`;
+}
+
 /**
  * Returns cover image URL with fallback to placeholder.
+ * Defaults to uncropped asset URL so FitImageComponent can evaluate natural aspect ratio.
  */
 export function getEventCoverImageUrl(
   event: VamoEvent | null | undefined,
   businessService: BusinessService,
-  transform = 'width=600&height=400&fit=cover'
+  transform = ''
 ): string {
   const fileId = getEventCoverImageFileId(event);
   if (fileId) {

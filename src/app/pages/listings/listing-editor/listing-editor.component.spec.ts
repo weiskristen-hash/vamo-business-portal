@@ -1666,5 +1666,190 @@ describe('ListingEditorComponent', () => {
     });
   });
 
+  describe('Post-Release Alignment: Category Icons, Pricing Units, Image Fitting & Event Links', () => {
+    beforeEach(async () => {
+      sessionStorage.clear();
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    });
+
+    it('renders all 9 supplied PNG category icons in the category selector without emoji placeholders', () => {
+      const categoryButtons = Array.from(
+        fixture.nativeElement.querySelectorAll('.category-grid .category-card-btn')
+      ) as HTMLButtonElement[];
+      expect(categoryButtons.length).toBe(9);
+
+      const expectedIcons = [
+        '/assets/category-icons/music_nightlife.png',
+        '/assets/category-icons/Food_drink.png',
+        '/assets/category-icons/excursion.png',
+        '/assets/category-icons/Wellness.png',
+        '/assets/category-icons/arts_and_culture.png',
+        '/assets/category-icons/sports_outdoor.png',
+        '/assets/category-icons/personalized.png',
+        '/assets/category-icons/celebrations_festivities.png',
+        '/assets/category-icons/other.png',
+      ];
+
+      const renderedIcons = categoryButtons.map((btn) => {
+        const img = btn.querySelector('img.cat-icon-img') as HTMLImageElement | null;
+        expect(img).toBeTruthy();
+        expect(img?.getAttribute('aria-hidden')).toBe('true');
+        expect(btn.querySelector('.cat-emoji')).toBeNull();
+        return img?.getAttribute('src');
+      });
+
+      expect(renderedIcons).toEqual(expectedIcons);
+
+      // Selecting a category sets aria-pressed="true" and updates draft.category
+      categoryButtons[2].click(); // Excursions & Tours ('excursions')
+      fixture.detectChanges();
+      expect(component.draft.category).toBe('excursions');
+      expect(categoryButtons[2].getAttribute('aria-pressed')).toBe('true');
+      expect(categoryButtons[0].getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('supports all 4 mobile app pricing units (per_person, per_group, per_week, per_month) with EN/ES labels and suffixes', async () => {
+      expect(component.draft.price_unit).toBe('per_person');
+
+      // Switch to paid pricing model
+      component.setPricingModel('paid');
+      component.draft.price = 60;
+      fixture.detectChanges();
+
+      i18nService.setLang('en');
+      fixture.detectChanges();
+
+      const unitBtnsEn = Array.from(
+        fixture.nativeElement.querySelectorAll('.price-unit-selector .price-unit-btn')
+      ) as HTMLButtonElement[];
+      expect(unitBtnsEn.map((b) => b.textContent?.trim())).toEqual([
+        'Per person',
+        'Per group',
+        'Per week',
+        'Per month',
+      ]);
+      expect(component.formatPreviewPrice()).toBe('USD $60.00 / person');
+      expect(component.formatEventDetailsPrice()).toBe('$60.00 / person');
+
+      // Select 'per_group'
+      unitBtnsEn[1].click();
+      fixture.detectChanges();
+      expect(component.draft.price_unit).toBe('per_group');
+      expect(component.formatPreviewPrice()).toBe('USD $60.00 / group');
+      expect(component.formatEventDetailsPrice()).toBe('$60.00 / group');
+
+      // Switch to Spanish
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      const unitBtnsEs = Array.from(
+        fixture.nativeElement.querySelectorAll('.price-unit-selector .price-unit-btn')
+      ) as HTMLButtonElement[];
+      expect(unitBtnsEs.map((b) => b.textContent?.trim())).toEqual([
+        'Por persona',
+        'Por grupo',
+        'Por semana',
+        'Por mes',
+      ]);
+      expect(component.formatPreviewPrice()).toBe('USD $60.00 / grupo');
+      expect(component.formatEventDetailsPrice()).toBe('$60.00 / grupo');
+
+      // Persist price_unit on save when paid, and null it when free
+      i18nService.setLang('en');
+      component.draft.name = 'Catamaran Group Charter';
+      component.draft.category = 'excursions';
+      component.draft.description = 'Private catamaran excursion along Samaná bay.';
+      await component.saveDraft();
+
+      expect(businessServiceSpy.createEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isFree: false,
+          contactForPrice: false,
+          price: 60,
+          price_unit: 'per_group',
+        }),
+        expect.anything(),
+        expect.anything()
+      );
+
+      businessServiceSpy.updateEvent.mockClear();
+      component.setPricingModel('free');
+      await component.saveDraft();
+      expect(businessServiceSpy.updateEvent).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          isFree: true,
+          price_unit: null,
+        }),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything()
+      );
+    });
+
+    it('uses FitImageComponent to show narrow/portrait flyers uncropped with a blurred backdrop while keeping 3:2 landscape images as cover', () => {
+      component.existingImages = [
+        { junctionId: 50, url: 'https://api.vamo-app.com/assets/portrait-flyer.jpg' },
+      ];
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+
+      const fitImageEl = fixture.nativeElement.querySelector(
+        '.phone-card-image-wrap app-fit-image'
+      ) as HTMLElement;
+      expect(fitImageEl).toBeTruthy();
+
+      const mainImg = fitImageEl.querySelector('img.phone-cover-img') as HTMLImageElement;
+      expect(mainImg).toBeTruthy();
+
+      // Mock container box as 330x210 (ratio ~1.57) and image as portrait 800x1200 (ratio ~0.67 < 1.57 * 0.85)
+      Object.defineProperty(fitImageEl, 'clientWidth', { value: 330, configurable: true });
+      Object.defineProperty(fitImageEl, 'clientHeight', { value: 210, configurable: true });
+      Object.defineProperty(mainImg, 'naturalWidth', { value: 800, configurable: true });
+      Object.defineProperty(mainImg, 'naturalHeight', { value: 1200, configurable: true });
+
+      mainImg.dispatchEvent(new Event('load'));
+      fixture.detectChanges();
+
+      expect(fitImageEl.classList.contains('fit-image--contain')).toBe(true);
+      expect(fitImageEl.querySelector('.fit-image-backdrop')).toBeTruthy();
+
+      // Now simulate a 3:2 landscape image (1200x800, ratio 1.5 >= 1.57 * 0.85)
+      Object.defineProperty(mainImg, 'naturalWidth', { value: 1200, configurable: true });
+      Object.defineProperty(mainImg, 'naturalHeight', { value: 800, configurable: true });
+
+      mainImg.dispatchEvent(new Event('load'));
+      fixture.detectChanges();
+
+      expect(fitImageEl.classList.contains('fit-image--contain')).toBe(false);
+      expect(fitImageEl.querySelector('.fit-image-backdrop')).toBeNull();
+    });
+
+    it('resolves the canonical event URL (https://app.vamo-app.com/event/:id) without adding a public-facing View on VAMO button', async () => {
+      businessServiceSpy.getEventById.mockResolvedValueOnce({
+        id: 'ev-live-99',
+        name: 'Published Beach Concert',
+        status: 'published',
+        category: 'live',
+        startDate: '2026-12-15',
+        from: '20:00',
+        to: '23:30',
+      });
+
+      component.isEditMode = true;
+      component.eventId = 'ev-live-99';
+      await component.loadExistingEvent('ev-live-99');
+      fixture.detectChanges();
+
+      expect(component.getPublicEventLink()).toBe('https://app.vamo-app.com/event/ev-live-99');
+      expect(fixture.nativeElement.querySelector('.view-on-vamo-btn')).toBeNull();
+    });
+  });
+
 });
 

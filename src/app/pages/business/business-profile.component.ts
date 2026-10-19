@@ -1164,7 +1164,7 @@ export interface OfferingOption {
     .logo-preview-img {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
     }
 
     .logo-fallback-box {
@@ -1751,7 +1751,7 @@ export interface OfferingOption {
     .mockup-logo-img {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
     }
 
     .mockup-logo-empty {

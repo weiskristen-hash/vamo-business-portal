@@ -455,7 +455,20 @@ export const enTranslations: Record<string, any> = {
       "PAID": "Paid",
       "CONTACT": "By inquiry",
       "PRICE_LABEL": "Price",
-      "PLACEHOLDER": "e.g. 10.00"
+      "PLACEHOLDER": "e.g. 10.00",
+      "UNIT_LABEL": "Price applies",
+      "UNIT": {
+        "PER_PERSON": "Per person",
+        "PER_GROUP": "Per group",
+        "PER_WEEK": "Per week",
+        "PER_MONTH": "Per month"
+      },
+      "UNIT_SUFFIX": {
+        "PER_PERSON": "/ person",
+        "PER_GROUP": "/ group",
+        "PER_WEEK": "/ week",
+        "PER_MONTH": "/ month"
+      }
     },
     "ERROR_NAME_REQUIRED": "Event title is required",
     "ERROR_DESCRIPTION_MIN": "Description must be at least 10 characters",
@@ -1111,6 +1124,8 @@ export const enTranslations: Record<string, any> = {
       "FREE": "Free",
       "CONTACT_FOR_PRICE": "Contact for price",
       "EDIT_BTN": "Edit",
+      "VIEW_ON_VAMO": "View on VAMO ↗",
+      "VIEW_ON_VAMO_TITLE": "Open public event page on VAMO",
       "DUPLICATE_BTN": "Duplicate",
       "DUPLICATE_TITLE": "Duplicate as new draft",
       "PAUSE_BTN": "Pause",
