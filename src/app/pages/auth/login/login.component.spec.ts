@@ -119,6 +119,20 @@ describe('LoginComponent', () => {
     expect(component.successMessage).toContain('recovery@business.com');
   });
 
+  it('should automatically open forgot password modal and prefill email when accessed via /forgot-password route', () => {
+    const route = TestBed.inject(ActivatedRoute);
+    (route.snapshot as any).routeConfig = { path: 'forgot-password' };
+    (route.snapshot as any).queryParams = { email: 'existing@resort.do' };
+
+    const forgotFixture = TestBed.createComponent(LoginComponent);
+    const forgotComp = forgotFixture.componentInstance;
+    forgotFixture.detectChanges();
+
+    expect(forgotComp.showForgotModal).toBe(true);
+    expect(forgotComp.email).toBe('existing@resort.do');
+    expect(forgotComp.forgotEmail).toBe('existing@resort.do');
+  });
+
   it('should toggle password visibility and update input type and aria-label', () => {
     const passwordInput = fixture.nativeElement.querySelector('#password') as HTMLInputElement;
     const toggleBtn = fixture.nativeElement.querySelector('.password-toggle-btn') as HTMLButtonElement;

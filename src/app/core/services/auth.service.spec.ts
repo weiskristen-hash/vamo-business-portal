@@ -117,9 +117,13 @@ describe('AuthService', () => {
   });
 
   it('should call registerUser with canonical verification_url on register when email is not taken', async () => {
-    const directusClient = (await import('../directus/directus-client')).directusClient;
-    const loginSpy = vi.spyOn(directusClient, 'login').mockRejectedValue(new Error('Invalid credentials'));
-    const requestSpy = vi.spyOn(directusClient, 'request').mockResolvedValue(undefined as any);
+    const loginSpy = vi.fn().mockRejectedValue(new Error('Invalid credentials'));
+    const requestSpy = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(service as any, 'createIsolatedClient').mockReturnValue({
+      login: loginSpy,
+      logout: vi.fn().mockResolvedValue(undefined),
+      request: requestSpy,
+    });
 
     await service.register({
       first_name: 'Carlos',
@@ -133,9 +137,14 @@ describe('AuthService', () => {
   });
 
   it('should reject with RECORD_NOT_UNIQUE if login pre-check succeeds during register', async () => {
-    const directusClient = (await import('../directus/directus-client')).directusClient;
-    vi.spyOn(directusClient, 'login').mockResolvedValue(undefined as any);
-    vi.spyOn(directusClient, 'logout').mockResolvedValue(undefined as any);
+    const loginSpy = vi.fn().mockResolvedValue(undefined);
+    const logoutSpy = vi.fn().mockResolvedValue(undefined);
+    const requestSpy = vi.fn();
+    vi.spyOn(service as any, 'createIsolatedClient').mockReturnValue({
+      login: loginSpy,
+      logout: logoutSpy,
+      request: requestSpy,
+    });
 
     await expect(
       service.register({
@@ -147,6 +156,61 @@ describe('AuthService', () => {
     ).rejects.toMatchObject({
       errors: [{ extensions: { code: 'RECORD_NOT_UNIQUE' } }],
     });
+    expect(logoutSpy).toHaveBeenCalledOnce();
+    expect(requestSpy).not.toHaveBeenCalled();
+  });
+
+  it('should keep existing browser sessions completely unaffected during registration pre-checks', async () => {
+    const { createBrowserAuthStorage } = await import('../directus/browser-auth.storage');
+    const { directusClient } = await import('../directus/directus-client');
+    const browserStorage = createBrowserAuthStorage();
+    const existingSession = {
+      access_token: 'active_browser_access_token',
+      refresh_token: 'active_browser_refresh_token',
+      expires: 900000,
+      expires_at: Date.now() + 900000,
+    };
+    await browserStorage.set(existingSession);
+    (service as any).userSubject.next({
+      id: 'active-user',
+      email: 'active@vamo.com',
+      first_name: 'Active',
+      last_name: 'User',
+    });
+
+    const sharedLoginSpy = vi.spyOn(directusClient, 'login');
+    const sharedLogoutSpy = vi.spyOn(directusClient, 'logout');
+
+    vi.spyOn(service as any, 'createIsolatedClient').mockImplementation((storage: any) => ({
+      login: async () => {
+        await storage.set({
+          access_token: 'temp_precheck_token',
+          refresh_token: 'temp_precheck_refresh',
+          expires: 60000,
+          expires_at: Date.now() + 60000,
+        });
+      },
+      logout: async () => {
+        await storage.set(null);
+      },
+      request: vi.fn(),
+    }));
+
+    await expect(
+      service.register({
+        first_name: 'Other',
+        last_name: 'Account',
+        email: 'taken@vamo.com',
+        password: 'password123',
+      })
+    ).rejects.toMatchObject({
+      errors: [{ extensions: { code: 'RECORD_NOT_UNIQUE' } }],
+    });
+
+    expect(sharedLoginSpy).not.toHaveBeenCalled();
+    expect(sharedLogoutSpy).not.toHaveBeenCalled();
+    expect(await browserStorage.get()).toEqual(existingSession);
+    expect(service.currentUser?.id).toBe('active-user');
   });
 
   describe('login()', () => {
@@ -417,7 +481,7 @@ describe('AuthService', () => {
       const { directusClient } = await import('../directus/directus-client');
 
       const storage = createBrowserAuthStorage();
-      await storage.set({ access_token: 'valid_tok', refresh_token: 'dead_refresh' });
+      await storage.set({ access_token: 'valid_tok', refresh_token: 'dead_refresh' } as any);
       vi.spyOn(directusClient, 'refresh').mockRejectedValue({ status: 401, code: 'INVALID_TOKEN' });
       vi.spyOn(directusClient, 'logout').mockRejectedValue(new Error('400 Bad Request')); // logout failure must not block cleanup
 
@@ -596,10 +660,10 @@ describe('AuthService', () => {
     it('refreshes on browser focus after the tab has slept, without SDK getToken side effects', async () => {
       const storage = await seedSession();
       const token = `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 1 }))}.signature`;
-      await storage.set({ access_token: token, refresh_token: 'refresh-token' });
+      await storage.set({ access_token: token, refresh_token: 'refresh-token' } as any);
       const { directusClient } = await import('../directus/directus-client');
       const refresh = vi.spyOn(directusClient, 'refresh').mockImplementation(async () => {
-        await storage.set({ access_token: 'renewed-access', refresh_token: 'renewed-refresh' });
+        await storage.set({ access_token: 'renewed-access', refresh_token: 'renewed-refresh' } as any);
         return {} as any;
       });
       const sdkRead = vi.spyOn(directusClient, 'getToken');
@@ -743,7 +807,7 @@ describe('AuthService', () => {
       // Seed storage with a fresh token valid for 10 minutes
       const futureExp = Math.floor(Date.now() / 1000) + 600;
       const freshToken = `header.${btoa(JSON.stringify({ exp: futureExp }))}.sig`;
-      await storage.set({ access_token: freshToken, refresh_token: 'tab2-refresh' });
+      await storage.set({ access_token: freshToken, refresh_token: 'tab2-refresh' } as any);
 
       const refreshSpy = vi.spyOn(directusClient, 'refresh');
       const result = await service.refreshToken();
@@ -760,7 +824,7 @@ describe('AuthService', () => {
       // Expired token in storage so refresh must run
       const pastExp = Math.floor(Date.now() / 1000) - 10;
       const expiredToken = `header.${btoa(JSON.stringify({ exp: pastExp }))}.sig`;
-      await storage.set({ access_token: expiredToken, refresh_token: 'refresh-old' });
+      await storage.set({ access_token: expiredToken, refresh_token: 'refresh-old' } as any);
 
       const lockSpy = vi.fn().mockImplementation(async (_name: string, fn: () => Promise<any>) => fn());
       (navigator as any).locks = { request: lockSpy };

@@ -34,6 +34,17 @@ export const routes: Routes = [
     pathMatch: 'full',
   },
   {
+    path: 'forgot-password',
+    loadComponent: () =>
+      import('./pages/auth/login/login.component').then((m) => m.LoginComponent),
+    canActivate: [noAuthGuard],
+  },
+  {
+    path: 'auth/forgot-password',
+    redirectTo: 'forgot-password',
+    pathMatch: 'full',
+  },
+  {
     path: 'auth/callback',
     loadComponent: () =>
       import('./pages/auth/callback/sso-callback.component').then((m) => m.SsoCallbackComponent),

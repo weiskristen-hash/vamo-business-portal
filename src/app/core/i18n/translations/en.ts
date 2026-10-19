@@ -132,7 +132,10 @@ export const enTranslations: Record<string, any> = {
     "ERROR_PHONE_REQUIRED": "Phone number is required",
     "ERROR_ADDRESS_REQUIRED": "Business address is required",
     "ERROR_EMAIL_TAKEN": "This email address is already registered.",
-    "ERROR_EMAIL_TAKEN_LOGIN": "Log in instead",
+    "ERROR_EMAIL_TAKEN_SUB": "Already have a VAMO account?",
+    "ERROR_EMAIL_TAKEN_LOGIN": "Sign in",
+    "ERROR_EMAIL_TAKEN_OR": "or",
+    "ERROR_EMAIL_TAKEN_RESET": "reset your password",
     "ERROR_TERMS_REQUIRED": "You must agree to the Terms of Use and Privacy Policy to continue."
   },
   "AUTH": {
@@ -1612,6 +1615,11 @@ export const enTranslations: Record<string, any> = {
       "SUPPORT_SECONDARY": "If the problem continues, contact VAMO support at {{email}}.",
       "VALIDATION_HEADLINE": "Please check your information",
       "VALIDATION_MSG": "Please fix the validation errors before saving.",
+      "REGISTER_HEADLINE": "Registration failed",
+      "REGISTER_MSG": "We couldn't create your account right now. Please try again.",
+      "REGISTER_AUTH_MSG": "We couldn't complete registration with this email. If you already have a VAMO account, sign in or reset your password.",
+      "REGISTER_VALIDATION_MSG": "Please check your registration details and try again.",
+      "DUPLICATE_EMAIL_MSG": "This email address is already registered. Already have a VAMO account? Sign in or reset your password.",
       "NO_BUSINESS": "No business profile is associated with your account.",
       "UNABLE_LOAD_DASHBOARD": "Unable to load dashboard"
     }

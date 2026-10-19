@@ -224,4 +224,86 @@ describe('CustomerErrorService', () => {
       expect(service.toCustomerMessage(err, 'save')).toBe("We couldn't save your changes. Please try again.");
     });
   });
+
+  describe('Registration Error Classification', () => {
+    it('should NOT return session expired message when HTTP 401 or INVALID_CREDENTIALS occurs during registration', () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('en');
+
+      const err401 = { status: 401, message: 'Invalid user credentials.' };
+      const msg401 = service.toCustomerMessage(err401, 'register');
+      expect(msg401).toBe(
+        "We couldn't complete registration with this email. If you already have a VAMO account, sign in or reset your password."
+      );
+      expect(msg401).not.toContain('session has expired');
+
+      const errInvalidCreds = {
+        errors: [{ extensions: { code: 'INVALID_CREDENTIALS' }, message: 'Invalid user credentials.' }],
+      };
+      const msgInvalidCreds = service.toCustomerMessage(errInvalidCreds, 'register');
+      expect(msgInvalidCreds).toBe(
+        "We couldn't complete registration with this email. If you already have a VAMO account, sign in or reset your password."
+      );
+      expect(msgInvalidCreds).not.toContain('session has expired');
+    });
+
+    it('should still return session expired message for genuine TOKEN_EXPIRED or 401 on authenticated actions', () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('en');
+
+      const tokenExpired = { errors: [{ extensions: { code: 'TOKEN_EXPIRED' } }] };
+      expect(service.toCustomerMessage(tokenExpired, 'save')).toBe('Your session has expired. Please sign in again.');
+      expect(service.toCustomerMessage({ status: 401 }, 'save')).toBe('Your session has expired. Please sign in again.');
+    });
+
+    it('should classify RECORD_NOT_UNIQUE and duplicate email errors into duplicate-email message', () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('en');
+
+      const err = {
+        errors: [{ extensions: { code: 'RECORD_NOT_UNIQUE' }, message: 'Field "email" has to be unique.' }],
+      };
+      const detail = service.toCustomerError(err, 'register');
+      expect(detail.headline).toBe('This email address is already registered.');
+      expect(detail.message).toBe(
+        'This email address is already registered. Already have a VAMO account? Sign in or reset your password.'
+      );
+      expect(detail.message).not.toContain('session has expired');
+    });
+
+    it('should classify registration validation errors (INVALID_PAYLOAD / HTTP 400) into register-validation message', () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('en');
+
+      const err = {
+        status: 400,
+        errors: [{ extensions: { code: 'INVALID_PAYLOAD' }, message: 'Invalid payload.' }],
+      };
+      const msg = service.toCustomerMessage(err, 'register');
+      expect(msg).toBe('Please check your registration details and try again.');
+      expect(msg).not.toContain('session has expired');
+    });
+
+    it('should map unexpected Directus registration failure to safe registration error in EN and ES', () => {
+      const i18n = TestBed.inject(I18nService);
+      const err = new Error('Unexpected 500 server error during registration');
+
+      i18n.setLang('en');
+      expect(service.toCustomerMessage(err, 'register')).toBe(
+        "We couldn't create your account right now. Please try again."
+      );
+
+      i18n.setLang('es');
+      expect(service.toCustomerMessage(err, 'register')).toBe(
+        'No pudimos crear tu cuenta en este momento. Por favor inténtalo de nuevo.'
+      );
+      expect(
+        service.toCustomerMessage({ status: 401, message: 'Invalid user credentials.' }, 'register')
+      ).toBe(
+        'No pudimos completar el registro con este correo electrónico. Si ya tienes una cuenta de VAMO, inicia sesión o restablece tu contraseña.'
+      );
+      i18n.setLang('en');
+    });
+  });
 });
+

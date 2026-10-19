@@ -3,6 +3,7 @@ import { RegisterComponent } from './register.component';
 import { AuthService } from '../../../core/services/auth.service';
 import { GoogleAuthService } from '../../../core/services/google-auth.service';
 import { CustomerErrorService } from '../../../core/services/customer-error.service';
+import { I18nService } from '../../../core/i18n/i18n.service';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { environment } from '../../../../environments/environment';
@@ -236,4 +237,99 @@ describe('RegisterComponent (Canonical Source Parity)', () => {
     component.toggleConfirmPasswordVisibility();
     expect(component.showConfirmPassword).toBe(false);
   });
+
+  it('13. should display duplicate email warning with Sign in and Reset password links in EN and ES when existing email with matching password triggers RECORD_NOT_UNIQUE', async () => {
+    authServiceSpy.register.mockRejectedValue({
+      errors: [{ extensions: { code: 'RECORD_NOT_UNIQUE' }, message: 'Email is already registered' }],
+    });
+
+    component.firstName = 'Carlos';
+    component.lastName = 'Mendoza';
+    component.email = 'existing@resort.com';
+    component.password = 'secret123';
+    component.confirmPassword = 'secret123';
+
+    await component.onSubmit();
+    fixture.detectChanges();
+
+    expect(component.emailTaken).toBe(true);
+    expect(component.errorMessage).toBe('');
+    const warning = fixture.nativeElement.querySelector('.alert-warning') as HTMLElement;
+    expect(warning).toBeTruthy();
+    expect(warning.textContent).toContain('This email address is already registered.');
+    expect(warning.textContent).toContain('Already have a VAMO account?');
+    expect(warning.textContent).toContain('Sign in');
+    expect(warning.textContent).toContain('reset your password');
+    expect(warning.textContent).not.toContain('session has expired');
+
+    const links = Array.from(warning.querySelectorAll('a')) as HTMLAnchorElement[];
+    expect(links.length).toBe(2);
+
+    // Switch to Spanish
+    const i18n = TestBed.inject(I18nService);
+    i18n.setLang('es');
+    fixture.detectChanges();
+    expect(warning.textContent).toContain('Esta dirección de correo electrónico ya está registrada.');
+    expect(warning.textContent).toContain('¿Ya tienes una cuenta de VAMO?');
+    expect(warning.textContent).toContain('Inicia sesión');
+    expect(warning.textContent).toContain('restablece tu contraseña');
+
+    i18n.setLang('en');
+  });
+
+  it('14. should NOT display session expired message when existing email is submitted with an incorrect password (post-register login 401)', async () => {
+    // Directus registerUser returns 204 for existing email, then login() fails with 401 INVALID_CREDENTIALS
+    authServiceSpy.register.mockResolvedValue(undefined);
+    authServiceSpy.login.mockRejectedValue({
+      status: 401,
+      errors: [{ extensions: { code: 'INVALID_CREDENTIALS' }, message: 'Invalid user credentials.' }],
+    });
+
+    component.firstName = 'Carlos';
+    component.lastName = 'Mendoza';
+    component.email = 'existing@resort.com';
+    component.password = 'differentPass123';
+    component.confirmPassword = 'differentPass123';
+
+    await component.onSubmit();
+    fixture.detectChanges();
+
+    expect(component.emailTaken).toBe(false);
+    expect(component.showAuthRecoveryLinks).toBe(true);
+    expect(component.errorMessage).toBe(
+      "We couldn't complete registration with this email. If you already have a VAMO account, sign in or reset your password."
+    );
+    expect(component.errorMessage).not.toContain('session has expired');
+
+    const errorBanner = fixture.nativeElement.querySelector('.alert-error') as HTMLElement;
+    expect(errorBanner).toBeTruthy();
+    expect(errorBanner.textContent).toContain('Sign in');
+    expect(errorBanner.textContent).toContain('reset your password');
+
+    // Switch to Spanish reactively
+    const i18n = TestBed.inject(I18nService);
+    i18n.setLang('es');
+    fixture.detectChanges();
+    expect(component.errorMessage).toBe(
+      'No pudimos completar el registro con este correo electrónico. Si ya tienes una cuenta de VAMO, inicia sesión o restablece tu contraseña.'
+    );
+    i18n.setLang('en');
+  });
+
+  it('15. should display network error message when registration fails due to network issue', async () => {
+    authServiceSpy.register.mockRejectedValue(new Error('Failed to fetch'));
+
+    component.firstName = 'Carlos';
+    component.lastName = 'Mendoza';
+    component.email = 'carlos@resort.com';
+    component.password = 'secret123';
+    component.confirmPassword = 'secret123';
+
+    await component.onSubmit();
+    fixture.detectChanges();
+
+    expect(component.errorMessage).toBe("We're having trouble connecting. Check your connection and try again.");
+    expect(component.errorMessage).not.toContain('session has expired');
+  });
 });
+
