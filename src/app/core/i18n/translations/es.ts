@@ -1368,12 +1368,15 @@ export const esTranslations: Record<string, any> = {
       "RENEWAL_UNKNOWN": "Se aplican los términos estándar de renovación del plan después del período promocional.",
 
       "COUPON_STATE_NOT_APPLIED": "No aplicado",
+      "COUPON_STATE_ENTERED_NOT_APPLIED": "Ingresado — haz clic en Aplicar para verificar",
       "COUPON_STATE_VALIDATING": "Validando",
       "COUPON_STATE_VERIFIED": "Verificado y aplicado",
       "COUPON_STATE_INVALID": "Inválido o no elegible",
       "COUPON_STATE_EXPIRED": "Verificación vencida o el monto cambió",
       "COUPON_STATE_UNAVAILABLE": "Verificación no disponible",
+      "COUPON_STATE_CHANGED_AFTER_INIT": "Modificado — verifica antes de pagar",
       "COUPON_UNAPPLIED_HINT": "Haz clic en Aplicar para verificar este código promocional con Stripe, o bórralo para continuar al precio regular.",
+      "COUPON_CHANGED_AFTER_INIT_HINT": "Se reinició tu sesión de pago porque el código promocional cambió. Verifica el total actualizado antes de continuar.",
 
       "VERIFICATION_STATUS_LABEL": "Verificación de Stripe",
       "VERIFICATION_BADGE_VERIFIED": "Verificado con Stripe",

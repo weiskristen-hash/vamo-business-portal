@@ -1368,12 +1368,15 @@ export const enTranslations: Record<string, any> = {
       "RENEWAL_UNKNOWN": "Standard plan renewal terms apply after the promotional period.",
 
       "COUPON_STATE_NOT_APPLIED": "Not applied",
+      "COUPON_STATE_ENTERED_NOT_APPLIED": "Entered — click Apply to verify",
       "COUPON_STATE_VALIDATING": "Validating",
       "COUPON_STATE_VERIFIED": "Verified and applied",
       "COUPON_STATE_INVALID": "Invalid or ineligible",
       "COUPON_STATE_EXPIRED": "Verification expired or amount changed",
       "COUPON_STATE_UNAVAILABLE": "Verification unavailable",
+      "COUPON_STATE_CHANGED_AFTER_INIT": "Changed — re-verify before payment",
       "COUPON_UNAPPLIED_HINT": "Click Apply to verify this promotion code with Stripe, or clear the code to continue at regular price.",
+      "COUPON_CHANGED_AFTER_INIT_HINT": "Your active payment session was reset because the promotion code changed. Verify the updated total before continuing.",
 
       "VERIFICATION_STATUS_LABEL": "Stripe verification",
       "VERIFICATION_BADGE_VERIFIED": "Verified with Stripe",

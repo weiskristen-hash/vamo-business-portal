@@ -321,9 +321,11 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               class="coupon-state-badge"
               [attr.data-coupon-state]="couponState()"
               [class.coupon-state-badge--verified]="couponState() === 'verified_applied'"
+              [class.coupon-state-badge--entered]="couponState() === 'entered_not_applied'"
               [class.coupon-state-badge--validating]="couponState() === 'validating'"
               [class.coupon-state-badge--invalid]="couponState() === 'invalid_or_ineligible'"
               [class.coupon-state-badge--expired]="couponState() === 'expired_or_changed'"
+              [class.coupon-state-badge--changed]="couponState() === 'changed_after_init'"
               [class.coupon-state-badge--unavailable]="couponState() === 'verification_unavailable'"
             >
               {{ getCouponStateLabelKey() | translate }}
@@ -365,8 +367,11 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               {{ (couponLoading() ? 'PORTAL.BILLING.COUPON_APPLYING' : 'PORTAL.BILLING.COUPON_APPLY') | translate }}
             </button>
           </div>
-          <p *ngIf="!promoResult() && couponCode().trim() && couponState() === 'not_applied'" class="coupon-unapplied-hint" role="note">
+          <p *ngIf="!promoResult() && couponCode().trim() && (couponState() === 'entered_not_applied' || couponState() === 'not_applied' || couponState() === 'changed_after_init')" class="coupon-unapplied-hint" role="note">
             {{ 'PORTAL.BILLING.COUPON_UNAPPLIED_HINT' | translate }}
+          </p>
+          <p *ngIf="!promoResult() && !couponCode().trim() && couponState() === 'changed_after_init'" class="coupon-changed-after-init-hint" role="note">
+            {{ 'PORTAL.BILLING.COUPON_CHANGED_AFTER_INIT_HINT' | translate }}
           </p>
           <span *ngIf="couponError()" class="form-error" role="alert">{{ couponError() }}</span>
         </div>
@@ -2280,6 +2285,8 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   // Inline Payment Element (Subscription Checkout)
   clientSecret = signal<string | null>(null);
+  pendingSetupIntentId = signal<string | null>(null);
+  setupConfirmed = signal(false);
   stripeReady = signal(false);
   paymentActive = signal(false);
   paymentRequiresSetup = signal(false);
@@ -2385,7 +2392,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     const saved = getSavedPromoCode();
     if (saved) {
       this.couponCode.set(saved);
-      this.couponState.set('not_applied');
+      this.couponState.set('entered_not_applied');
     }
   }
 
@@ -2522,6 +2529,12 @@ export class BillingComponent implements OnInit, OnDestroy {
   onCouponCodeChange(value: string): void {
     this.promoDismissedInCheckout = true;
     const nextVal = value ?? '';
+    const wasPaymentActive = Boolean(
+      this.paymentActive() || this.clientSecret() || this.pendingSetupIntentId()
+    );
+    if (wasPaymentActive) {
+      this.cancelPayment();
+    }
     this.couponCode.set(nextVal);
     if (this.couponError()) {
       this.couponError.set(null);
@@ -2530,14 +2543,23 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (this.promoResult() !== null) {
       this.promoResult.set(null);
     }
-    this.couponState.set('not_applied');
+    const nextCouponState: CouponVerificationState = wasPaymentActive
+      ? 'changed_after_init'
+      : nextVal.trim().length > 0
+        ? 'entered_not_applied'
+        : 'not_applied';
+    this.couponState.set(nextCouponState);
+
     const currentPreview = this.checkoutPreview();
-    if (currentPreview && (currentPreview.promoCodeId || currentPreview.discountAmount > 0)) {
+    if (
+      wasPaymentActive ||
+      (currentPreview && (currentPreview.promoCodeId || currentPreview.discountAmount > 0))
+    ) {
       this.checkoutPreview.set(null);
       this.checkoutVerificationStatus.set('unverified');
       const plan = this.selectedPlan();
       if (plan && !this.subscription()) {
-        void this.refreshCheckoutPreview(plan, null);
+        void this.refreshCheckoutPreview(plan, null, true);
       }
     }
   }
@@ -2545,6 +2567,10 @@ export class BillingComponent implements OnInit, OnDestroy {
   async applyPromoCode(): Promise<void> {
     const code = this.couponCode().trim();
     if (!code) return;
+    // Failure A protection: applying a coupon after payment initialization immediately invalidates the active payment session
+    if (this.paymentActive() || this.clientSecret() || this.pendingSetupIntentId()) {
+      this.cancelPayment();
+    }
     this.couponLoading.set(true);
     this.couponError.set(null);
     this.promoResult.set(null);
@@ -2629,16 +2655,29 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   removePromoCode(): void {
     this.promoDismissedInCheckout = true;
+    const wasPaymentActive = Boolean(
+      this.paymentActive() || this.clientSecret() || this.pendingSetupIntentId()
+    );
+    if (wasPaymentActive) {
+      this.cancelPayment();
+    }
     this.promoResult.set(null);
     this.couponCode.set('');
     this.couponError.set(null);
-    this.couponState.set('not_applied');
+    this.couponState.set(wasPaymentActive ? 'changed_after_init' : 'not_applied');
     this.checkoutPreview.set(null);
     this.checkoutVerificationStatus.set('unverified');
     const plan = this.selectedPlan();
     if (plan && !this.subscription()) {
-      void this.refreshCheckoutPreview(plan, null);
+      void this.refreshCheckoutPreview(plan, null, wasPaymentActive);
     }
+  }
+
+  hasUnappliedCouponInput(): boolean {
+    if (this.subscription() !== null) return false;
+    const trimmed = this.couponCode().trim();
+    if (!trimmed) return false;
+    return !this.promoResult()?.valid || this.couponState() !== 'verified_applied';
   }
 
   async refreshCheckoutPreview(
@@ -2742,6 +2781,8 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   getCouponStateLabelKey(): string {
     switch (this.couponState()) {
+      case 'entered_not_applied':
+        return 'PORTAL.BILLING.COUPON_STATE_ENTERED_NOT_APPLIED';
       case 'validating':
         return 'PORTAL.BILLING.COUPON_STATE_VALIDATING';
       case 'verified_applied':
@@ -2750,6 +2791,8 @@ export class BillingComponent implements OnInit, OnDestroy {
         return 'PORTAL.BILLING.COUPON_STATE_INVALID';
       case 'expired_or_changed':
         return 'PORTAL.BILLING.COUPON_STATE_EXPIRED';
+      case 'changed_after_init':
+        return 'PORTAL.BILLING.COUPON_STATE_CHANGED_AFTER_INIT';
       case 'verification_unavailable':
         return 'PORTAL.BILLING.COUPON_STATE_UNAVAILABLE';
       case 'not_applied':
@@ -2839,6 +2882,8 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (!plan) return false;
     if (this.isProcessingPayment() || this.previewLoading() || this.couponLoading()) return false;
     if (this.plans().length === 0) return false;
+    // Failure B protection: block checkout whenever a coupon code is entered/prefilled but not verified and applied
+    if (this.hasUnappliedCouponInput()) return false;
     const status = this.checkoutVerificationStatus();
     if (
       status === 'unavailable' ||
@@ -2868,7 +2913,7 @@ export class BillingComponent implements OnInit, OnDestroy {
   selectPlan(plan: StripePlan): void {
     if (this.isCurrentPlan(plan) || this.isPendingPlan(plan)) return;
     if (this.planChangeUnverified() && this.selectedPlan()?.id === plan.id) return;
-    if (this.paymentActive()) {
+    if (this.paymentActive() || this.clientSecret() || this.pendingSetupIntentId()) {
       this.cancelPayment();
     }
     const nextPlan = this.selectedPlan()?.id === plan.id ? null : plan;
@@ -2891,14 +2936,29 @@ export class BillingComponent implements OnInit, OnDestroy {
       if (appliedPromo && typeof this.stripeService.previewSubscriptionCheckout === 'function') {
         void this.refreshCheckoutPreview(nextPlan, appliedPromo);
       } else {
-        this.couponState.set(this.promoResult()?.valid ? 'verified_applied' : 'not_applied');
-        void this.refreshCheckoutPreview(nextPlan, null, Boolean(this.promoResult()?.valid));
+        const hasUnapplied = this.couponCode().trim().length > 0 && !this.promoResult()?.valid;
+        this.couponState.set(
+          this.promoResult()?.valid
+            ? 'verified_applied'
+            : hasUnapplied
+              ? 'entered_not_applied'
+              : 'not_applied'
+        );
+        void this.refreshCheckoutPreview(
+          nextPlan,
+          null,
+          Boolean(this.promoResult()?.valid || hasUnapplied)
+        );
       }
     }
   }
 
   selectSavedMethod(pm: SavedPaymentMethod): void {
     this.selectedSavedMethod.set(this.selectedSavedMethod()?.id === pm.id ? null : pm);
+    if (this.setupConfirmed()) {
+      this.setupConfirmed.set(false);
+      this.pendingSetupIntentId.set(null);
+    }
   }
 
   async proceedToPayment(): Promise<void> {
@@ -2908,6 +2968,13 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (!plan || !user?.email) return;
     if (this.plans().length === 0) {
       this.setTranslatedError('PORTAL.BILLING.EMPTY_PLANS');
+      return;
+    }
+    // Block new subscription creation if an active subscription already exists on the account
+    if (this.subscription() !== null) return;
+    // Failure B protection: never ignore an entered/prefilled unapplied coupon code
+    if (this.hasUnappliedCouponInput()) {
+      this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_UNAPPLIED_HINT'));
       return;
     }
 
@@ -2938,9 +3005,17 @@ export class BillingComponent implements OnInit, OnDestroy {
         return;
       }
 
+      // Safe retry for Step C if SetupIntent was already confirmed with a saved card in a prior attempt
+      const saved = this.selectedSavedMethod();
+      if (saved && this.setupConfirmed() && this.pendingSetupIntentId()) {
+        await this.completeSubscriptionFromConfirmedSetup(this.pendingSetupIntentId(), plan, preview);
+        return;
+      }
+
       let result: {
         clientSecret: string | null;
-        subscriptionId: string;
+        subscriptionId: string | null;
+        setupIntentId?: string | null;
         requiresSetup: boolean;
       };
 
@@ -2953,7 +3028,7 @@ export class BillingComponent implements OnInit, OnDestroy {
           approvedAmountDue: preview.amountDueToday,
           approvedCurrency: preview.currency,
           verificationReference: preview.verificationReference,
-          paymentMethodId: this.selectedSavedMethod()?.id ?? null,
+          paymentMethodId: saved?.id ?? null,
           expiresAt: preview.expiresAt,
         });
       } else {
@@ -2968,9 +3043,8 @@ export class BillingComponent implements OnInit, OnDestroy {
       // Hard stop before collecting payment if approved amount is $0.00 but backend returned a chargeable PaymentIntent
       if (
         preview.amountDueToday === 0 &&
-        result.clientSecret &&
-        result.clientSecret.startsWith('pi_') &&
-        !result.requiresSetup
+        ((result.clientSecret && result.clientSecret.startsWith('pi_')) || !result.requiresSetup) &&
+        typeof this.stripeService.createVerifiedSubscription === 'function'
       ) {
         this.checkoutVerificationStatus.set('mismatch_blocked');
         this.couponState.set('expired_or_changed');
@@ -2978,28 +3052,81 @@ export class BillingComponent implements OnInit, OnDestroy {
         return;
       }
 
-      // If no clientSecret returned (e.g. verified $0.00 activation without setup requirement)
-      if (!result.clientSecret) {
-        if (typeof this.stripeService.recordPaymentOutcome === 'function') {
-          this.stripeService.recordPaymentOutcome('succeeded', {
-            priceId: plan.id,
-            promotionCodeId: preview.promoCodeId ?? null,
-            approvedAmount: preview.amountDueToday,
-            actualAmount: preview.amountDueToday,
-            currency: preview.currency,
-            subscriptionId: result.subscriptionId,
-          });
+      const resolvedSetupIntentId = result.requiresSetup
+        ? (result.setupIntentId ??
+            (result.clientSecret?.startsWith('seti_') && result.clientSecret.includes('_secret_')
+              ? result.clientSecret.split('_secret_')[0]
+              : null))
+        : null;
+
+      if (result.requiresSetup) {
+        if (
+          !result.clientSecret ||
+          !result.clientSecret.startsWith('seti_') ||
+          !resolvedSetupIntentId ||
+          !resolvedSetupIntentId.startsWith('seti_')
+        ) {
+          this.checkoutVerificationStatus.set('unavailable');
+          this.setTranslatedError('PORTAL.BILLING.ERROR_VERIFICATION_UNAVAILABLE');
+          return;
         }
-        await this.finalizeSubscriptionSuccess(plan);
+        this.pendingSetupIntentId.set(resolvedSetupIntentId);
+        this.setupConfirmed.set(false);
+      } else {
+        this.pendingSetupIntentId.set(null);
+        this.setupConfirmed.set(false);
+      }
+
+      if (!result.clientSecret) {
+        if (
+          typeof this.stripeService.createVerifiedSubscription !== 'function' &&
+          result.subscriptionId &&
+          !result.requiresSetup
+        ) {
+          await this.finalizeSubscriptionSuccess(plan);
+          return;
+        }
+        this.checkoutVerificationStatus.set('unavailable');
+        this.setTranslatedError('PORTAL.BILLING.ERROR_VERIFICATION_UNAVAILABLE');
         return;
       }
 
       // If saved payment method was chosen
-      const saved = this.selectedSavedMethod();
       if (saved) {
-        const { error } = result.requiresSetup
-          ? await this.stripeService.confirmSetupWithSavedMethod(result.clientSecret, saved.id)
-          : await this.stripeService.confirmWithSavedMethod(result.clientSecret, saved.id);
+        if (result.requiresSetup) {
+          const setupConfirmRes: any = await this.stripeService.confirmSetupWithSavedMethod(
+            result.clientSecret,
+            saved.id,
+          );
+          const setupErr = setupConfirmRes?.error;
+          const confirmedSetupStatus = setupConfirmRes?.setupIntent?.status;
+          if (setupErr || (confirmedSetupStatus && confirmedSetupStatus !== 'succeeded')) {
+            if (typeof this.stripeService.recordPaymentOutcome === 'function') {
+              this.stripeService.recordPaymentOutcome('failed', {
+                priceId: plan.id,
+                promotionCodeId: preview.promoCodeId ?? null,
+                approvedAmount: preview.amountDueToday,
+                currency: preview.currency,
+                setupIntentId: resolvedSetupIntentId,
+                reason: setupErr?.code || confirmedSetupStatus || 'setup_confirmation_failed',
+              });
+            }
+            this.activeErrorPayload.set(null);
+            this.errorMessage.set(
+              this.errorService.toCustomerMessage(
+                setupErr || new Error('Card setup was not completed.'),
+                'save',
+              ),
+            );
+            return;
+          }
+
+          this.setupConfirmed.set(true);
+          await this.completeSubscriptionFromConfirmedSetup(resolvedSetupIntentId, plan, preview);
+          return;
+        }
+
+        const { error } = await this.stripeService.confirmWithSavedMethod(result.clientSecret, saved.id);
         if (error) {
           if (typeof this.stripeService.recordPaymentOutcome === 'function') {
             this.stripeService.recordPaymentOutcome('failed', {
@@ -3007,7 +3134,7 @@ export class BillingComponent implements OnInit, OnDestroy {
               promotionCodeId: preview.promoCodeId ?? null,
               approvedAmount: preview.amountDueToday,
               currency: preview.currency,
-              subscriptionId: result.subscriptionId,
+              subscriptionId: result.subscriptionId ?? null,
               reason: error?.code || 'payment_confirmation_failed',
             });
           }
@@ -3022,7 +3149,7 @@ export class BillingComponent implements OnInit, OnDestroy {
             approvedAmount: preview.amountDueToday,
             actualAmount: preview.amountDueToday,
             currency: preview.currency,
-            subscriptionId: result.subscriptionId,
+            subscriptionId: result.subscriptionId ?? null,
           });
         }
         await this.finalizeSubscriptionSuccess(plan);
@@ -3044,9 +3171,53 @@ export class BillingComponent implements OnInit, OnDestroy {
     }
   }
 
+  private async completeSubscriptionFromConfirmedSetup(
+    setupIntentId: string | null,
+    plan: StripePlan | null,
+    preview: CheckoutPreviewResult | null,
+  ): Promise<void> {
+    const cleanSetupIntentId = (setupIntentId ?? '').trim();
+    if (
+      !cleanSetupIntentId ||
+      !cleanSetupIntentId.startsWith('seti_') ||
+      typeof this.stripeService.createSubscriptionFromSetup !== 'function'
+    ) {
+      this.checkoutVerificationStatus.set('unavailable');
+      this.setTranslatedError('PORTAL.BILLING.ERROR_VERIFICATION_UNAVAILABLE');
+      return;
+    }
+
+    const subRes = await this.stripeService.createSubscriptionFromSetup(cleanSetupIntentId);
+    const createdSubId = (subRes?.subscriptionId ?? '').trim();
+    if (!createdSubId || !createdSubId.startsWith('sub_')) {
+      throw new Error('Subscription activation could not be verified: missing subscriptionId from SetupIntent flow.');
+    }
+
+    this.pendingSetupIntentId.set(null);
+    this.setupConfirmed.set(false);
+
+    if (typeof this.stripeService.recordPaymentOutcome === 'function') {
+      this.stripeService.recordPaymentOutcome('succeeded', {
+        priceId: plan?.id,
+        promotionCodeId: preview?.promoCodeId ?? null,
+        approvedAmount: preview?.amountDueToday ?? 0,
+        actualAmount: 0,
+        currency: preview?.currency,
+        subscriptionId: createdSubId,
+        setupIntentId: cleanSetupIntentId,
+      });
+    }
+
+    if (plan) {
+      await this.finalizeSubscriptionSuccess(plan);
+    }
+  }
+
   private handleChargeProtectionError(err: CheckoutChargeProtectionError, plan: StripePlan): void {
     this.paymentActive.set(false);
     this.clientSecret.set(null);
+    this.pendingSetupIntentId.set(null);
+    this.setupConfirmed.set(false);
     const currency = err.currency || plan.currency || 'usd';
     const actualAmountFormatted =
       typeof err.actualAmount === 'number'
@@ -3123,6 +3294,10 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   async confirmPayment(): Promise<void> {
     if (this.paymentSubmissionInFlight || this.isProcessingPayment()) return;
+    if (this.hasUnappliedCouponInput()) {
+      this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_UNAPPLIED_HINT'));
+      return;
+    }
     if (!this.stripeInstance || !this.stripeElements) return;
     this.paymentSubmissionInFlight = true;
     this.isProcessingPayment.set(true);
@@ -3130,9 +3305,48 @@ export class BillingComponent implements OnInit, OnDestroy {
     const plan = this.selectedPlan();
     const preview = this.checkoutPreview();
     try {
-      const { error } = this.paymentRequiresSetup()
-        ? await this.stripeService.confirmSetup(this.stripeInstance, this.stripeElements)
-        : await this.stripeService.confirmPayment(this.stripeInstance, this.stripeElements);
+      if (this.paymentRequiresSetup()) {
+        const setupIntentId =
+          this.pendingSetupIntentId() ??
+          (this.clientSecret()?.startsWith('seti_') && this.clientSecret()!.includes('_secret_')
+            ? this.clientSecret()!.split('_secret_')[0]
+            : null);
+
+        if (!this.setupConfirmed()) {
+          const setupConfirmRes: any = await this.stripeService.confirmSetup(
+            this.stripeInstance,
+            this.stripeElements,
+          );
+          const setupErr = setupConfirmRes?.error;
+          const confirmedSetupStatus = setupConfirmRes?.setupIntent?.status;
+          if (setupErr || (confirmedSetupStatus && confirmedSetupStatus !== 'succeeded')) {
+            if (typeof this.stripeService.recordPaymentOutcome === 'function') {
+              this.stripeService.recordPaymentOutcome('failed', {
+                priceId: plan?.id,
+                promotionCodeId: preview?.promoCodeId ?? null,
+                approvedAmount: preview?.amountDueToday,
+                currency: preview?.currency,
+                setupIntentId,
+                reason: setupErr?.code || confirmedSetupStatus || 'setup_confirmation_failed',
+              });
+            }
+            this.activeErrorPayload.set(null);
+            this.errorMessage.set(
+              this.errorService.toCustomerMessage(
+                setupErr || new Error('Card setup was not completed.'),
+                'save',
+              ),
+            );
+            return;
+          }
+          this.setupConfirmed.set(true);
+        }
+
+        await this.completeSubscriptionFromConfirmedSetup(setupIntentId, plan, preview);
+        return;
+      }
+
+      const { error } = await this.stripeService.confirmPayment(this.stripeInstance, this.stripeElements);
 
       if (error) {
         if (typeof this.stripeService.recordPaymentOutcome === 'function') {
@@ -3172,6 +3386,8 @@ export class BillingComponent implements OnInit, OnDestroy {
   cancelPayment(): void {
     this.paymentActive.set(false);
     this.clientSecret.set(null);
+    this.pendingSetupIntentId.set(null);
+    this.setupConfirmed.set(false);
     this.paymentRequiresSetup.set(false);
     this.stripeReady.set(false);
     this.stripeInstance = null;
@@ -3182,6 +3398,8 @@ export class BillingComponent implements OnInit, OnDestroy {
   private async finalizeSubscriptionSuccess(plan: StripePlan): Promise<void> {
     this.paymentActive.set(false);
     this.clientSecret.set(null);
+    this.pendingSetupIntentId.set(null);
+    this.setupConfirmed.set(false);
     this.paymentRequiresSetup.set(false);
     this.stripeReady.set(false);
 
