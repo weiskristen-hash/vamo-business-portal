@@ -217,9 +217,19 @@ export function isEventActive(
   if (event.status !== 'published') return false;
   if (event.mode === 'recurring') return true;
 
-  const opt = businessServiceOrOptions && typeof (businessServiceOrOptions as any).getAssetUrl !== 'function'
-    ? (businessServiceOrOptions as ScheduleClassificationOptions)
-    : options;
+  const opt: ScheduleClassificationOptions | undefined =
+    businessServiceOrOptions && typeof (businessServiceOrOptions as any).getAssetUrl !== 'function'
+      ? (businessServiceOrOptions as ScheduleClassificationOptions)
+      : options ??
+        (typeof (businessServiceOrOptions as any)?.drTodayStr === 'function'
+          ? {
+              todayStr: (businessServiceOrOptions as any).drTodayStr(),
+              currentTimeStr:
+                typeof (businessServiceOrOptions as any)?.drCurrentTimeStr === 'function'
+                  ? (businessServiceOrOptions as any).drCurrentTimeStr()
+                  : '00:00',
+            }
+          : undefined);
 
   return !isEventEnded(event, opt);
 }
@@ -235,9 +245,19 @@ export function isEventPast(
   if (event.status === 'archived') return true;
   if (event.mode === 'recurring') return false;
 
-  const opt = businessServiceOrOptions && typeof (businessServiceOrOptions as any).getAssetUrl !== 'function'
-    ? (businessServiceOrOptions as ScheduleClassificationOptions)
-    : options;
+  const opt: ScheduleClassificationOptions | undefined =
+    businessServiceOrOptions && typeof (businessServiceOrOptions as any).getAssetUrl !== 'function'
+      ? (businessServiceOrOptions as ScheduleClassificationOptions)
+      : options ??
+        (typeof (businessServiceOrOptions as any)?.drTodayStr === 'function'
+          ? {
+              todayStr: (businessServiceOrOptions as any).drTodayStr(),
+              currentTimeStr:
+                typeof (businessServiceOrOptions as any)?.drCurrentTimeStr === 'function'
+                  ? (businessServiceOrOptions as any).drCurrentTimeStr()
+                  : '00:00',
+            }
+          : undefined);
 
   return isEventEnded(event, opt);
 }

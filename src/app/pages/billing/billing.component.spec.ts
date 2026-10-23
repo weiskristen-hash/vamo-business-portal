@@ -192,6 +192,10 @@ describe('BillingComponent', () => {
         subscriptionId: 'sub_new_1',
         requiresSetup: false,
       }),
+      createSubscriptionFromSetup: vi.fn().mockResolvedValue({
+        subscriptionId: 'sub_from_setup_1',
+      }),
+      recordCheckoutEvent: vi.fn(),
       mountPaymentElement: vi.fn().mockResolvedValue({
         stripe: {
           confirmPayment: vi.fn().mockResolvedValue({}),
@@ -390,13 +394,15 @@ describe('BillingComponent', () => {
       component.selectedPlan.set(mockPlans[0]);
       stripeServiceSpy.createSubscription.mockResolvedValueOnce({
         clientSecret: 'seti_test_secret',
-        subscriptionId: 'sub_free',
+        subscriptionId: '',
+        setupIntentId: 'seti_test_123',
         requiresSetup: true,
       });
 
       await component.proceedToPayment();
 
       expect(component.clientSecret()).toBe('seti_test_secret');
+      expect(component.pendingSetupIntentId()).toBe('seti_test_123');
       expect(component.paymentRequiresSetup()).toBe(true);
       expect(component.paymentActive()).toBe(true);
     });
@@ -940,6 +946,7 @@ describe('BillingComponent', () => {
       stripeServiceSpy.createSubscription.mockRejectedValueOnce(
         new Error('Directus 403 Forbidden: access denied on collection stripe_subscriptions with query {"filter":{}}')
       );
+      component.subscription.set(null);
       component.selectedPlan.set(mockPlans[0]);
 
       await component.proceedToPayment();
@@ -1221,7 +1228,7 @@ describe('BillingComponent', () => {
       expect(getSavedPromoCode()).toBe('FOUNDERS90');
     });
 
-    it('prefills checkout coupon field for a user with no subscription without claiming the discount is applied', async () => {
+    it('prefills checkout coupon field for a user with no subscription without claiming the discount is applied, and blocks checkout until applied or cleared (Failure B protection)', async () => {
       capturePromoCode('FOUNDERS90');
       stripeServiceSpy.getSubscription.mockResolvedValueOnce(null);
 
@@ -1230,10 +1237,17 @@ describe('BillingComponent', () => {
       fixture.detectChanges();
 
       expect(component.couponCode()).toBe('FOUNDERS90');
+      expect(component.couponState()).toBe('entered_not_applied');
       expect(component.promoResult()).toBeNull();
       expect(stripeServiceSpy.validatePromoCode).not.toHaveBeenCalled();
 
-      // Proceeding without clicking Apply does not send an unvalidated promoCodeId
+      // Proceeding without clicking Apply or Remove is blocked to prevent charging full price while a coupon is entered
+      await component.proceedToPayment();
+      expect(stripeServiceSpy.createSubscription).not.toHaveBeenCalled();
+      expect(component.couponError()).toContain('Click Apply to verify this promotion code with Stripe');
+
+      // Once cleared via removePromoCode(), checkout proceeds normally at full price
+      component.removePromoCode();
       await component.proceedToPayment();
       expect(stripeServiceSpy.createSubscription).toHaveBeenCalledWith(
         'sofia@restaurant.com',
@@ -1751,25 +1765,27 @@ describe('BillingComponent', () => {
       expect(checkoutBtn.textContent?.trim()).toBe('Pay $39.00 and subscribe');
     });
 
-    it('3. prefilled coupon (?promo=FOUNDERS90) never appears applied until server verification succeeds and shows unapplied hint', async () => {
+    it('3. prefilled coupon (?promo=FOUNDERS90) never appears applied until server verification succeeds, shows entered_not_applied state, and disables checkout button until applied or cleared', async () => {
       capturePromoCode('FOUNDERS90');
       component.selectPlan(basic59Plan);
       await fixture.whenStable();
       fixture.detectChanges();
 
       expect(component.couponCode()).toBe('FOUNDERS90');
-      expect(component.couponState()).toBe('not_applied');
+      expect(component.couponState()).toBe('entered_not_applied');
       expect(component.promoResult()).toBeNull();
+      expect(component.canProceedToVerifiedCheckout()).toBe(false);
 
       const hintEl: HTMLElement = fixture.nativeElement.querySelector('.coupon-unapplied-hint');
       expect(hintEl).toBeTruthy();
       expect(hintEl.textContent).toContain('Click Apply to verify this promotion code with Stripe');
 
       const checkoutBtn: HTMLButtonElement = fixture.nativeElement.querySelector('.checkout-submit-btn');
+      expect(checkoutBtn.disabled).toBe(true);
       expect(checkoutBtn.textContent?.trim()).toBe('Pay $59.00 and subscribe');
     });
 
-    it('4. changing coupon or switching plan invalidates prior verified discount total and requires recalculation', async () => {
+    it('4. changing coupon or switching plan invalidates prior verified discount total, sets entered_not_applied, and requires recalculation', async () => {
       const zeroPreview = makeVerifiedPreview({
         couponState: 'verified_applied',
         discountAmount: 5900,
@@ -1792,12 +1808,13 @@ describe('BillingComponent', () => {
       expect(component.checkoutPreview()?.amountDueToday).toBe(0);
       expect(component.couponState()).toBe('verified_applied');
 
-      // User edits coupon input -> invalidates applied discount and recalculates undiscounted total
+      // User edits coupon input -> invalidates applied discount, transitions to entered_not_applied, and recalculates undiscounted total
       component.onCouponCodeChange('OTHERCODE');
       await fixture.whenStable();
       expect(component.promoResult()).toBeNull();
-      expect(component.couponState()).toBe('not_applied');
+      expect(component.couponState()).toBe('entered_not_applied');
       expect(component.checkoutPreview()?.amountDueToday).toBe(5900);
+      expect(component.canProceedToVerifiedCheckout()).toBe(false);
     });
 
     it('5. CRITICAL ACCEPTANCE TEST: Given a customer who approved a $0.00 checkout, if subscription creation produces a $59 invoice, the checkout stops without collecting $59 (neither confirmWithSavedMethod nor mountPaymentElement is called)', async () => {
@@ -1925,6 +1942,334 @@ describe('BillingComponent', () => {
       expect(summaryEl.textContent).toContain('Verificado con Stripe');
 
       i18n.setLang('en');
+    });
+
+    it('8. Failure A protection: modifying, applying, or removing coupon after payment initialization tears down PaymentElement, clears clientSecret, and sets changed_after_init', async () => {
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+      component.selectedSavedMethod.set(null); // use new card so PaymentElement mounts
+
+      await component.proceedToPayment();
+      expect(component.paymentActive()).toBe(true);
+      expect(component.clientSecret()).toBe('pi_verified_secret');
+
+      // User types a coupon code after PaymentIntent was created
+      component.onCouponCodeChange('APPLE');
+      await fixture.whenStable();
+
+      expect(component.paymentActive()).toBe(false);
+      expect(component.clientSecret()).toBeNull();
+      expect(stripeServiceSpy.cleanup).toHaveBeenCalled();
+      expect(component.couponState()).toBe('changed_after_init');
+      expect(component.canProceedToVerifiedCheckout()).toBe(false);
+
+      // Attempting confirmPayment now must not confirm any stale PaymentIntent
+      await component.confirmPayment();
+      expect(stripeServiceSpy.confirmPayment).not.toHaveBeenCalled();
+    });
+
+    it('9. Failure B protection: typing APPLE or FOUNDERS90 without clicking Apply sets entered_not_applied and blocks proceedToPayment and confirmPayment', async () => {
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+
+      component.onCouponCodeChange('APPLE');
+      await fixture.whenStable();
+
+      expect(component.couponState()).toBe('entered_not_applied');
+      expect(component.canProceedToVerifiedCheckout()).toBe(false);
+
+      await component.proceedToPayment();
+      expect(stripeServiceSpy.createVerifiedSubscription).not.toHaveBeenCalled();
+      expect(component.couponError()).toContain('Click Apply to verify this promotion code with Stripe');
+    });
+
+    it('10. Two-step $0.00 SetupIntent checkout with new card: confirmSetup -> createSubscriptionFromSetup (442c21fa-eca5-4c54-bc34-f7e77465343f) -> getSubscription -> setProviderTier', async () => {
+      const zeroPreview = makeVerifiedPreview({
+        couponState: 'verified_applied',
+        discountAmount: 5900,
+        amountDueToday: 0,
+        promoCode: 'APPLE',
+        promoCodeId: 'promo_apple_100',
+        couponDuration: 'repeating',
+        couponDurationInMonths: 3,
+        verificationReference: 'vref_apple_zero',
+      });
+
+      stripeServiceSpy.previewSubscriptionCheckout
+        .mockResolvedValueOnce(makeVerifiedPreview())
+        .mockResolvedValueOnce(zeroPreview);
+
+      stripeServiceSpy.createVerifiedSubscription.mockResolvedValueOnce({
+        subscriptionId: '',
+        setupIntentId: 'seti_1ZeroSetup',
+        paymentIntentId: null,
+        clientSecret: 'seti_1ZeroSetup_secret_abc',
+        requiresSetup: true,
+        invoiceId: null,
+        invoiceAmountDue: 0,
+        invoiceSubtotal: 5900,
+        invoiceDiscountAmount: 5900,
+        invoiceTax: 0,
+        invoiceCurrency: 'usd',
+        appliedPromotionCodeId: 'promo_apple_100',
+        verifiedByServer: true,
+      });
+      stripeServiceSpy.confirmSetup.mockResolvedValueOnce({});
+      stripeServiceSpy.createSubscriptionFromSetup.mockResolvedValueOnce({
+        subscriptionId: 'sub_created_after_setup_1',
+      });
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
+        ...mockSubscription,
+        subscriptionId: 'sub_created_after_setup_1',
+        status: 'active',
+      });
+
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+      component.selectedSavedMethod.set(null); // New card flow
+      component.couponCode.set('APPLE');
+      await component.applyPromoCode();
+
+      // Step 1: Initialize checkout -> receives SetupIntent, mounts PaymentElement
+      await component.proceedToPayment();
+      expect(component.paymentActive()).toBe(true);
+      expect(component.paymentRequiresSetup()).toBe(true);
+      expect(component.pendingSetupIntentId()).toBe('seti_1ZeroSetup');
+      expect(stripeServiceSpy.createSubscriptionFromSetup).not.toHaveBeenCalled();
+      await (component as any).mountPaymentElement(component.clientSecret()!);
+
+      // Step 2: Confirm card setup -> calls confirmSetup, then createSubscriptionFromSetup, then verifies subscription
+      await component.confirmPayment();
+
+      expect(stripeServiceSpy.confirmSetup).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.createSubscriptionFromSetup).toHaveBeenCalledWith('seti_1ZeroSetup');
+      expect(stripeServiceSpy.setProviderTier).toHaveBeenCalledWith('basic');
+      expect(component.paymentActive()).toBe(false);
+      expect(component.pendingSetupIntentId()).toBeNull();
+      expect(component.successMessage()).toContain('Basic Plan');
+    });
+
+    it('11. Two-step $0.00 SetupIntent checkout with saved card: confirmSetupWithSavedMethod -> createSubscriptionFromSetup -> getSubscription', async () => {
+      const zeroPreview = makeVerifiedPreview({
+        couponState: 'verified_applied',
+        discountAmount: 5900,
+        amountDueToday: 0,
+        promoCode: 'FOUNDERS90',
+        promoCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        couponDuration: 'repeating',
+        couponDurationInMonths: 3,
+        verificationReference: 'vref_founders_zero',
+      });
+
+      stripeServiceSpy.previewSubscriptionCheckout
+        .mockResolvedValueOnce(makeVerifiedPreview())
+        .mockResolvedValueOnce(zeroPreview);
+
+      stripeServiceSpy.createVerifiedSubscription.mockResolvedValueOnce({
+        subscriptionId: '',
+        setupIntentId: 'seti_1SavedZero',
+        paymentIntentId: null,
+        clientSecret: 'seti_1SavedZero_secret_abc',
+        requiresSetup: true,
+        invoiceId: null,
+        invoiceAmountDue: 0,
+        invoiceSubtotal: 5900,
+        invoiceDiscountAmount: 5900,
+        invoiceTax: 0,
+        invoiceCurrency: 'usd',
+        appliedPromotionCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        verifiedByServer: true,
+      });
+      stripeServiceSpy.confirmSetupWithSavedMethod.mockResolvedValueOnce({});
+      stripeServiceSpy.createSubscriptionFromSetup.mockResolvedValueOnce({
+        subscriptionId: 'sub_saved_after_setup_1',
+      });
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
+        ...mockSubscription,
+        subscriptionId: 'sub_saved_after_setup_1',
+        status: 'active',
+      });
+
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+      component.selectedSavedMethod.set(mockSavedMethods[0]); // Saved card pm_1
+      component.couponCode.set('FOUNDERS90');
+      await component.applyPromoCode();
+
+      await component.proceedToPayment();
+
+      expect(stripeServiceSpy.confirmWithSavedMethod).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.confirmSetupWithSavedMethod).toHaveBeenCalledWith(
+        'seti_1SavedZero_secret_abc',
+        'pm_1'
+      );
+      expect(stripeServiceSpy.createSubscriptionFromSetup).toHaveBeenCalledWith('seti_1SavedZero');
+      expect(stripeServiceSpy.setProviderTier).toHaveBeenCalledWith('basic');
+    });
+
+    it('12. $0.00 SetupIntent failure & safe retry: if confirmSetup fails, createSubscriptionFromSetup is not called; if createSubscriptionFromSetup fails after confirmSetup succeeds, retry skips confirmSetup and calls createSubscriptionFromSetup directly', async () => {
+      const zeroPreview = makeVerifiedPreview({
+        couponState: 'verified_applied',
+        discountAmount: 5900,
+        amountDueToday: 0,
+        promoCode: 'APPLE',
+        promoCodeId: 'promo_apple_100',
+        couponDuration: 'once',
+        verificationReference: 'vref_retry_zero',
+      });
+
+      stripeServiceSpy.previewSubscriptionCheckout
+        .mockResolvedValueOnce(makeVerifiedPreview())
+        .mockResolvedValueOnce(zeroPreview);
+
+      stripeServiceSpy.createVerifiedSubscription.mockResolvedValueOnce({
+        subscriptionId: '',
+        setupIntentId: 'seti_1RetrySetup',
+        paymentIntentId: null,
+        clientSecret: 'seti_1RetrySetup_secret_abc',
+        requiresSetup: true,
+        invoiceId: null,
+        invoiceAmountDue: 0,
+        invoiceSubtotal: 5900,
+        invoiceDiscountAmount: 5900,
+        invoiceTax: 0,
+        invoiceCurrency: 'usd',
+        appliedPromotionCodeId: 'promo_apple_100',
+        verifiedByServer: true,
+      });
+
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+      component.selectedSavedMethod.set(null);
+      component.couponCode.set('APPLE');
+      await component.applyPromoCode();
+      await component.proceedToPayment();
+      await (component as any).mountPaymentElement(component.clientSecret()!);
+
+      // Case A: confirmSetup fails -> createSubscriptionFromSetup is NOT called
+      stripeServiceSpy.confirmSetup.mockResolvedValueOnce({
+        error: { type: 'card_error', code: 'card_declined', message: 'Card declined' },
+      });
+      await component.confirmPayment();
+      expect(stripeServiceSpy.createSubscriptionFromSetup).not.toHaveBeenCalled();
+      expect(component.setupConfirmed()).toBe(false);
+
+      // Case B: confirmSetup succeeds, but createSubscriptionFromSetup fails transiently
+      stripeServiceSpy.confirmSetup.mockResolvedValueOnce({});
+      stripeServiceSpy.createSubscriptionFromSetup.mockRejectedValueOnce(
+        new Error('Temporary Directus timeout')
+      );
+      await component.confirmPayment();
+      expect(stripeServiceSpy.confirmSetup).toHaveBeenCalledTimes(2);
+      expect(stripeServiceSpy.createSubscriptionFromSetup).toHaveBeenCalledTimes(1);
+      expect(component.setupConfirmed()).toBe(true);
+      expect(component.pendingSetupIntentId()).toBe('seti_1RetrySetup');
+
+      // Retry: confirmPayment() calls createSubscriptionFromSetup('seti_1RetrySetup') directly WITHOUT calling confirmSetup again
+      stripeServiceSpy.createSubscriptionFromSetup.mockResolvedValueOnce({
+        subscriptionId: 'sub_recovered_after_retry',
+      });
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
+        ...mockSubscription,
+        subscriptionId: 'sub_recovered_after_retry',
+        status: 'active',
+      });
+      await component.confirmPayment();
+
+      expect(stripeServiceSpy.confirmSetup).toHaveBeenCalledTimes(2); // NOT called a 3rd time!
+      expect(stripeServiceSpy.createSubscriptionFromSetup).toHaveBeenCalledTimes(2);
+      expect(stripeServiceSpy.setProviderTier).toHaveBeenCalledWith('basic');
+    });
+
+    it('13. distinguishes client-calculated estimated pre-checkout total from Stripe-verified payable amount before and after proceedToPayment()', async () => {
+      const estimatedPreview = makeVerifiedPreview({
+        isEstimated: true,
+        amountSource: 'client_estimate',
+        eligibilityVerified: false,
+        serverAuthenticatedReference: false,
+        couponState: 'verified_applied',
+        discountAmount: 2000,
+        amountDueToday: 3900,
+        renewalAmount: 5900,
+        promoCode: 'SAVE20',
+        promoCodeId: 'promo_save20',
+        promoCodeName: 'SAVE20',
+        couponDuration: 'once',
+        verificationReference: 'dref_1_partial_3900',
+      });
+
+      stripeServiceSpy.previewSubscriptionCheckout
+        .mockResolvedValueOnce(makeVerifiedPreview({ isEstimated: true, amountSource: 'client_estimate' }))
+        .mockResolvedValueOnce(estimatedPreview);
+
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+      component.couponCode.set('SAVE20');
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      const summaryEl: HTMLElement = fixture.nativeElement.querySelector('.verified-order-summary');
+      expect(summaryEl.textContent).toContain('Estimated pre-checkout total');
+      expect(summaryEl.textContent).toContain('Estimated discount');
+      expect(summaryEl.textContent).toContain('SAVE20');
+      expect(summaryEl.textContent).toContain('Estimated due today');
+      expect(summaryEl.textContent).toContain(
+        'Final payable amount is verified with Stripe before any card charge is authorized.'
+      );
+      expect(summaryEl.textContent).not.toContain('Verified with Stripe');
+
+      // Once proceedToPayment() verifies the actual Stripe PaymentIntent amount, the summary transitions to Verified with Stripe
+      stripeServiceSpy.createVerifiedSubscription.mockResolvedValueOnce({
+        subscriptionId: 'sub_verified_after_init',
+        paymentIntentId: 'pi_verified_after_init',
+        clientSecret: 'pi_verified_after_init_secret',
+        requiresSetup: false,
+        invoiceId: 'in_verified_after_init',
+        invoiceAmountDue: 3900,
+        invoiceSubtotal: 5900,
+        invoiceDiscountAmount: 2000,
+        invoiceTax: 0,
+        invoiceCurrency: 'usd',
+        appliedPromotionCodeId: 'promo_save20',
+        verifiedByServer: true,
+      });
+
+      component.selectedSavedMethod.set(null);
+      await component.proceedToPayment();
+      fixture.detectChanges();
+
+      expect(component.checkoutPreview()?.isEstimated).toBe(false);
+      expect(component.checkoutPreview()?.amountSource).toBe('server_invoice_preview');
+      expect(summaryEl.textContent).toContain('Verified with Stripe');
+      expect(summaryEl.textContent).toContain('Amount due today');
+    });
+
+    it('14. surfaces a reconciled existing subscription when an uncertain creation outcome is reconciled by StripeService', async () => {
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+
+      const reconciledSub: StripeSubscription = {
+        ...mockSubscription,
+        subscriptionId: 'sub_reconciled_after_timeout',
+        status: 'active',
+      };
+
+      stripeServiceSpy.createVerifiedSubscription.mockRejectedValueOnce(
+        new CheckoutChargeProtectionError(
+          'UNEXPECTED_PRE_VERIFICATION_CHARGE',
+          'Existing active subscription reconciled after uncertain creation outcome.',
+          {
+            subscriptionId: 'sub_reconciled_after_timeout',
+            existingSubscription: reconciledSub,
+          }
+        )
+      );
+
+      await component.proceedToPayment();
+      fixture.detectChanges();
+
+      expect(component.subscription()?.subscriptionId).toBe('sub_reconciled_after_timeout');
+      expect(component.paymentActive()).toBe(false);
     });
   });
 

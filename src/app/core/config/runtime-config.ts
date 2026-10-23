@@ -2,7 +2,6 @@ import { environment } from '../../../environments/environment';
 
 export interface RuntimeConfig {
   directusUrl: string;
-  checkoutApiBaseUrl: string;
   googleClientId: string;
   googleSignInFlow: string;
   stripePublishableKey: string;
@@ -10,6 +9,7 @@ export interface RuntimeConfig {
   stripeGetSubscriptionFlow: string;
   stripeValidatePromoFlow: string;
   stripeCreateSubscriptionFlow: string;
+  stripeCreateSubscriptionFromSetupFlow: string;
   stripeChangeSubscriptionFlow: string;
   stripeCancelSubscriptionFlow: string;
   stripeReleaseScheduleFlow: string;
@@ -67,14 +67,9 @@ const windowConfig = (typeof window !== 'undefined' ? (window as any).__VAMO_CON
 function buildInitialConfig(overrides: Record<string, any> = {}): RuntimeConfig {
   const resolvedDirectusUrl = stripTrailingSlash(overrides['directusUrl'] || environment.directusUrl);
   const isDevHost = isDevelopmentDirectusUrl(resolvedDirectusUrl);
-  const rawCheckoutUrl =
-    overrides['checkoutApiBaseUrl'] ??
-    (environment as any).checkoutApiBaseUrl ??
-    '/api/checkout';
 
   return {
     directusUrl: resolvedDirectusUrl,
-    checkoutApiBaseUrl: typeof rawCheckoutUrl === 'string' ? stripTrailingSlash(rawCheckoutUrl.trim()) : '/api/checkout',
     googleClientId:
       overrides['googleClientId'] ||
       (environment as any).googleClientId ||
@@ -89,6 +84,10 @@ function buildInitialConfig(overrides: Record<string, any> = {}): RuntimeConfig 
     stripeValidatePromoFlow: overrides['stripeValidatePromoFlow'] || environment.STRIPE_VALIDATE_PROMO_FLOW || '',
     stripeCreateSubscriptionFlow:
       overrides['stripeCreateSubscriptionFlow'] || environment.STRIPE_CREATE_SUBSCRIPTION_FLOW || '',
+    stripeCreateSubscriptionFromSetupFlow:
+      overrides['stripeCreateSubscriptionFromSetupFlow'] ||
+      (environment as any).STRIPE_CREATE_SUBSCRIPTION_FROM_SETUP_FLOW ||
+      '',
     stripeChangeSubscriptionFlow:
       overrides['stripeChangeSubscriptionFlow'] || environment.STRIPE_CHANGE_SUBSCRIPTION_FLOW || '',
     stripeCancelSubscriptionFlow:
@@ -135,9 +134,6 @@ let currentConfig: RuntimeConfig = buildInitialConfig(windowConfig);
 export const runtimeConfig = {
   get directusUrl(): string {
     return currentConfig.directusUrl;
-  },
-  get checkoutApiBaseUrl(): string {
-    return currentConfig.checkoutApiBaseUrl;
   },
   get googleClientId(): string {
     return currentConfig.googleClientId;
@@ -196,6 +192,9 @@ export const runtimeConfig = {
   },
   get stripeCreateSubscriptionFlow(): string {
     return currentConfig.stripeCreateSubscriptionFlow;
+  },
+  get stripeCreateSubscriptionFromSetupFlow(): string {
+    return currentConfig.stripeCreateSubscriptionFromSetupFlow;
   },
   get stripeChangeSubscriptionFlow(): string {
     return currentConfig.stripeChangeSubscriptionFlow;

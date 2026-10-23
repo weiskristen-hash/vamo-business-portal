@@ -9,6 +9,10 @@ export type CheckoutAuditEventType =
   | 'subscription_creation_attempted'
   | 'first_invoice_verified'
   | 'amount_mismatch_blocked'
+  | 'setup_intent_confirmed'
+  | 'subscription_created_from_setup'
+  | 'subscription_status_verified'
+  | 'checkout_failed'
   | 'payment_succeeded'
   | 'payment_failed';
 
@@ -23,11 +27,14 @@ export interface CheckoutAuditEntry {
   promotionCodeId?: string | null;
   verificationReference?: string | null;
   subscriptionId?: string | null;
+  setupIntentId?: string | null;
+  paymentIntentId?: string | null;
   invoiceId?: string | null;
   currency?: string | null;
   approvedAmount?: number | null;
   actualAmount?: number | null;
   discountAmount?: number | null;
+  errorCode?: string | null;
   reason?: string | null;
 }
 
@@ -38,6 +45,15 @@ const FORBIDDEN_KEYS = new Set([
   'card_number',
   'cvc',
   'cvv',
+  'expmonth',
+  'exp_month',
+  'expyear',
+  'exp_year',
+  'email',
+  'customeremail',
+  'customer_email',
+  'customername',
+  'customer_name',
   'password',
   'accesstoken',
   'access_token',
@@ -55,8 +71,12 @@ export function sanitizeAuditString(value: string | null | undefined): string | 
   cleaned = cleaned.replace(/\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]+\b/g, '[REDACTED_STRIPE_KEY]');
   // Strip Bearer tokens
   cleaned = cleaned.replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED_TOKEN]');
+  // Strip email addresses
+  cleaned = cleaned.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[REDACTED_EMAIL]');
   // Strip 13-19 digit PAN-like sequences
   cleaned = cleaned.replace(/\b(?:\d[ -]*?){13,19}\b/g, '[REDACTED_CARD]');
+  // Strip card expiry MM/YY or MM/YYYY patterns
+  cleaned = cleaned.replace(/\b(?:0[1-9]|1[0-2])\s*\/\s*(?:\d{2}|\d{4})\b/g, '[REDACTED_EXPIRY]');
   return cleaned;
 }
 
@@ -112,6 +132,8 @@ export class CheckoutAuditService {
       promotionCodeId: (sanitizedPayload['promotionCodeId'] as string | null | undefined) ?? null,
       verificationReference: (sanitizedPayload['verificationReference'] as string | null | undefined) ?? null,
       subscriptionId: (sanitizedPayload['subscriptionId'] as string | null | undefined) ?? null,
+      setupIntentId: (sanitizedPayload['setupIntentId'] as string | null | undefined) ?? null,
+      paymentIntentId: (sanitizedPayload['paymentIntentId'] as string | null | undefined) ?? null,
       invoiceId: (sanitizedPayload['invoiceId'] as string | null | undefined) ?? null,
       currency:
         typeof sanitizedPayload['currency'] === 'string'
@@ -129,6 +151,7 @@ export class CheckoutAuditService {
         typeof sanitizedPayload['discountAmount'] === 'number' && Number.isFinite(sanitizedPayload['discountAmount'])
           ? sanitizedPayload['discountAmount']
           : null,
+      errorCode: (sanitizedPayload['errorCode'] as string | null | undefined) ?? null,
       reason: (sanitizedPayload['reason'] as string | null | undefined) ?? null,
     };
 
