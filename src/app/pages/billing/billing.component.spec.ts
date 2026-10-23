@@ -2180,6 +2180,97 @@ describe('BillingComponent', () => {
       expect(stripeServiceSpy.createSubscriptionFromSetup).toHaveBeenCalledTimes(2);
       expect(stripeServiceSpy.setProviderTier).toHaveBeenCalledWith('basic');
     });
+
+    it('13. distinguishes client-calculated estimated pre-checkout total from Stripe-verified payable amount before and after proceedToPayment()', async () => {
+      const estimatedPreview = makeVerifiedPreview({
+        isEstimated: true,
+        amountSource: 'client_estimate',
+        eligibilityVerified: false,
+        serverAuthenticatedReference: false,
+        couponState: 'verified_applied',
+        discountAmount: 2000,
+        amountDueToday: 3900,
+        renewalAmount: 5900,
+        promoCode: 'SAVE20',
+        promoCodeId: 'promo_save20',
+        promoCodeName: 'SAVE20',
+        couponDuration: 'once',
+        verificationReference: 'dref_1_partial_3900',
+      });
+
+      stripeServiceSpy.previewSubscriptionCheckout
+        .mockResolvedValueOnce(makeVerifiedPreview({ isEstimated: true, amountSource: 'client_estimate' }))
+        .mockResolvedValueOnce(estimatedPreview);
+
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+      component.couponCode.set('SAVE20');
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      const summaryEl: HTMLElement = fixture.nativeElement.querySelector('.verified-order-summary');
+      expect(summaryEl.textContent).toContain('Estimated pre-checkout total');
+      expect(summaryEl.textContent).toContain('Estimated discount');
+      expect(summaryEl.textContent).toContain('SAVE20');
+      expect(summaryEl.textContent).toContain('Estimated due today');
+      expect(summaryEl.textContent).toContain(
+        'Final payable amount is verified with Stripe before any card charge is authorized.'
+      );
+      expect(summaryEl.textContent).not.toContain('Verified with Stripe');
+
+      // Once proceedToPayment() verifies the actual Stripe PaymentIntent amount, the summary transitions to Verified with Stripe
+      stripeServiceSpy.createVerifiedSubscription.mockResolvedValueOnce({
+        subscriptionId: 'sub_verified_after_init',
+        paymentIntentId: 'pi_verified_after_init',
+        clientSecret: 'pi_verified_after_init_secret',
+        requiresSetup: false,
+        invoiceId: 'in_verified_after_init',
+        invoiceAmountDue: 3900,
+        invoiceSubtotal: 5900,
+        invoiceDiscountAmount: 2000,
+        invoiceTax: 0,
+        invoiceCurrency: 'usd',
+        appliedPromotionCodeId: 'promo_save20',
+        verifiedByServer: true,
+      });
+
+      component.selectedSavedMethod.set(null);
+      await component.proceedToPayment();
+      fixture.detectChanges();
+
+      expect(component.checkoutPreview()?.isEstimated).toBe(false);
+      expect(component.checkoutPreview()?.amountSource).toBe('server_invoice_preview');
+      expect(summaryEl.textContent).toContain('Verified with Stripe');
+      expect(summaryEl.textContent).toContain('Amount due today');
+    });
+
+    it('14. surfaces a reconciled existing subscription when an uncertain creation outcome is reconciled by StripeService', async () => {
+      component.selectPlan(basic59Plan);
+      await fixture.whenStable();
+
+      const reconciledSub: StripeSubscription = {
+        ...mockSubscription,
+        subscriptionId: 'sub_reconciled_after_timeout',
+        status: 'active',
+      };
+
+      stripeServiceSpy.createVerifiedSubscription.mockRejectedValueOnce(
+        new CheckoutChargeProtectionError(
+          'UNEXPECTED_PRE_VERIFICATION_CHARGE',
+          'Existing active subscription reconciled after uncertain creation outcome.',
+          {
+            subscriptionId: 'sub_reconciled_after_timeout',
+            existingSubscription: reconciledSub,
+          }
+        )
+      );
+
+      await component.proceedToPayment();
+      fixture.detectChanges();
+
+      expect(component.subscription()?.subscriptionId).toBe('sub_reconciled_after_timeout');
+      expect(component.paymentActive()).toBe(false);
+    });
   });
 
 });

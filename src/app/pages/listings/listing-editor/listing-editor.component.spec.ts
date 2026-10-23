@@ -90,7 +90,7 @@ describe('ListingEditorComponent', () => {
       getAreas: vi.fn().mockResolvedValue([...mockAreas]),
       getEventById: vi.fn().mockResolvedValue({ ...mockExistingEvent }),
       getAssetUrl: vi.fn((id: string) => `https://api.vamo-app.com/assets/${id}`),
-      createEvent: vi.fn().mockResolvedValue({ id: 'ev-new-created', ...mockExistingEvent }),
+      createEvent: vi.fn().mockResolvedValue({ ...mockExistingEvent, id: 'ev-new-created' }),
       updateEvent: vi.fn().mockResolvedValue({ ...mockExistingEvent }),
       duplicateEventAsDraft: vi.fn().mockResolvedValue('ev-dup-new'),
     };
@@ -157,13 +157,16 @@ describe('ListingEditorComponent', () => {
     expect(component.existingImages[0].junctionId).toBe(101);
   });
 
-  it('should lock schedule if published event start date is in less than 24 hours', async () => {
+  it('should NOT lock schedule if published event start date is in less than 24 hours', async () => {
     mockParamId = 'ev-existing-1';
 
-    // Event starts 4 hours from now
+    // Event starts 4 hours from now on DR today
     const startingSoonEvent = {
       ...mockExistingEvent,
-      startDate: new Date(Date.now() + 4 * 3600 * 1000).toISOString(),
+      mode: 'single' as const,
+      startDate: '2026-10-01',
+      from: '18:00',
+      to: '21:00',
     };
     businessServiceSpy.getEventById.mockResolvedValueOnce(startingSoonEvent);
 
@@ -172,7 +175,8 @@ describe('ListingEditorComponent', () => {
     await component.ngOnInit();
     fixture.detectChanges();
 
-    expect(component.datesLocked).toBe(true);
+    expect(component.isPastEvent).toBe(false);
+    expect(component.datesLocked).toBe(false);
   });
 
   it('should validate required fields before publishing', async () => {
@@ -1848,6 +1852,433 @@ describe('ListingEditorComponent', () => {
 
       expect(component.getPublicEventLink()).toBe('https://app.vamo-app.com/event/ev-live-99');
       expect(fixture.nativeElement.querySelector('.view-on-vamo-btn')).toBeNull();
+    });
+  });
+
+  describe('Task B — Event Schedule Editing (Published Events Within 24h & DR Timezone)', () => {
+    it('1. Published event starting in 2 hours -> date is editable (not locked or disabled)', async () => {
+      mockParamId = 'ev-starts-in-2h';
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-01');
+      businessServiceSpy.getEventById.mockResolvedValueOnce({
+        ...mockExistingEvent,
+        id: 'ev-starts-in-2h',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-01',
+        from: '16:00',
+        to: '19:00',
+        provider: 'provider-999',
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      expect(component.isPastEvent).toBe(false);
+      expect(component.datesLocked).toBe(false);
+      expect(fixture.nativeElement.querySelector('.locked-schedule-notice')).toBeNull();
+
+      component.draft.startDate = '2026-10-02';
+      component.onStartDateChange();
+      expect(component.draft.startDate).toBe('2026-10-02');
+      expect(component.isDirty).toBe(true);
+    });
+
+    it('2. Published event starting in 2 hours -> start time and end time are editable', async () => {
+      mockParamId = 'ev-starts-in-2h-times';
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-01');
+      businessServiceSpy.getEventById.mockResolvedValueOnce({
+        ...mockExistingEvent,
+        id: 'ev-starts-in-2h-times',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-01',
+        from: '16:00',
+        to: '19:00',
+        provider: 'provider-999',
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      expect(component.datesLocked).toBe(false);
+
+      component.draft.from = '17:30';
+      component.onTimeChange();
+      expect(component.draft.from).toBe('17:30');
+      expect(component.isDirty).toBe(true);
+
+      component.isDirty = false;
+      component.draft.to = '21:30';
+      component.onTimeChange();
+      expect(component.draft.to).toBe('21:30');
+      expect(component.isDirty).toBe(true);
+    });
+
+    it('3. Published event starting in 1 hour -> date/time changes save to Directus', async () => {
+      mockParamId = 'ev-starts-in-1h';
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-01');
+      businessServiceSpy.getEventById.mockResolvedValueOnce({
+        ...mockExistingEvent,
+        id: 'ev-starts-in-1h',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-01',
+        from: '15:00',
+        to: '18:00',
+        provider: 'provider-999',
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      component.draft.startDate = '2026-10-02';
+      component.onStartDateChange();
+      component.draft.from = '18:30';
+      component.draft.to = '22:00';
+      component.onTimeChange();
+
+      await component.publishListing();
+
+      expect(businessServiceSpy.updateEvent).toHaveBeenCalledWith(
+        'ev-starts-in-1h',
+        expect.objectContaining({
+          startDate: '2026-10-02',
+          from: '18:30',
+          to: '22:00',
+          status: 'published',
+        }),
+        [],
+        [],
+        ['area-1'],
+        [201],
+        expect.anything()
+      );
+      expect(router.navigate).toHaveBeenCalledWith(['/app/listings']);
+    });
+
+    it('4. Published event starting tomorrow -> date/time editable and saveable', async () => {
+      mockParamId = 'ev-starts-tomorrow';
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-01');
+      businessServiceSpy.getEventById.mockResolvedValueOnce({
+        ...mockExistingEvent,
+        id: 'ev-starts-tomorrow',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-02',
+        from: '19:00',
+        to: '23:00',
+        provider: 'provider-999',
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      expect(component.datesLocked).toBe(false);
+
+      component.draft.startDate = '2026-10-03';
+      component.onStartDateChange();
+      component.draft.from = '20:00';
+      component.draft.to = '23:30';
+      component.onTimeChange();
+
+      await component.publishListing();
+
+      expect(businessServiceSpy.updateEvent).toHaveBeenCalledWith(
+        'ev-starts-tomorrow',
+        expect.objectContaining({
+          startDate: '2026-10-03',
+          from: '20:00',
+          to: '23:30',
+          status: 'published',
+        }),
+        [],
+        [],
+        ['area-1'],
+        [201],
+        expect.anything()
+      );
+    });
+
+    it('5. Draft event -> date/time editable and saveable', async () => {
+      mockParamId = 'ev-draft-1';
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-01');
+      businessServiceSpy.getEventById.mockResolvedValueOnce({
+        ...mockExistingEvent,
+        id: 'ev-draft-1',
+        status: 'draft',
+        mode: 'single',
+        startDate: '2026-10-01',
+        from: '14:00',
+        to: '16:00',
+        provider: 'provider-999',
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      expect(component.isDraft).toBe(true);
+      expect(component.datesLocked).toBe(false);
+
+      component.draft.startDate = '2026-10-05';
+      component.onStartDateChange();
+      component.draft.from = '15:30';
+      component.draft.to = '18:30';
+      component.onTimeChange();
+
+      await component.saveDraft();
+
+      expect(businessServiceSpy.updateEvent).toHaveBeenCalledWith(
+        'ev-draft-1',
+        expect.objectContaining({
+          startDate: '2026-10-05',
+          from: '15:30',
+          to: '18:30',
+          status: 'draft',
+        }),
+        [],
+        [],
+        ['area-1'],
+        [201],
+        expect.anything()
+      );
+    });
+
+    it('6. Past event -> existing past-event restriction remains enforced (datesLocked = true, save blocked)', async () => {
+      mockParamId = 'ev-past-1';
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-01');
+      businessServiceSpy.getEventById.mockResolvedValueOnce({
+        ...mockExistingEvent,
+        id: 'ev-past-1',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-09-20',
+        from: '18:00',
+        to: '21:00',
+        provider: 'provider-999',
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      expect(component.isPastEvent).toBe(true);
+      expect(component.datesLocked).toBe(true);
+
+      // Attempting to change date or save a past event is blocked
+      component.onStartDateChange();
+      expect(component.isDirty).toBe(false);
+
+      await component.publishListing();
+      expect(businessServiceSpy.updateEvent).not.toHaveBeenCalled();
+    });
+
+    it('7. Recurring event -> recurring schedule editing remains intact', async () => {
+      mockParamId = 'ev-recurring-1';
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-01');
+      businessServiceSpy.getEventById.mockResolvedValueOnce({
+        ...mockExistingEvent,
+        id: 'ev-recurring-1',
+        status: 'published',
+        mode: 'recurring',
+        recurring: { days: ['wed', 'fri'] },
+        from: '17:00',
+        to: '20:00',
+        provider: 'provider-999',
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      expect(component.isPastEvent).toBe(false);
+      expect(component.datesLocked).toBe(false);
+
+      component.toggleDay('sat');
+      component.draft.from = '18:00';
+      component.draft.to = '22:00';
+      component.onTimeChange();
+
+      await component.publishListing();
+
+      expect(businessServiceSpy.updateEvent).toHaveBeenCalledWith(
+        'ev-recurring-1',
+        expect.objectContaining({
+          mode: 'recurring',
+          recurring: { days: ['wed', 'fri', 'sat'] },
+          from: '18:00',
+          to: '22:00',
+          status: 'published',
+        }),
+        [],
+        [],
+        ['area-1'],
+        [201],
+        expect.anything()
+      );
+    });
+
+    it('8. Invalid schedule (end before start) -> validation blocks save', async () => {
+      mockParamId = 'ev-invalid-schedule';
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-01');
+      businessServiceSpy.getEventById.mockResolvedValueOnce({
+        ...mockExistingEvent,
+        id: 'ev-invalid-schedule',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-05',
+        endDate: '2026-10-06',
+        from: '18:00',
+        to: '21:00',
+        provider: 'provider-999',
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      // Multi-day event with endDate earlier than startDate
+      component.multiDay = true;
+      component.draft.startDate = '2026-10-05';
+      component.draft.endDate = '2026-10-02';
+
+      await component.publishListing();
+
+      expect(businessServiceSpy.updateEvent).not.toHaveBeenCalled();
+      expect(component.errorMessage).toBe('End date cannot be before start date.');
+
+      // Same-day event with end time earlier than start time (when not allDay / openEnd)
+      component.multiDay = false;
+      component.draft.endDate = null;
+      component.draft.allDay = false;
+      component.draft.openEnd = false;
+      component.draft.from = '20:00';
+      component.draft.to = '19:00';
+
+      await component.publishListing();
+      expect(businessServiceSpy.updateEvent).not.toHaveBeenCalled();
+      expect(component.errorMessage).toBe('End time cannot be earlier than start time on the same date.');
+    });
+
+    it('9. Timezone edge case near midnight in Dominican Republic (America/Santo_Domingo, UTC-4) -> no false lock or day shift', async () => {
+      mockParamId = 'ev-dr-midnight';
+      // Simulate 10:00 PM in Dominican Republic on 2026-10-01 (which is already 2026-10-02T02:00:00Z in UTC)
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-01');
+      businessServiceSpy.getEventById.mockResolvedValue({
+        ...mockExistingEvent,
+        id: 'ev-dr-midnight',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-01T00:00:00.000Z',
+        from: '22:30',
+        to: '23:45',
+        provider: 'provider-999',
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      expect(component.draft.startDate).toBe('2026-10-01');
+      expect(component.isPastEvent).toBe(false);
+      expect(component.datesLocked).toBe(false);
+
+      await component.publishListing();
+
+      expect(businessServiceSpy.updateEvent).toHaveBeenCalledWith(
+        'ev-dr-midnight',
+        expect.objectContaining({
+          startDate: '2026-10-01',
+          from: '22:30',
+          to: '23:45',
+          status: 'published',
+        }),
+        [],
+        [],
+        ['area-1'],
+        [201],
+        expect.anything()
+      );
+    });
+
+    it('10. Non-owner / unauthorized user -> cannot load or edit another business’s event', async () => {
+      mockParamId = 'ev-other-business';
+      businessServiceSpy.getEventById.mockResolvedValueOnce({
+        ...mockExistingEvent,
+        id: 'ev-other-business',
+        status: 'published',
+        provider: 'provider-other-888', // belongs to a different business than mockUser.provider_link.id ('provider-999')
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      expect(component.originalEvent).toBeNull();
+      expect(component.errorMessage).toBe(
+        "We couldn't make that change. This action is not available for your account."
+      );
+
+      // Even if originalEvent were tampered with in memory, executeSave blocks saving another business's event
+      component.originalEvent = {
+        ...mockExistingEvent,
+        id: 'ev-other-business',
+        provider: { id: 'provider-other-888' } as any,
+      };
+      await component.publishListing();
+      expect(businessServiceSpy.updateEvent).not.toHaveBeenCalled();
+    });
+
+    it('11. Edited published event remains published unless the user explicitly pauses/unpublishes it', async () => {
+      mockParamId = 'ev-stay-published';
+      businessServiceSpy.drTodayStr.mockReturnValue('2026-10-01');
+      businessServiceSpy.getEventById.mockResolvedValueOnce({
+        ...mockExistingEvent,
+        id: 'ev-stay-published',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-01',
+        from: '18:00',
+        to: '21:00',
+        provider: 'provider-999',
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      component.draft.from = '19:00';
+      component.onTimeChange();
+
+      await component.publishListing();
+
+      expect(businessServiceSpy.updateEvent).toHaveBeenCalledWith(
+        'ev-stay-published',
+        expect.objectContaining({
+          status: 'published',
+          from: '19:00',
+        }),
+        [],
+        [],
+        ['area-1'],
+        [201],
+        expect.anything()
+      );
     });
   });
 

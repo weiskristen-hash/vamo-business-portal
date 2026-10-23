@@ -430,7 +430,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               *ngIf="checkoutPreview()?.verified && (checkoutPreview()?.discountAmount ?? 0) > 0"
               class="summary-row summary-row--discount"
             >
-              <span class="summary-label">{{ 'PORTAL.BILLING.SUMMARY_DISCOUNT' | translate }}</span>
+              <span class="summary-label">{{ (checkoutPreview()?.isEstimated && !paymentActive() ? 'PORTAL.BILLING.SUMMARY_ESTIMATED_DISCOUNT' : 'PORTAL.BILLING.SUMMARY_DISCOUNT') | translate }}</span>
               <span class="summary-value summary-discount-amount">
                 -{{ formatExactPrice(checkoutPreview()!.discountAmount, checkoutPreview()!.currency) }}
               </span>
@@ -447,13 +447,23 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             </div>
 
             <div class="summary-row summary-row--total">
-              <span class="summary-label">{{ 'PORTAL.BILLING.SUMMARY_DUE_TODAY' | translate }}</span>
+              <span class="summary-label" data-testid="amount-due-today-label">{{ getDueTodayLabelKey() | translate }}</span>
               <span class="summary-value summary-due-today-amount" data-testid="amount-due-today">
                 {{
                   checkoutPreview()?.verified
                     ? formatExactPrice(checkoutPreview()!.amountDueToday, checkoutPreview()!.currency)
                     : '—'
                 }}
+              </span>
+            </div>
+
+            <div
+              *ngIf="checkoutPreview()?.isEstimated && !paymentActive()"
+              class="summary-row summary-row--renewal"
+              data-testid="estimated-preview-notice"
+            >
+              <span class="summary-value summary-renewal-text">
+                {{ 'PORTAL.BILLING.ESTIMATED_TOTAL_VERIFIED_BEFORE_CHARGE' | translate }}
               </span>
             </div>
 
@@ -2806,6 +2816,9 @@ export class BillingComponent implements OnInit, OnDestroy {
       case 'verifying':
         return 'PORTAL.BILLING.VERIFICATION_BADGE_VERIFYING';
       case 'verified':
+        if (this.checkoutPreview()?.isEstimated === true && !this.paymentActive()) {
+          return 'PORTAL.BILLING.VERIFICATION_BADGE_ESTIMATED';
+        }
         return 'PORTAL.BILLING.VERIFICATION_BADGE_VERIFIED';
       case 'expired':
         return 'PORTAL.BILLING.VERIFICATION_BADGE_EXPIRED';
@@ -2817,6 +2830,13 @@ export class BillingComponent implements OnInit, OnDestroy {
       default:
         return 'PORTAL.BILLING.VERIFICATION_BADGE_UNVERIFIED';
     }
+  }
+
+  getDueTodayLabelKey(): string {
+    if (this.checkoutPreview()?.isEstimated === true && !this.paymentActive()) {
+      return 'PORTAL.BILLING.SUMMARY_ESTIMATED_DUE_TODAY';
+    }
+    return 'PORTAL.BILLING.SUMMARY_DUE_TODAY';
   }
 
   getRenewalDisclosureText(plan: StripePlan): string | null {
@@ -3154,6 +3174,14 @@ export class BillingComponent implements OnInit, OnDestroy {
         }
         await this.finalizeSubscriptionSuccess(plan);
       } else {
+        if (preview.isEstimated) {
+          this.checkoutPreview.set({
+            ...preview,
+            isEstimated: false,
+            amountSource: 'server_invoice_preview',
+            eligibilityVerified: true,
+          });
+        }
         this.clientSecret.set(result.clientSecret);
         this.paymentRequiresSetup.set(result.requiresSetup);
         this.paymentActive.set(true);
@@ -3230,6 +3258,9 @@ export class BillingComponent implements OnInit, OnDestroy {
 
     switch (err.code) {
       case 'UNEXPECTED_PRE_VERIFICATION_CHARGE':
+        if ((err as any).existingSubscription?.subscriptionId) {
+          this.subscription.set((err as any).existingSubscription);
+        }
         this.checkoutVerificationStatus.set('mismatch_blocked');
         this.setTranslatedError('PORTAL.BILLING.ERROR_UNEXPECTED_PRE_VERIFICATION_CHARGE');
         break;

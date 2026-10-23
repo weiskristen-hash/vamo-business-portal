@@ -63,6 +63,10 @@ export interface CheckoutPreviewResult {
   couponDuration?: CouponDurationType | null;
   couponDurationInMonths?: number | null;
   expiresAt?: number | null;
+  isEstimated?: boolean;
+  amountSource?: 'client_estimate' | 'server_invoice_preview' | 'unavailable';
+  eligibilityVerified?: boolean;
+  serverAuthenticatedReference?: boolean;
   errorCode?: string | null;
   message?: string | null;
 }
@@ -114,6 +118,8 @@ export class CheckoutChargeProtectionError extends Error {
   readonly approvedAmount?: number | null;
   readonly actualAmount?: number | null;
   readonly currency?: string | null;
+  readonly subscriptionId?: string | null;
+  readonly existingSubscription?: StripeSubscription | null;
 
   constructor(
     code: CheckoutProtectionErrorCode,
@@ -122,6 +128,8 @@ export class CheckoutChargeProtectionError extends Error {
       approvedAmount?: number | null;
       actualAmount?: number | null;
       currency?: string | null;
+      subscriptionId?: string | null;
+      existingSubscription?: StripeSubscription | null;
     },
   ) {
     super(message);
@@ -130,6 +138,8 @@ export class CheckoutChargeProtectionError extends Error {
     this.approvedAmount = details?.approvedAmount ?? null;
     this.actualAmount = details?.actualAmount ?? null;
     this.currency = details?.currency ?? null;
+    this.subscriptionId = details?.subscriptionId ?? null;
+    this.existingSubscription = details?.existingSubscription ?? null;
   }
 }
 
@@ -390,6 +400,10 @@ interface VerifiedPreviewSnapshot {
   couponDuration: CouponDurationType | null;
   couponDurationInMonths: number | null;
   expiresAt: number;
+  isEstimated: boolean;
+  amountSource: 'client_estimate' | 'server_invoice_preview';
+  eligibilityVerified: boolean;
+  serverAuthenticatedReference: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -404,6 +418,9 @@ export class StripeService {
   private inFlightCheckoutPreviews = new Map<string, Promise<CheckoutPreviewResult>>();
   private inFlightVerifiedSubscriptions = new Map<string, Promise<VerifiedCreateSubscriptionResult>>();
   private inFlightSetupSubscriptions = new Map<string, Promise<{ subscriptionId: string }>>();
+  private completedSetupSubscriptions = new Map<string, { subscriptionId: string }>();
+  private uncertainSubscriptionCreationEmails = new Set<string>();
+  private uncertainSetupIntentIds = new Map<string, string>();
   private verifiedPreviewsByRef = new Map<string, VerifiedPreviewSnapshot>();
 
   getStripe(): Promise<Stripe | null> {
@@ -711,7 +728,7 @@ export class StripeService {
         planName: resolvedPlanName,
       };
 
-      // Case A: Standard checkout without promotion code
+      // Case A: Standard checkout without promotion code (client-side plan total prior to Stripe PaymentIntent creation)
       if (!cleanPromoCode) {
         const expiresAt = Date.now() + 10 * 60 * 1000;
         const verificationRef = `dref_${cleanPriceId}_nopromo_${resolvedSubtotal}_${resolvedCurrency}_${expiresAt}`;
@@ -726,18 +743,10 @@ export class StripeService {
           couponDuration: null,
           couponDurationInMonths: null,
           expiresAt,
-        });
-
-        this.auditService.record('invoice_preview_created', {
-          priceId: cleanPriceId,
-          promotionCode: null,
-          promotionCodeId: null,
-          verificationReference: verificationRef,
-          currency: resolvedCurrency,
-          approvedAmount: resolvedSubtotal,
-          discountAmount: 0,
-          customerRef: request.customerRef ?? null,
-          businessRef: request.businessRef ?? null,
+          isEstimated: true,
+          amountSource: 'client_estimate',
+          eligibilityVerified: true,
+          serverAuthenticatedReference: false,
         });
 
         this.auditService.record('amount_displayed_for_approval', {
@@ -750,6 +759,7 @@ export class StripeService {
           discountAmount: 0,
           customerRef: request.customerRef ?? null,
           businessRef: request.businessRef ?? null,
+          reason: 'CLIENT_ESTIMATED_PRE_CHECKOUT_TOTAL',
         });
 
         return {
@@ -773,6 +783,10 @@ export class StripeService {
           couponDuration: null,
           couponDurationInMonths: null,
           expiresAt,
+          isEstimated: true,
+          amountSource: 'client_estimate',
+          eligibilityVerified: true,
+          serverAuthenticatedReference: false,
           errorCode: null,
           message: null,
         };
@@ -846,6 +860,10 @@ export class StripeService {
       couponDuration: extraPromoMeta?.couponDuration ?? null,
       couponDurationInMonths: extraPromoMeta?.couponDurationInMonths ?? null,
       expiresAt: null,
+      isEstimated: false,
+      amountSource: 'unavailable',
+      eligibilityVerified: false,
+      serverAuthenticatedReference: false,
       errorCode,
       message: 'Authoritative Stripe price verification is currently unavailable.',
     };
@@ -883,14 +901,57 @@ export class StripeService {
         ? body.code
         : null;
 
-    // Check plan/currency/minimum-amount/redemption restrictions if present in response
+    // Check plan/currency/minimum-amount/redemption/customer restrictions if present in response.
+    // Missing eligibility inputs (such as missing request.productId when appliesToProducts is present)
+    // must never be treated as proof that restrictions are satisfied.
     let restrictionViolationCode: string | null = null;
     if (Boolean(cleanPromoCode)) {
-      if (typeof body.minimumAmount === 'number' && Number.isFinite(body.minimumAmount) && defaultSubtotal < body.minimumAmount) {
+      const minAmount =
+        typeof body.minimumAmount === 'number'
+          ? body.minimumAmount
+          : typeof body.restrictions?.minimum_amount === 'number'
+            ? body.restrictions.minimum_amount
+            : null;
+      const minAmountCurrency =
+        body.minimumAmountCurrency ?? body.restrictions?.minimum_amount_currency ?? null;
+      const applicablePriceIds = Array.isArray(body.applicablePriceIds)
+        ? body.applicablePriceIds
+        : Array.isArray(body.restrictions?.applicablePriceIds)
+          ? body.restrictions.applicablePriceIds
+          : null;
+      const appliesToProducts = Array.isArray(body.appliesToProducts)
+        ? body.appliesToProducts
+        : Array.isArray(body.applies_to?.products)
+          ? body.applies_to.products
+          : Array.isArray(body.coupon?.applies_to?.products)
+            ? body.coupon.applies_to.products
+            : null;
+      const restrictedCustomer =
+        typeof body.customer === 'string' && body.customer.trim()
+          ? body.customer.trim()
+          : typeof body.restrictions?.customer === 'string' && body.restrictions.customer.trim()
+            ? body.restrictions.customer.trim()
+            : null;
+      const requiresFirstTime =
+        body.firstTimeTransaction === true || body.restrictions?.first_time_transaction === true;
+
+      if (
+        minAmount !== null &&
+        Number.isFinite(minAmount) &&
+        minAmount > 0 &&
+        (defaultSubtotal < minAmount ||
+          (typeof minAmountCurrency === 'string' &&
+            minAmountCurrency.trim() &&
+            minAmountCurrency.trim().toLowerCase() !== defaultCurrency))
+      ) {
         restrictionViolationCode = 'MINIMUM_AMOUNT_NOT_MET';
-      } else if (Array.isArray(body.applicablePriceIds) && !body.applicablePriceIds.includes(cleanPriceId)) {
+      } else if (applicablePriceIds && applicablePriceIds.length > 0 && !applicablePriceIds.includes(cleanPriceId)) {
         restrictionViolationCode = 'PRODUCT_RESTRICTION_MISMATCH';
-      } else if (Array.isArray(body.appliesToProducts) && request.productId && !body.appliesToProducts.includes(request.productId)) {
+      } else if (
+        appliesToProducts &&
+        appliesToProducts.length > 0 &&
+        (!request.productId || !appliesToProducts.includes(request.productId))
+      ) {
         restrictionViolationCode = 'PRODUCT_RESTRICTION_MISMATCH';
       } else if (
         typeof body.amountOff === 'number' &&
@@ -907,6 +968,10 @@ export class StripeService {
         restrictionViolationCode = 'MAX_REDEMPTIONS_REACHED';
       } else if (body.expired === true || body.active === false) {
         restrictionViolationCode = 'COUPON_EXPIRED';
+      } else if (restrictedCustomer && (!request.customerRef || restrictedCustomer !== request.customerRef)) {
+        restrictionViolationCode = 'COUPON_INELIGIBLE';
+      } else if (requiresFirstTime && body.firstTimeTransactionEligible !== true) {
+        restrictionViolationCode = 'FIRST_TIME_CUSTOMER_ONLY';
       } else if (body.eligible === false || body.firstTimeTransactionEligible === false) {
         restrictionViolationCode = 'COUPON_INELIGIBLE';
       }
@@ -966,6 +1031,10 @@ export class StripeService {
         couponDuration: null,
         couponDurationInMonths: null,
         expiresAt: null,
+        isEstimated: false,
+        amountSource: 'unavailable',
+        eligibilityVerified: false,
+        serverAuthenticatedReference: false,
         errorCode: effectiveErrorCode || 'PROMO_INVALID_OR_INELIGIBLE',
         message: typeof (body.error ?? body.message) === 'string' ? (body.error ?? body.message) : null,
       };
@@ -1068,15 +1137,21 @@ export class StripeService {
           ? Math.max(0, rawSubtotal - rawDiscount + rawTax)
           : undefined;
 
-    // Authoritative discount & price verification requirements:
-    // 1. Must have positive plan subtotal and consistent discount/amountDueToday math.
-    // 2. When a promo code is present, must have valid===true (or verified===true with explicit invoice preview),
-    //    a valid promo_ ID, positive discount, and when validated via STRIPE_VALIDATE_PROMO_FLOW (no explicit invoice object),
-    //    must include authoritative couponDuration (and durationInMonths when repeating) for renewal disclosure.
+    const serverProvidedRef =
+      typeof body.verificationReference === 'string' && body.verificationReference.trim()
+        ? body.verificationReference.trim()
+        : typeof body.verificationId === 'string' && body.verificationId.trim()
+          ? body.verificationId.trim()
+          : typeof body.verificationToken === 'string' && body.verificationToken.trim()
+            ? body.verificationToken.trim()
+            : null;
+
     const hasExplicitInvoicePreview =
       typeof explicitAmountDue === 'number' &&
       Number.isFinite(explicitAmountDue) &&
-      (typeof body.verificationReference === 'string' || typeof body.verificationId === 'string' || Boolean(body.invoicePreview));
+      (serverProvidedRef !== null || Boolean(body.invoicePreview));
+
+    const isServerConfirmedPreview = Boolean(hasExplicitInvoicePreview && serverProvidedRef !== null);
 
     const hasAuthoritativeAmounts =
       typeof rawSubtotal === 'number' &&
@@ -1155,13 +1230,14 @@ export class StripeService {
         : Date.now() + 10 * 60 * 1000;
 
     const verificationRef =
-      typeof body.verificationReference === 'string' && body.verificationReference.trim()
-        ? body.verificationReference.trim()
-        : typeof body.verificationId === 'string' && body.verificationId.trim()
-          ? body.verificationId.trim()
-          : typeof body.verificationToken === 'string' && body.verificationToken.trim()
-            ? body.verificationToken.trim()
-            : `dref_${cleanPriceId}_${promoCodeId ?? 'nopromo'}_${rawAmountDue}_${currency}_${expiresAt}`;
+      serverProvidedRef ??
+      `dref_${cleanPriceId}_${promoCodeId ?? 'nopromo'}_${rawAmountDue}_${currency}_${expiresAt}`;
+
+    const isEstimated = !isServerConfirmedPreview;
+    const amountSource: 'client_estimate' | 'server_invoice_preview' = isServerConfirmedPreview
+      ? 'server_invoice_preview'
+      : 'client_estimate';
+    const eligibilityVerified = !cleanPromoCode || isServerConfirmedPreview || body.eligible === true;
 
     this.verifiedPreviewsByRef.set(verificationRef, {
       priceId: cleanPriceId,
@@ -1174,6 +1250,10 @@ export class StripeService {
       couponDuration: cleanPromoCode ? couponDuration : null,
       couponDurationInMonths: cleanPromoCode ? couponDurationInMonths : null,
       expiresAt,
+      isEstimated,
+      amountSource,
+      eligibilityVerified,
+      serverAuthenticatedReference: isServerConfirmedPreview,
     });
 
     // Renewal disclosure: only populate renewalAmount when authoritative billing data establishes it
@@ -1205,17 +1285,19 @@ export class StripeService {
       });
     }
 
-    this.auditService.record('invoice_preview_created', {
-      priceId: cleanPriceId,
-      promotionCode: cleanPromoCode,
-      promotionCodeId: promoCodeId,
-      verificationReference: verificationRef,
-      currency,
-      approvedAmount: rawAmountDue!,
-      discountAmount: rawDiscount!,
-      customerRef: request.customerRef ?? null,
-      businessRef: request.businessRef ?? null,
-    });
+    if (isServerConfirmedPreview) {
+      this.auditService.record('invoice_preview_created', {
+        priceId: cleanPriceId,
+        promotionCode: cleanPromoCode,
+        promotionCodeId: promoCodeId,
+        verificationReference: verificationRef,
+        currency,
+        approvedAmount: rawAmountDue!,
+        discountAmount: rawDiscount!,
+        customerRef: request.customerRef ?? null,
+        businessRef: request.businessRef ?? null,
+      });
+    }
 
     this.auditService.record('amount_displayed_for_approval', {
       priceId: cleanPriceId,
@@ -1227,6 +1309,9 @@ export class StripeService {
       discountAmount: rawDiscount!,
       customerRef: request.customerRef ?? null,
       businessRef: request.businessRef ?? null,
+      reason: isServerConfirmedPreview
+        ? 'SERVER_CONFIRMED_INVOICE_PREVIEW'
+        : 'CLIENT_ESTIMATED_PRE_CHECKOUT_TOTAL',
     });
 
     return {
@@ -1250,6 +1335,10 @@ export class StripeService {
       couponDuration: cleanPromoCode ? couponDuration : null,
       couponDurationInMonths: cleanPromoCode ? couponDurationInMonths : null,
       expiresAt,
+      isEstimated,
+      amountSource,
+      eligibilityVerified,
+      serverAuthenticatedReference: isServerConfirmedPreview,
       errorCode: null,
       message: null,
     };
@@ -1269,6 +1358,12 @@ export class StripeService {
     const cleanPromoId = request.promotionCodeId ? request.promotionCodeId.trim() : null;
     const cachedPreview = verificationRef ? this.verifiedPreviewsByRef.get(verificationRef) : undefined;
 
+    // A client-generated verification reference ('dref_...' or 'local_est_...') is never server-authenticated
+    // evidence on its own and must match an active in-memory preview snapshot recorded in this session.
+    const isClientGeneratedRef =
+      verificationRef.startsWith('dref_') || verificationRef.startsWith('local_est_');
+    const unrecordedClientRef = isClientGeneratedRef && cachedPreview === undefined;
+
     const snapshotMismatch =
       cachedPreview !== undefined &&
       (cachedPreview.priceId !== cleanPriceId ||
@@ -1278,6 +1373,7 @@ export class StripeService {
 
     if (
       !verificationRef ||
+      unrecordedClientRef ||
       typeof approvedAmountDue !== 'number' ||
       !Number.isFinite(approvedAmountDue) ||
       approvedAmountDue < 0 ||
@@ -1293,12 +1389,36 @@ export class StripeService {
         customerRef: request.customerRef ?? null,
         businessRef: request.businessRef ?? null,
         errorCode: 'UNVERIFIED_CHECKOUT',
-        reason: snapshotMismatch ? 'PREVIEW_SNAPSHOT_MISMATCH' : 'UNVERIFIED_CHECKOUT',
+        reason: snapshotMismatch
+          ? 'PREVIEW_SNAPSHOT_MISMATCH'
+          : unrecordedClientRef
+            ? 'FORGED_OR_UNRECORDED_CLIENT_REFERENCE'
+            : 'UNVERIFIED_CHECKOUT',
       });
       throw new CheckoutChargeProtectionError(
         'UNVERIFIED_CHECKOUT',
         'Checkout price must be verified with Stripe before creating a subscription.',
         { approvedAmount: approvedAmountDue, currency: approvedCurrency },
+      );
+    }
+
+    if (cleanPromoId && cachedPreview && cachedPreview.subtotal > 0 && approvedAmountDue >= cachedPreview.subtotal) {
+      this.auditService.record('amount_mismatch_blocked', {
+        priceId: cleanPriceId,
+        promotionCodeId: cleanPromoId,
+        verificationReference: verificationRef,
+        approvedAmount: approvedAmountDue,
+        actualAmount: cachedPreview.subtotal,
+        currency: approvedCurrency,
+        customerRef: request.customerRef ?? null,
+        businessRef: request.businessRef ?? null,
+        errorCode: 'PROMO_NOT_APPLIED',
+        reason: 'PROMO_CODE_DID_NOT_REDUCE_AMOUNT',
+      });
+      throw new CheckoutChargeProtectionError(
+        'PROMO_NOT_APPLIED',
+        'Promotion code did not reduce the payable total. Checkout was stopped before collecting payment.',
+        { approvedAmount: approvedAmountDue, actualAmount: cachedPreview.subtotal, currency: approvedCurrency },
       );
     }
 
@@ -1354,13 +1474,65 @@ export class StripeService {
       throw new Error('Subscription setup completion flow is not configured.');
     }
 
-    const lockKey = `${request.email}:${cleanPriceId}:${cleanPromoId ?? 'none'}:${approvedAmountDue}:${verificationRef}`;
+    const cleanEmail = (request.email ?? '').trim().toLowerCase();
+    const lockKey = `${cleanEmail}:${cleanPriceId}:${cleanPromoId ?? 'none'}:${approvedAmountDue}:${verificationRef}`;
     const existing = this.inFlightVerifiedSubscriptions.get(lockKey);
     if (existing) {
       return existing;
     }
 
     const execution = (async (): Promise<VerifiedCreateSubscriptionResult> => {
+      // Section 4: When a prior subscription creation call for this customer had an uncertain outcome,
+      // reconcile subscription status via STRIPE_GET_SUBSCRIPTION_FLOW before permitting another creation request.
+      if (cleanEmail && this.uncertainSubscriptionCreationEmails.has(cleanEmail)) {
+        let existingSub: StripeSubscription | null = null;
+        try {
+          existingSub = await this.getSubscription(request.email);
+        } catch {
+          this.auditService.record('amount_mismatch_blocked', {
+            priceId: cleanPriceId,
+            promotionCodeId: cleanPromoId,
+            verificationReference: verificationRef,
+            approvedAmount: approvedAmountDue,
+            currency: approvedCurrency,
+            customerRef: request.customerRef ?? null,
+            businessRef: request.businessRef ?? null,
+            errorCode: 'UNEXPECTED_PRE_VERIFICATION_CHARGE',
+            reason: 'UNCERTAIN_SUBSCRIPTION_OUTCOME_RECONCILIATION_FAILED',
+          });
+          throw new CheckoutChargeProtectionError(
+            'UNEXPECTED_PRE_VERIFICATION_CHARGE',
+            'Previous subscription request had an uncertain outcome and current subscription status could not be verified. Duplicate subscription creation was blocked.',
+            { approvedAmount: approvedAmountDue, currency: approvedCurrency },
+          );
+        }
+
+        if (existingSub && existingSub.subscriptionId) {
+          this.uncertainSubscriptionCreationEmails.delete(cleanEmail);
+          this.auditService.record('amount_mismatch_blocked', {
+            priceId: cleanPriceId,
+            promotionCodeId: cleanPromoId,
+            verificationReference: verificationRef,
+            subscriptionId: existingSub.subscriptionId,
+            approvedAmount: approvedAmountDue,
+            currency: approvedCurrency,
+            customerRef: request.customerRef ?? null,
+            businessRef: request.businessRef ?? null,
+            errorCode: 'UNEXPECTED_PRE_VERIFICATION_CHARGE',
+            reason: 'DUPLICATE_SUBSCRIPTION_PREVENTED_AFTER_UNCERTAIN_RESPONSE',
+          });
+          const dupErr = new CheckoutChargeProtectionError(
+            'UNEXPECTED_PRE_VERIFICATION_CHARGE',
+            'An active or pending subscription already exists for this account after a previous interrupted request. Duplicate subscription creation was blocked.',
+            { approvedAmount: approvedAmountDue, currency: approvedCurrency },
+          );
+          (dupErr as any).existingSubscription = existingSub;
+          throw dupErr;
+        }
+
+        this.uncertainSubscriptionCreationEmails.delete(cleanEmail);
+      }
+
       this.auditService.record('subscription_creation_attempted', {
         priceId: cleanPriceId,
         promotionCodeId: cleanPromoId,
@@ -1371,12 +1543,20 @@ export class StripeService {
         businessRef: request.businessRef ?? null,
       });
 
-      const data = await this.flowPost(createSubFlowId, {
-        email: request.email,
-        name: request.name,
-        priceId: cleanPriceId,
-        promotionCode: cleanPromoId ?? null,
-      });
+      let data: any;
+      try {
+        data = await this.flowPost(createSubFlowId, {
+          email: request.email,
+          name: request.name,
+          priceId: cleanPriceId,
+          promotionCode: cleanPromoId ?? null,
+        });
+      } catch (flowErr) {
+        if (cleanEmail) {
+          this.uncertainSubscriptionCreationEmails.add(cleanEmail);
+        }
+        throw flowErr;
+      }
 
       const result =
         data?.extract_result ??
@@ -1950,7 +2130,10 @@ export class StripeService {
     return { requiresSetup: false, ...result };
   }
 
-  async createSubscriptionFromSetup(setupIntentId: string): Promise<{ subscriptionId: string }> {
+  async createSubscriptionFromSetup(
+    setupIntentId: string,
+    customerEmail?: string,
+  ): Promise<{ subscriptionId: string }> {
     const cleanSetupIntentId = (setupIntentId ?? '').trim();
     if (!cleanSetupIntentId || !cleanSetupIntentId.startsWith('seti_')) {
       this.auditService.record('checkout_failed', {
@@ -1959,6 +2142,11 @@ export class StripeService {
         reason: 'Missing or invalid setupIntentId for createSubscriptionFromSetup',
       });
       throw new Error('Invalid SetupIntent identifier. Cannot start subscription without a verified card setup.');
+    }
+
+    const completed = this.completedSetupSubscriptions.get(cleanSetupIntentId);
+    if (completed) {
+      return completed;
     }
 
     const flowId = runtimeConfig.stripeCreateSubscriptionFromSetupFlow;
@@ -1972,7 +2160,51 @@ export class StripeService {
     }
 
     const execution = (async (): Promise<{ subscriptionId: string }> => {
-      const data = await this.flowPost(flowId, { setupIntentId: cleanSetupIntentId });
+      const resolvedEmail = (
+        customerEmail ||
+        this.uncertainSetupIntentIds.get(cleanSetupIntentId) ||
+        this.authService.currentUser?.email ||
+        ''
+      ).trim();
+
+      // Section 4: When a prior SetupIntent completion call had an uncertain outcome, reconcile subscription status
+      // via STRIPE_GET_SUBSCRIPTION_FLOW before permitting another completion call.
+      if (this.uncertainSetupIntentIds.has(cleanSetupIntentId)) {
+        if (!resolvedEmail) {
+          throw new Error(
+            'Previous subscription activation had an uncertain outcome and customer email is unavailable for status reconciliation.',
+          );
+        }
+        let existingSub: StripeSubscription | null = null;
+        try {
+          existingSub = await this.getSubscription(resolvedEmail);
+        } catch {
+          throw new Error(
+            'Previous subscription activation had an uncertain outcome and current subscription status could not be verified. Duplicate subscription creation was blocked.',
+          );
+        }
+        if (existingSub && existingSub.subscriptionId) {
+          const reconciled = { subscriptionId: existingSub.subscriptionId };
+          this.completedSetupSubscriptions.set(cleanSetupIntentId, reconciled);
+          this.uncertainSetupIntentIds.delete(cleanSetupIntentId);
+          this.auditService.record('subscription_created_from_setup', {
+            setupIntentId: cleanSetupIntentId,
+            subscriptionId: existingSub.subscriptionId,
+            reason: 'RECONCILED_EXISTING_SUBSCRIPTION_AFTER_UNCERTAIN_SETUP_COMPLETION',
+          });
+          return reconciled;
+        }
+        this.uncertainSetupIntentIds.delete(cleanSetupIntentId);
+      }
+
+      let data: any;
+      try {
+        data = await this.flowPost(flowId, { setupIntentId: cleanSetupIntentId });
+      } catch (flowErr) {
+        this.uncertainSetupIntentIds.set(cleanSetupIntentId, resolvedEmail);
+        throw flowErr;
+      }
+
       const result =
         data?.extract_result ??
         data?.extract_sub_error ??
@@ -2007,12 +2239,15 @@ export class StripeService {
         throw new Error('Subscription activation could not be verified: missing subscriptionId from SetupIntent flow.');
       }
 
+      const finalResult = { subscriptionId };
+      this.completedSetupSubscriptions.set(cleanSetupIntentId, finalResult);
+
       this.auditService.record('subscription_created_from_setup', {
         setupIntentId: cleanSetupIntentId,
         subscriptionId,
       });
 
-      return { subscriptionId };
+      return finalResult;
     })();
 
     this.inFlightSetupSubscriptions.set(cleanSetupIntentId, execution);

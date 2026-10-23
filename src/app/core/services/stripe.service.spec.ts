@@ -1385,8 +1385,332 @@ describe('StripeService', () => {
       expect(latest.reason).not.toContain('_secret_sensitive123');
       expect(latest.reason).not.toContain('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9');
     });
+
+    it('marks client-calculated previews as isEstimated=true (amountSource=client_estimate, serverAuthenticatedReference=false) and never emits invoice_preview_created without a server invoice preview', async () => {
+      (service as any).auditService.clear();
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        extract_promo: {
+          valid: true,
+          promoCodeId: 'promo_half_off',
+          name: 'HALF50',
+          percentOff: 50,
+          duration: 'once',
+        },
+      });
+
+      const preview = await service.previewSubscriptionCheckout({
+        customerEmail: 'sofia@restaurant.com',
+        priceId: 'price_basic_59',
+        planAmount: 5900,
+        planCurrency: 'usd',
+        promotionCode: 'HALF50',
+      });
+
+      expect(preview.verified).toBe(true);
+      expect(preview.isEstimated).toBe(true);
+      expect(preview.amountSource).toBe('client_estimate');
+      expect(preview.eligibilityVerified).toBe(false);
+      expect(preview.serverAuthenticatedReference).toBe(false);
+
+      const events = (service as any).auditService.getEntries().map((e: any) => e.event);
+      expect(events).not.toContain('invoice_preview_created');
+      expect(events).toContain('amount_displayed_for_approval');
+    });
+
+    it('rejects coupon when product restriction (appliesToProducts / applies_to.products) is present but request.productId is missing or mismatched', async () => {
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        extract_promo: {
+          valid: true,
+          promoCodeId: 'promo_adv_only',
+          name: 'ADVONLY',
+          percentOff: 50,
+          duration: 'once',
+          applies_to: { products: ['prod_advanced_only'] },
+        },
+      });
+
+      const previewMissingProduct = await service.previewSubscriptionCheckout({
+        customerEmail: 'sofia@restaurant.com',
+        priceId: 'price_basic_59',
+        planAmount: 5900,
+        planCurrency: 'usd',
+        promotionCode: 'ADVONLY',
+      });
+
+      expect(previewMissingProduct.verified).toBe(false);
+      expect(previewMissingProduct.couponState).toBe('invalid_or_ineligible');
+      expect(previewMissingProduct.errorCode).toBe('PRODUCT_RESTRICTION_MISMATCH');
+    });
+
+    it('rejects forged or unrecorded client-generated dref_ / local_est_ verification references in createVerifiedSubscription', async () => {
+      await expect(
+        service.createVerifiedSubscription({
+          email: 'sofia@restaurant.com',
+          name: 'Sofia',
+          priceId: 'price_basic_59',
+          promotionCodeId: 'promo_half_off',
+          approvedAmountDue: 2950,
+          approvedCurrency: 'usd',
+          verificationReference: 'dref_price_basic_59_promo_half_off_2950_usd_9999999999999',
+        }),
+      ).rejects.toMatchObject({
+        name: 'CheckoutChargeProtectionError',
+        code: 'UNVERIFIED_CHECKOUT',
+      });
+    });
+
+    it('blocks checkout before card confirmation when coupon appeared valid during preview but subscription creation rejects it or returns full-price PaymentIntent', async () => {
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        extract_promo: {
+          valid: true,
+          promoCodeId: 'promo_ineligible_at_sub',
+          name: 'HALF50',
+          percentOff: 50,
+          duration: 'once',
+        },
+      });
+
+      const preview = await service.previewSubscriptionCheckout({
+        customerEmail: 'sofia@restaurant.com',
+        priceId: 'price_basic_59',
+        planAmount: 5900,
+        planCurrency: 'usd',
+        promotionCode: 'HALF50',
+      });
+      expect(preview.amountDueToday).toBe(2950);
+
+      // Case 1: Subscription creation flow rejects the promotion
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        extract_result: {
+          errorCode: 'PROMOTION_NO_LONGER_ELIGIBLE',
+          message: 'Promotion code is not eligible for this customer.',
+        },
+      });
+
+      await expect(
+        service.createVerifiedSubscription({
+          email: 'sofia@restaurant.com',
+          name: 'Sofia',
+          priceId: 'price_basic_59',
+          promotionCodeId: preview.promoCodeId,
+          approvedAmountDue: preview.amountDueToday,
+          approvedCurrency: preview.currency,
+          verificationReference: preview.verificationReference!,
+        }),
+      ).rejects.toMatchObject({
+        name: 'CheckoutChargeProtectionError',
+        code: 'PROMO_NOT_APPLIED',
+      });
+
+      // Case 2: Subscription creation flow silently drops coupon and returns a full-price $59.00 PaymentIntent
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        extract_result: {
+          subscriptionId: 'sub_full_price_99',
+          clientSecret: 'pi_3FullPrice_secret_123',
+          requiresSetup: false,
+        },
+      });
+      vi.spyOn(service as any, 'getStripe').mockResolvedValue({
+        retrievePaymentIntent: vi.fn().mockResolvedValue({
+          paymentIntent: {
+            id: 'pi_3FullPrice',
+            amount: 5900,
+            currency: 'usd',
+            status: 'requires_payment_method',
+          },
+        }),
+      });
+
+      await expect(
+        service.createVerifiedSubscription({
+          email: 'sofia@restaurant.com',
+          name: 'Sofia',
+          priceId: 'price_basic_59',
+          promotionCodeId: preview.promoCodeId,
+          approvedAmountDue: preview.amountDueToday,
+          approvedCurrency: preview.currency,
+          verificationReference: preview.verificationReference!,
+        }),
+      ).rejects.toMatchObject({
+        name: 'CheckoutChargeProtectionError',
+        code: 'AMOUNT_MISMATCH_BLOCKED',
+        approvedAmount: 2950,
+        actualAmount: 5900,
+      });
+    });
+
+    it('allows checkout to proceed when customer approves a discounted paid amount and retrieved PaymentIntent amount matches', async () => {
+      vi.spyOn(service, 'flowPost')
+        .mockResolvedValueOnce({
+          extract_promo: {
+            valid: true,
+            promoCodeId: 'promo_half_off',
+            name: 'HALF50',
+            percentOff: 50,
+            duration: 'once',
+          },
+        })
+        .mockResolvedValueOnce({
+          extract_result: {
+            subscriptionId: 'sub_discounted_ok',
+            clientSecret: 'pi_3DiscountOk_secret_abc',
+            requiresSetup: false,
+          },
+        });
+
+      vi.spyOn(service as any, 'getStripe').mockResolvedValue({
+        retrievePaymentIntent: vi.fn().mockResolvedValue({
+          paymentIntent: {
+            id: 'pi_3DiscountOk',
+            amount: 2950,
+            currency: 'usd',
+            status: 'requires_payment_method',
+          },
+        }),
+      });
+
+      const preview = await service.previewSubscriptionCheckout({
+        customerEmail: 'sofia@restaurant.com',
+        priceId: 'price_basic_59',
+        planAmount: 5900,
+        planCurrency: 'usd',
+        promotionCode: 'HALF50',
+      });
+
+      const res = await service.createVerifiedSubscription({
+        email: 'sofia@restaurant.com',
+        name: 'Sofia',
+        priceId: 'price_basic_59',
+        promotionCodeId: preview.promoCodeId,
+        approvedAmountDue: preview.amountDueToday,
+        approvedCurrency: preview.currency,
+        verificationReference: preview.verificationReference!,
+      });
+
+      expect(res.subscriptionId).toBe('sub_discounted_ok');
+      expect(res.invoiceAmountDue).toBe(2950);
+      expect(res.requiresSetup).toBe(false);
+    });
+
+    it('deduplicates concurrent createVerifiedSubscription calls so only one subscription creation request is sent', async () => {
+      let resolveFlow!: (val: any) => void;
+      const flowSpy = vi.spyOn(service, 'flowPost').mockReturnValueOnce(
+        new Promise((res) => {
+          resolveFlow = res;
+        }),
+      );
+
+      const req = {
+        email: 'adminapple@admin.com',
+        name: 'Admin Apple',
+        priceId: 'price_basic_59',
+        promotionCodeId: 'promo_1UKiYz2aqrJCvAj3rpoKa3Kf',
+        approvedAmountDue: 0,
+        approvedCurrency: 'usd',
+        verificationReference: 'vref_concurrent_zero',
+      };
+
+      const p1 = service.createVerifiedSubscription(req);
+      const p2 = service.createVerifiedSubscription(req);
+      expect(flowSpy).toHaveBeenCalledTimes(1);
+
+      resolveFlow({
+        extract_result: {
+          subscriptionId: null,
+          setupIntentId: 'seti_Concurrent1',
+          clientSecret: 'seti_Concurrent1_secret_xyz',
+          requiresSetup: true,
+        },
+      });
+
+      const [r1, r2] = await Promise.all([p1, p2]);
+      expect(r1.setupIntentId).toBe('seti_Concurrent1');
+      expect(r2.setupIntentId).toBe('seti_Concurrent1');
+    });
+
+    it('checks subscription status via getSubscription before allowing retry after an uncertain network/flow error and blocks duplicate subscription creation if one already exists', async () => {
+      const flowSpy = vi
+        .spyOn(service, 'flowPost')
+        .mockRejectedValueOnce(new Error('Network timeout during subscription creation'));
+
+      const getSubSpy = vi.spyOn(service, 'getSubscription').mockResolvedValueOnce({
+        subscriptionId: 'sub_already_created_on_server',
+        subscriptionItemId: 'si_1',
+        status: 'active',
+        cancelAtPeriodEnd: false,
+        currentPeriodStart: 1700000000,
+        currentPeriodEnd: 1702500000,
+        plan: {
+          priceId: 'price_basic_59',
+          productName: 'Basic Plan',
+          amount: 5900,
+          currency: 'usd',
+          interval: 'month',
+        },
+      });
+
+      const req = {
+        email: 'sofia@restaurant.com',
+        name: 'Sofia',
+        priceId: 'price_basic_59',
+        promotionCodeId: null,
+        approvedAmountDue: 5900,
+        approvedCurrency: 'usd',
+        verificationReference: 'vref_uncertain_retry',
+      };
+
+      // First call fails with uncertain network timeout
+      await expect(service.createVerifiedSubscription(req)).rejects.toThrow(
+        'Network timeout during subscription creation',
+      );
+
+      // Retry must reconcile via getSubscription first and block creating a duplicate subscription
+      await expect(service.createVerifiedSubscription(req)).rejects.toMatchObject({
+        name: 'CheckoutChargeProtectionError',
+        code: 'UNEXPECTED_PRE_VERIFICATION_CHARGE',
+      });
+
+      expect(getSubSpy).toHaveBeenCalledWith('sofia@restaurant.com');
+      // stripeCreateSubscriptionFlow was only called once (not a second time!)
+      expect(flowSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('reconciles via getSubscription after an uncertain createSubscriptionFromSetup error and returns the existing subscription without calling 442c21fa a second time', async () => {
+      const flowSpy = vi
+        .spyOn(service, 'flowPost')
+        .mockRejectedValueOnce(new Error('Network drop after SetupIntent completion'));
+
+      const getSubSpy = vi.spyOn(service, 'getSubscription').mockResolvedValueOnce({
+        subscriptionId: 'sub_from_setup_reconciled',
+        subscriptionItemId: 'si_setup_1',
+        status: 'active',
+        cancelAtPeriodEnd: false,
+        currentPeriodStart: 1700000000,
+        currentPeriodEnd: 1702500000,
+        plan: {
+          priceId: 'price_basic_59',
+          productName: 'Basic Plan',
+          amount: 5900,
+          currency: 'usd',
+          interval: 'month',
+        },
+      });
+
+      await expect(
+        service.createSubscriptionFromSetup('seti_Uncertain1', 'adminapple@admin.com'),
+      ).rejects.toThrow('Network drop after SetupIntent completion');
+
+      const retryRes = await service.createSubscriptionFromSetup(
+        'seti_Uncertain1',
+        'adminapple@admin.com',
+      );
+      expect(retryRes).toEqual({ subscriptionId: 'sub_from_setup_reconciled' });
+      expect(getSubSpy).toHaveBeenCalledWith('adminapple@admin.com');
+      expect(flowSpy).toHaveBeenCalledTimes(1);
+    });
   });
 });
+
 
 
 

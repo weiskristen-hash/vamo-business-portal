@@ -14,6 +14,7 @@ import {
   isEventUpcoming,
   validateEventForPublish,
   normalizeEventDescription,
+  normalizeDateStr,
   ScheduleClassificationOptions,
 } from '../utils/event-display.util';
 
@@ -605,8 +606,8 @@ export class BusinessService {
           : (data.description ?? undefined),
         location_point: data.location_point ?? null,
         address: data.address ?? null,
-        startDate: data.startDate ? new Date(data.startDate).toISOString().split('T')[0] : undefined,
-        endDate: data.endDate ? new Date(data.endDate).toISOString().split('T')[0] : undefined,
+        startDate: data.startDate ? (normalizeDateStr(data.startDate) ?? undefined) : undefined,
+        endDate: data.endDate ? (normalizeDateStr(data.endDate) ?? undefined) : undefined,
         allDay: data.allDay,
         mode: data.mode!,
         recurring: typeof data.recurring === 'object' && data.recurring !== null
@@ -697,6 +698,16 @@ export class BusinessService {
       // Portal-side guard: do not rely on cached/client-provided event argument.
       // Fetch and re-verify fresh persisted record from Directus.
       const persisted = await this.getEventById(eventId);
+      const persistedProviderId =
+        typeof (persisted as any).provider === 'string'
+          ? (persisted as any).provider
+          : (persisted as any).provider?.id;
+      const currentProviderId = this.authService.currentUser?.provider_link?.id;
+      if (persistedProviderId && currentProviderId && persistedProviderId !== currentProviderId) {
+        const forbiddenErr: any = new Error('FORBIDDEN_NOT_EVENT_OWNER');
+        forbiddenErr.status = 403;
+        throw forbiddenErr;
+      }
       if (this.isEventPast(persisted) || persisted.status === 'archived') {
         throw new Error('PAST_EVENT_READ_ONLY');
       }
@@ -729,10 +740,10 @@ export class BusinessService {
       if (data.location_point !== undefined) payload['location_point'] = data.location_point ?? null;
       if (data.address !== undefined) payload['address'] = data.address ?? null;
       if (data.startDate !== undefined) {
-        payload['startDate'] = data.startDate ? new Date(data.startDate).toISOString().split('T')[0] : undefined;
+        payload['startDate'] = data.startDate ? (normalizeDateStr(data.startDate) ?? undefined) : undefined;
       }
       if (data.endDate !== undefined) {
-        payload['endDate'] = data.endDate ? new Date(data.endDate).toISOString().split('T')[0] : undefined;
+        payload['endDate'] = data.endDate ? (normalizeDateStr(data.endDate) ?? undefined) : undefined;
       }
       if (data.allDay !== undefined) payload['allDay'] = data.allDay;
       if (data.mode !== undefined) payload['mode'] = data.mode;

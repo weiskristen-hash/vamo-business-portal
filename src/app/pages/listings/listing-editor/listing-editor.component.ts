@@ -2574,19 +2574,27 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
     try {
       const event = await this.businessService.getEventById(id);
+      const eventProviderId =
+        typeof (event as any).provider === 'string'
+          ? (event as any).provider
+          : (event as any).provider?.id;
+      const currentProviderId = this.authService.currentUser?.provider_link?.id;
+      if (eventProviderId && currentProviderId && eventProviderId !== currentProviderId) {
+        this.errorMessage = this.customerErrorService.toCustomerMessage(
+          { status: 403, message: 'Forbidden' },
+          'save',
+        );
+        this.datesLocked = true;
+        return;
+      }
+
       this.originalEvent = event;
       this.isDraft = event.status === 'draft';
       this.originalStartDate = event.startDate || null;
 
-      // Check if event is past (canonical rule: endDate || startDate < drToday or archived)
+      // Check if event is past (canonical rule in Dominican Republic time: America/Santo_Domingo)
       this.isPastEvent = isEventPast(event, this.businessService);
-      if (this.isPastEvent) {
-        this.datesLocked = true;
-      } else if (event.status === 'published' && event.startDate) {
-        // Check 24h schedule lock for published events
-        const start = new Date(event.startDate).getTime();
-        this.datesLocked = start - Date.now() <= 24 * 60 * 60 * 1000;
-      }
+      this.datesLocked = this.isPastEvent;
 
       this.draft = {
         id: event.id,
@@ -2755,6 +2763,10 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     }, isPublish, {
       originalEvent: this.isEditMode ? this.originalEvent : undefined,
       todayStr: this.businessService.drTodayStr(),
+      currentTimeStr:
+        typeof (this.businessService as any).drCurrentTimeStr === 'function'
+          ? (this.businessService as any).drCurrentTimeStr()
+          : '00:00',
     });
     // A checked multi-day form must also require its end date when publishing.
     if (isPublish && this.draft.mode !== 'recurring' && this.multiDay && !this.draft.endDate && res.valid) {
@@ -2792,16 +2804,19 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   onStartDateChange(): void {
+    if (this.datesLocked || this.isPastEvent) return;
     this.markDirty();
     this.validateCurrentSchedule(false);
   }
 
   onEndDateChange(): void {
+    if (this.datesLocked || this.isPastEvent) return;
     this.markDirty();
     this.validateCurrentSchedule(false);
   }
 
   onTimeChange(): void {
+    if (this.datesLocked || this.isPastEvent) return;
     this.markDirty();
     this.validateCurrentSchedule(false);
   }
@@ -3237,6 +3252,10 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       hasImages: this.existingImages.length > 0 || this.selectedNewFiles.length > 0,
       areaIds: this.selectedAreaId ? [this.selectedAreaId] : [],
       todayStr: this.businessService.drTodayStr(),
+      currentTimeStr:
+        typeof (this.businessService as any).drCurrentTimeStr === 'function'
+          ? (this.businessService as any).drCurrentTimeStr()
+          : '00:00',
     });
     if (!validation.valid) {
       this.errorMessage = this.i18n.t(validation.messageKey);
@@ -3277,8 +3296,21 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     try {
       let alreadyPublished = false;
       if (this.isEditMode && this.eventId) {
-        // Guard direct editor route: re-check before update so expiring events cannot be modified
+        // Guard direct editor route: re-check ownership and past status before update
         const fresh = await this.businessService.getEventById(this.eventId);
+        const freshProviderId =
+          typeof (fresh as any).provider === 'string'
+            ? (fresh as any).provider
+            : (fresh as any).provider?.id;
+        if (freshProviderId && freshProviderId !== providerId) {
+          this.errorMessage = this.customerErrorService.toCustomerMessage(
+            { status: 403, message: 'Forbidden' },
+            'save',
+          );
+          this.submitting = false;
+          this.cdr.markForCheck();
+          return;
+        }
         alreadyPublished = fresh.status === 'published';
         if (isEventPast(fresh, this.businessService)) {
           this.isPastEvent = true;
