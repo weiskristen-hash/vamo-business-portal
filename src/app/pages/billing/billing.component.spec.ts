@@ -2410,4 +2410,660 @@ describe('BillingComponent', () => {
     });
   });
 
+  describe('Secure Subscription Plan Changes & Payment Confirmation (18 Required Safety Scenarios)', () => {
+    const upgradedSubscription: StripeSubscription = {
+      ...mockSubscription,
+      plan: {
+        priceId: mockPlans[2].id,
+        productName: 'Advanced Plan',
+        amount: 8900,
+        currency: 'usd',
+        interval: 'month',
+      },
+    };
+
+    const verifiedScheduledDowngradeSubscription: StripeSubscription = {
+      ...mockSubscription,
+      pendingPlanName: 'Starter Plan',
+      pendingPriceId: mockPlans[0].id,
+      pendingPeriodEnd: 1702500000,
+      pendingScheduleId: 'sub_sched_starter_1',
+      schedule: {
+        id: 'sub_sched_starter_1',
+        status: 'active',
+        phases: [
+          {
+            start_date: 1700000000,
+            end_date: 1702500000,
+            items: [{ price: mockSubscription.plan.priceId }],
+          },
+          {
+            start_date: 1702500000,
+            items: [{ price: mockPlans[0].id }],
+          },
+        ],
+      },
+    };
+
+    it('1. Upgrade with no payment method: blocks upgrade, disables Confirm Plan Change, explains why, and offers Add Payment Method', async () => {
+      component.savedMethods.set([]);
+      component.defaultPaymentMethodId.set(null);
+      component.defaultPaymentMethodVerified.set(false);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]); // Advanced Plan ($89)
+      fixture.detectChanges();
+
+      expect(component.hasUsablePlanChangePaymentMethod()).toBe(false);
+      expect(component.canConfirmPlanChange()).toBe(false);
+
+      const paymentReqBox = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-payment-required"]',
+      );
+      expect(paymentReqBox).toBeTruthy();
+      expect(paymentReqBox.textContent).toContain(
+        'A valid payment method is required before changing your subscription plan.',
+      );
+      const addCardBtn = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-add-card-btn"]',
+      );
+      expect(addCardBtn).toBeTruthy();
+      expect(addCardBtn.textContent.trim()).toBe('Add credit card');
+
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+      expect(component.errorMessage()).toBe(
+        'A valid payment method is required before changing your subscription plan. Please add a card and set it for renewals to continue.',
+      );
+    });
+
+    it('2. Downgrade with no payment method: blocks downgrade until a valid payment method is added', async () => {
+      component.savedMethods.set([]);
+      component.defaultPaymentMethodId.set(null);
+      component.defaultPaymentMethodVerified.set(false);
+      component.postsUsed.set(1);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[0]); // Starter Plan ($29)
+      fixture.detectChanges();
+
+      expect(component.hasUsablePlanChangePaymentMethod()).toBe(false);
+      expect(component.canConfirmPlanChange()).toBe(false);
+
+      const confirmBtn: HTMLButtonElement = fixture.nativeElement.querySelector(
+        '[data-testid="confirm-plan-change-btn"]',
+      );
+      expect(confirmBtn.disabled).toBe(true);
+
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+      expect(component.errorMessage()).toContain('A valid payment method is required');
+    });
+
+    it('3. Successfully adding a payment method before changing plans enables plan change and sets renewal card', async () => {
+      component.savedMethods.set([]);
+      component.defaultPaymentMethodId.set(null);
+      component.defaultPaymentMethodVerified.set(false);
+      component.postsUsed.set(1);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[0]); // Starter Plan ($29)
+      fixture.detectChanges();
+
+      expect(component.canConfirmPlanChange()).toBe(false);
+
+      // Click Add Payment Method from the plan-change requirement box
+      await component.openAddCardForPlanChange();
+      expect(component.cardSetupOpen()).toBe(true);
+      expect(component.useCardForRenewals()).toBe(true);
+
+      // Update mock so loadSavedMethods returns the newly saved renewal card
+      stripeServiceSpy.getSavedPaymentMethods.mockResolvedValue([
+        {
+          id: 'pm_new_1',
+          brand: 'mastercard',
+          last4: '5555',
+          expMonth: 10,
+          expYear: 2029,
+          isRenewalCard: true,
+        },
+      ]);
+
+      await component.saveNewCard();
+      fixture.detectChanges();
+
+      expect(stripeServiceSpy.finalizeCardSetup).toHaveBeenCalledWith('seti_standalone_123');
+      expect(stripeServiceSpy.setDefaultPaymentMethod).toHaveBeenCalledWith('pm_new_1', 'sub_123');
+      expect(component.defaultPaymentMethodVerified()).toBe(true);
+      expect(component.defaultPaymentMethodId()).toBe('pm_new_1');
+      expect(component.hasUsablePlanChangePaymentMethod()).toBe(true);
+      expect(component.canConfirmPlanChange()).toBe(true);
+
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(verifiedScheduledDowngradeSubscription);
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledTimes(1);
+    });
+
+    it('4. Upgrade with verified payment details: displays current/new plan, immediate timing, verified proration amount, renewal price, and verified card before confirming', async () => {
+      component.savedMethods.set([
+        { id: 'pm_1', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2028, isRenewalCard: true },
+      ]);
+      component.defaultPaymentMethodId.set('pm_1');
+      component.defaultPaymentMethodVerified.set(true);
+
+      stripeServiceSpy.previewSubscriptionPlanChange = vi.fn().mockResolvedValue({
+        verified: true,
+        verificationStatus: 'verified',
+        isUpgrade: true,
+        timing: 'immediate',
+        effectiveDate: null,
+        amountDueToday: 2450,
+        subtotal: 2450,
+        discountAmount: 0,
+        tax: 0,
+        currency: 'usd',
+        renewalAmount: 8900,
+        renewalInterval: 'month',
+        promoSupported: false,
+        couponState: 'not_applied',
+      });
+
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]); // Advanced Plan ($89)
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const reviewSummary: HTMLElement = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-review-summary"]',
+      );
+      expect(reviewSummary).toBeTruthy();
+      expect(reviewSummary.textContent).toContain('Basic Plan');
+      expect(reviewSummary.textContent).toContain('$49.00');
+      expect(reviewSummary.textContent).toContain('Advanced Plan');
+      expect(reviewSummary.textContent).toContain('$89.00');
+      expect(reviewSummary.textContent).toContain('Immediate');
+      expect(reviewSummary.textContent).toContain('Today (immediately upon confirmation)');
+      expect(reviewSummary.textContent).toContain('VISA •••• 4242');
+
+      const dueTodayEl: HTMLElement = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-amount-due-today"]',
+      );
+      expect(dueTodayEl.textContent?.trim()).toBe('$24.50');
+      expect(component.canConfirmPlanChange()).toBe(true);
+
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(upgradedSubscription);
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.setProviderTier).toHaveBeenCalledWith('advanced');
+      expect(component.successMessage()).toContain('upgraded to Advanced Plan');
+    });
+
+    it('5. CRITICAL STOP CONDITION — Upgrade with unknown immediate charge amount: blocks upgrade and displays exact customer-safe message without calling changeSubscriptionPlan', async () => {
+      stripeServiceSpy.previewSubscriptionPlanChange = vi.fn().mockResolvedValue({
+        verified: false,
+        verificationStatus: 'unavailable',
+        isUpgrade: true,
+        timing: 'immediate',
+        effectiveDate: null,
+        amountDueToday: null,
+        subtotal: 8900,
+        discountAmount: 0,
+        tax: 0,
+        currency: 'usd',
+        renewalAmount: 8900,
+        renewalInterval: 'month',
+        promoSupported: false,
+        couponState: 'not_applied',
+        errorCode: 'UPGRADE_PREVIEW_UNCONFIGURED',
+      });
+
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]); // Advanced Plan ($89)
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.isUpgradeBlockedByUnknownAmount()).toBe(true);
+      expect(component.canConfirmPlanChange()).toBe(false);
+
+      const alertEl: HTMLElement = fixture.nativeElement.querySelector(
+        '[data-testid="upgrade-amount-unknown-alert"]',
+      );
+      expect(alertEl).toBeTruthy();
+      expect(alertEl.textContent).toContain(
+        'We couldn’t verify the exact prorated charge due today with Stripe. To protect you from an unexpected charge, this immediate upgrade cannot be submitted right now.',
+      );
+
+      const confirmBtn: HTMLButtonElement = fixture.nativeElement.querySelector(
+        '[data-testid="confirm-plan-change-btn"]',
+      );
+      expect(confirmBtn.disabled).toBe(true);
+
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+      expect(component.errorMessage()).toBe(
+        'We couldn’t verify the exact prorated charge due today with Stripe. To protect you from an unexpected charge, this immediate upgrade cannot be submitted right now.',
+      );
+    });
+
+    it('6. Upgrade requiring payment authentication (3DS): completes authentication with verified renewal card before verifying upgrade', async () => {
+      component.savedMethods.set([
+        { id: 'pm_1', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2028, isRenewalCard: true },
+      ]);
+      component.defaultPaymentMethodId.set('pm_1');
+      component.defaultPaymentMethodVerified.set(true);
+      stripeServiceSpy.confirmWithSavedMethod = vi.fn().mockResolvedValue({ error: null });
+      stripeServiceSpy.changeSubscriptionPlan.mockResolvedValueOnce({
+        status: 'requires_action',
+        clientSecret: 'pi_3ds123_secret_abc456',
+      });
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(upgradedSubscription);
+
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]);
+      await component.confirmChangePlan();
+
+      expect(stripeServiceSpy.confirmWithSavedMethod).toHaveBeenCalledWith(
+        'pi_3ds123_secret_abc456',
+        'pm_1',
+      );
+      expect(stripeServiceSpy.setProviderTier).toHaveBeenCalledWith('advanced');
+      expect(component.successMessage()).toContain('upgraded to Advanced Plan');
+    });
+
+    it('7. Scheduled downgrade with $0 due today: displays $0.00 due today and schedules downgrade at period end', async () => {
+      component.postsUsed.set(1);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[0]); // Starter Plan ($29)
+      fixture.detectChanges();
+
+      const dueTodayEl: HTMLElement = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-amount-due-today"]',
+      );
+      const noticeEl: HTMLElement = fixture.nativeElement.querySelector(
+        '[data-testid="downgrade-confirmation-notice"]',
+      );
+      expect(dueTodayEl.textContent?.trim()).toBe('$0.00');
+      expect(noticeEl.textContent).toContain('No immediate payment is due today ($0.00).');
+
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(verifiedScheduledDowngradeSubscription);
+      await component.confirmChangePlan();
+
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledWith(
+        'sub_123',
+        'si_456',
+        mockPlans[0].id,
+        false,
+        'Starter Plan',
+        1700000000,
+        1702500000,
+        mockSubscription.plan.priceId,
+      );
+      expect(component.successMessage()).toContain('scheduled');
+    });
+
+    it('8. Downgrade effective-date disclosure: clearly discloses effective date, current plan remaining active until then, and new renewal price', () => {
+      component.postsUsed.set(1);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[0]); // Starter Plan ($29)
+      fixture.detectChanges();
+
+      const expectedDate = component.formatDate(mockSubscription.currentPeriodEnd);
+      const summaryEl: HTMLElement = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-review-summary"]',
+      );
+      const noteEl: HTMLElement = fixture.nativeElement.querySelector(
+        '[data-testid="downgrade-confirmation-notice"]',
+      );
+
+      expect(summaryEl.textContent).toContain('Scheduled for end of billing period');
+      expect(summaryEl.textContent).toContain(expectedDate);
+      expect(summaryEl.textContent).toContain('$29.00');
+      expect(noteEl).toBeTruthy();
+      expect(noteEl.textContent).toContain(expectedDate);
+      expect(noteEl.textContent).toContain('$29.00');
+    });
+
+    it('9. Promo code supported by the backend: validates promo code for target plan, updates review summary, and passes promotionCode option to changeSubscriptionPlan', async () => {
+      stripeServiceSpy.isPlanChangePromoSupported = vi.fn().mockReturnValue(true);
+      stripeServiceSpy.previewSubscriptionPlanChange = vi
+        .fn()
+        .mockResolvedValueOnce({
+          verified: true,
+          verificationStatus: 'verified',
+          isUpgrade: false,
+          timing: 'scheduled',
+          effectiveDate: 1702500000,
+          amountDueToday: 0,
+          subtotal: 0,
+          discountAmount: 0,
+          tax: 0,
+          currency: 'usd',
+          renewalAmount: 2900,
+          renewalInterval: 'month',
+          promoSupported: true,
+          couponState: 'not_applied',
+        })
+        .mockResolvedValueOnce({
+          verified: true,
+          verificationStatus: 'verified',
+          isUpgrade: false,
+          timing: 'scheduled',
+          effectiveDate: 1702500000,
+          amountDueToday: 0,
+          subtotal: 2900,
+          discountAmount: 580,
+          tax: 0,
+          currency: 'usd',
+          renewalAmount: 2320,
+          renewalInterval: 'month',
+          promoSupported: true,
+          couponState: 'verified_applied',
+          promoCode: 'SAVE20',
+          promoCodeId: 'promo_save20',
+          promoCodeName: 'SAVE20',
+          couponDuration: 'forever',
+        });
+
+      component.postsUsed.set(1);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[0]);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.coupon-section')).toBeTruthy();
+      const promoDisclosureEl: HTMLElement = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-promo-disclosure"]',
+      );
+      expect(promoDisclosureEl.textContent).not.toContain('not supported');
+
+      component.onCouponCodeChange('SAVE20');
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      expect(component.promoResult()?.valid).toBe(true);
+      expect(component.couponState()).toBe('verified_applied');
+
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(verifiedScheduledDowngradeSubscription);
+      await component.confirmChangePlan();
+
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledWith(
+        'sub_123',
+        'si_456',
+        mockPlans[0].id,
+        false,
+        'Starter Plan',
+        1700000000,
+        1702500000,
+        mockSubscription.plan.priceId,
+        expect.objectContaining({
+          promotionCode: 'SAVE20',
+          promotionCodeId: 'promo_save20',
+          approvedAmountDue: 0,
+          approvedCurrency: 'usd',
+        }),
+      );
+    });
+
+    it('10. Promo code unsupported by the backend: hides coupon Apply input, shows explicit unsupported notice, and blocks plan changes if a promo code is present', async () => {
+      stripeServiceSpy.isPlanChangePromoSupported = vi.fn().mockReturnValue(false);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[0]);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.coupon-section')).toBeNull();
+      const unsupportedNotice: HTMLElement = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-promo-disclosure"]',
+      );
+      expect(unsupportedNotice).toBeTruthy();
+      expect(unsupportedNotice.textContent).toContain(
+        'Promotion codes are not supported for subscription plan changes.',
+      );
+
+      // Even if a promo code is injected into state while unsupported, confirmation is blocked
+      component.couponCode.set('FOUNDERS90');
+      expect(component.canConfirmPlanChange()).toBe(false);
+
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+      expect(component.errorMessage()).toBe(
+        'Promotion codes cannot be applied when changing an existing subscription plan. Please remove the promotion code to continue.',
+      );
+    });
+
+    it('11. Coupon entered but not applied: blocks plan change until coupon is applied or cleared', async () => {
+      stripeServiceSpy.isPlanChangePromoSupported = vi.fn().mockReturnValue(true);
+      component.postsUsed.set(1);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[0]);
+      component.onCouponCodeChange('WELCOME20');
+      fixture.detectChanges();
+
+      expect(component.hasUnappliedCouponInput()).toBe(true);
+      expect(component.canConfirmPlanChange()).toBe(false);
+
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+      expect(component.errorMessage()).toBe(
+        'Click Apply to verify this promotion code with Stripe, or clear the code to continue at regular price.',
+      );
+    });
+
+    it('12. Incorrect or stale payment method: blocks plan change when defaultPaymentMethodVerified is true but default card is missing or expired', async () => {
+      // Case A: Saved card exists in list, but Stripe default_payment_method is verified as null
+      component.savedMethods.set([
+        { id: 'pm_1', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2028, isRenewalCard: false },
+      ]);
+      component.defaultPaymentMethodVerified.set(true);
+      component.defaultPaymentMethodId.set(null);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[0]);
+      fixture.detectChanges();
+
+      expect(component.getPlanChangePaymentMethodState()).toBe('stale');
+      expect(component.canConfirmPlanChange()).toBe(false);
+
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+      expect(component.errorMessage()).toBe(
+        'Your saved payment method is expired or no longer valid for subscription renewals. Please add or select a valid renewal card before changing your plan.',
+      );
+
+      // Case B: Card on file is expired
+      component.savedMethods.set([
+        { id: 'pm_expired', brand: 'visa', last4: '1111', expMonth: 1, expYear: 2020, isRenewalCard: true },
+      ]);
+      component.defaultPaymentMethodVerified.set(true);
+      component.defaultPaymentMethodId.set('pm_expired');
+      fixture.detectChanges();
+
+      expect(component.isPaymentMethodExpired(component.savedMethods()[0])).toBe(true);
+      expect(component.getPlanChangePaymentMethodState()).toBe('stale');
+      expect(component.canConfirmPlanChange()).toBe(false);
+    });
+
+    it('13. Double-click prevention: disables button and prevents duplicate changeSubscriptionPlan calls while in flight', async () => {
+      let resolveMutation!: (val: any) => void;
+      stripeServiceSpy.changeSubscriptionPlan.mockReturnValueOnce(
+        new Promise((res) => {
+          resolveMutation = res;
+        }),
+      );
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(upgradedSubscription);
+
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]);
+
+      const first = component.confirmChangePlan();
+      const second = component.confirmChangePlan();
+
+      expect(component.canConfirmPlanChange()).toBe(false);
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledTimes(1);
+
+      resolveMutation({ status: 'confirmed' });
+      await Promise.all([first, second]);
+    });
+
+    it('14. Network timeout and subscription reconciliation: reconciles subscription state via loadSubscription after network timeout without duplicate mutation', async () => {
+      stripeServiceSpy.changeSubscriptionPlan.mockRejectedValueOnce(
+        new Error('Network timeout while waiting for Directus Flow'),
+      );
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(upgradedSubscription);
+
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]);
+
+      await component.confirmChangePlan();
+
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.getSubscription).toHaveBeenCalledWith(mockUser.email);
+      expect(stripeServiceSpy.setProviderTier).toHaveBeenCalledWith('advanced');
+      expect(component.planChangeUnverified()).toBe(false);
+      expect(component.successMessage()).toContain('upgraded to Advanced Plan');
+    });
+
+    it('15. Failed payment confirmation: when 3DS or payment confirmation fails, does not update tier or show success', async () => {
+      component.savedMethods.set([
+        { id: 'pm_1', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2028, isRenewalCard: true },
+      ]);
+      component.defaultPaymentMethodId.set('pm_1');
+      component.defaultPaymentMethodVerified.set(true);
+      stripeServiceSpy.confirmWithSavedMethod = vi.fn().mockResolvedValue({
+        error: { code: 'card_declined', message: 'Your card was declined.' },
+      });
+      stripeServiceSpy.changeSubscriptionPlan.mockResolvedValueOnce({
+        status: 'requires_action',
+        clientSecret: 'pi_3ds_fail_secret_999',
+      });
+
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]);
+      await component.confirmChangePlan();
+
+      expect(stripeServiceSpy.confirmWithSavedMethod).toHaveBeenCalledWith(
+        'pi_3ds_fail_secret_999',
+        'pm_1',
+      );
+      expect(stripeServiceSpy.setProviderTier).not.toHaveBeenCalled();
+      expect(component.successMessage()).toBeNull();
+      expect(component.errorMessage()).toBeTruthy();
+      expect(component.subscription()?.plan.productName).toBe('Basic Plan');
+    });
+
+    it('16. Preservation of an existing scheduled change: canceling or failing a new plan change preserves an existing scheduled downgrade', async () => {
+      component.subscription.set(verifiedScheduledDowngradeSubscription);
+      fixture.detectChanges();
+
+      expect(component.hasScheduledDowngrade(component.subscription())).toBe(true);
+
+      // User opens Change Plan and selects Advanced Plan, then cancels or upgrade fails
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]);
+      stripeServiceSpy.changeSubscriptionPlan.mockResolvedValueOnce({
+        status: 'failed',
+        message: 'Card declined',
+      });
+
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.releaseSchedule).not.toHaveBeenCalled();
+      expect(component.subscription()?.pendingPlanName).toBe('Starter Plan');
+      expect(component.subscription()?.pendingScheduleId).toBe('sub_sched_starter_1');
+      expect(component.hasScheduledDowngrade(component.subscription())).toBe(true);
+
+      component.closeChangePlan();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.pending-downgrade-banner')).toBeTruthy();
+    });
+
+    it('17. Correct English and Spanish messaging: translates plan-change review summary, payment-required alerts, and unknown-amount errors in EN and ES', async () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('en');
+
+      stripeServiceSpy.previewSubscriptionPlanChange = vi.fn().mockResolvedValue({
+        verified: false,
+        verificationStatus: 'unavailable',
+        isUpgrade: true,
+        timing: 'immediate',
+        effectiveDate: null,
+        amountDueToday: null,
+        subtotal: 8900,
+        discountAmount: 0,
+        tax: 0,
+        currency: 'usd',
+        renewalAmount: 8900,
+        renewalInterval: 'month',
+        promoSupported: false,
+        couponState: 'not_applied',
+      });
+
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      await component.confirmChangePlan();
+      expect(component.errorMessage()).toBe(
+        'We couldn’t verify the exact prorated charge due today with Stripe. To protect you from an unexpected charge, this immediate upgrade cannot be submitted right now.',
+      );
+
+      i18n.setLang('es');
+      fixture.detectChanges();
+
+      expect(component.errorMessage()).toBe(
+        'No pudimos verificar con Stripe el cargo prorrateado exacto a pagar hoy. Para protegerte de un cargo inesperado, no se puede procesar este aumento inmediato en este momento.',
+      );
+      const summaryEl: HTMLElement = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-review-summary"]',
+      );
+      expect(summaryEl.textContent).toContain('Resumen del cambio de plan');
+      expect(summaryEl.textContent).toContain('Inmediato');
+
+      i18n.setLang('en');
+      fixture.detectChanges();
+    });
+
+    it('18. Existing subscription checkout remains unaffected when subscription() is null', async () => {
+      component.subscription.set(null);
+      stripeServiceSpy.createVerifiedSubscription = vi.fn().mockResolvedValue({
+        clientSecret: 'pi_new_sub_secret_123',
+        subscriptionId: 'sub_new_123',
+        requiresSetup: false,
+      });
+      stripeServiceSpy.previewSubscriptionCheckout = vi.fn().mockResolvedValue({
+        verified: true,
+        verificationStatus: 'verified',
+        couponState: 'not_applied',
+        verificationReference: 'vref_new_sub_1',
+        priceId: mockPlans[1].id,
+        planName: 'Basic Plan',
+        interval: 'month',
+        currency: 'usd',
+        subtotal: 4900,
+        discountAmount: 0,
+        tax: 0,
+        amountDueToday: 4900,
+        renewalAmount: 4900,
+        renewalInterval: 'month',
+        promoCode: null,
+        promoCodeId: null,
+        promoCodeName: null,
+        couponDuration: null,
+        couponDurationInMonths: null,
+        expiresAt: Date.now() + 600_000,
+        errorCode: null,
+        message: null,
+      });
+
+      component.selectPlan(mockPlans[1]);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="plan-change-review-summary"]'),
+      ).toBeNull();
+      expect(fixture.nativeElement.querySelector('.verified-order-summary')).toBeTruthy();
+      expect(component.canProceedToVerifiedCheckout()).toBe(true);
+
+      await component.proceedToPayment();
+      expect(stripeServiceSpy.createVerifiedSubscription).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+    });
+  });
+
 });

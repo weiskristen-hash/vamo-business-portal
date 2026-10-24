@@ -1837,4 +1837,165 @@ describe('StripeService', () => {
       expect(service.formatExactPrice(preview.amountDueToday, preview.currency)).toBe('$59.00');
     });
   });
+
+  describe('Secure Subscription Plan Changes & Proration Preview', () => {
+    const baseUpgradeRequest = {
+      subscriptionId: 'sub_123',
+      subscriptionItemId: 'si_456',
+      currentPriceId: 'price_starter_31',
+      currentPlanName: 'Starter Plan',
+      currentPlanAmount: 3100,
+      currentPlanCurrency: 'usd',
+      currentPlanInterval: 'month',
+      newPriceId: 'price_basic_59',
+      newPlanName: 'Basic Plan',
+      newPlanAmount: 5900,
+      newPlanCurrency: 'usd',
+      newPlanInterval: 'month',
+      isUpgrade: true,
+      currentPeriodStart: 1700000000,
+      currentPeriodEnd: 1702500000,
+      customerEmail: 'business@example.com',
+    };
+
+    const baseDowngradeRequest = {
+      ...baseUpgradeRequest,
+      currentPriceId: 'price_basic_59',
+      currentPlanName: 'Basic Plan',
+      currentPlanAmount: 5900,
+      newPriceId: 'price_starter_31',
+      newPlanName: 'Starter Plan',
+      newPlanAmount: 3100,
+      isUpgrade: false,
+    };
+
+    it('returns unverified preview with amountDueToday=null for an upgrade when stripePreviewPlanChangeFlow is not configured', async () => {
+      const preview = await service.previewSubscriptionPlanChange(baseUpgradeRequest);
+      expect(preview.verified).toBe(false);
+      expect(preview.verificationStatus).toBe('unavailable');
+      expect(preview.isUpgrade).toBe(true);
+      expect(preview.amountDueToday).toBeNull();
+      expect(preview.errorCode).toBe('UPGRADE_PRORATION_PREVIEW_UNAVAILABLE');
+    });
+
+    it('returns verified $0.00 due today and scheduled effectiveDate for a downgrade without calling an external preview flow', async () => {
+      const flowSpy = vi.spyOn(service, 'flowPost');
+      const preview = await service.previewSubscriptionPlanChange(baseDowngradeRequest);
+
+      expect(flowSpy).not.toHaveBeenCalled();
+      expect(preview.verified).toBe(true);
+      expect(preview.verificationStatus).toBe('verified');
+      expect(preview.isUpgrade).toBe(false);
+      expect(preview.timing).toBe('scheduled');
+      expect(preview.effectiveDate).toBe(1702500000);
+      expect(preview.amountDueToday).toBe(0);
+      expect(preview.renewalAmount).toBe(3100);
+    });
+
+    it('returns verified proration amountDueToday when stripePreviewPlanChangeFlow is configured and returns an invoice preview', async () => {
+      vi.spyOn(runtimeConfig, 'stripePreviewPlanChangeFlow', 'get').mockReturnValue(
+        'flow-preview-plan-change-uuid',
+      );
+
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        amountDueToday: 1850,
+        subtotal: 1850,
+        discountAmount: 0,
+        tax: 0,
+        currency: 'usd',
+        renewalAmount: 5900,
+        renewalInterval: 'month',
+      });
+
+      const preview = await service.previewSubscriptionPlanChange(baseUpgradeRequest);
+      expect(preview.verified).toBe(true);
+      expect(preview.verificationStatus).toBe('verified');
+      expect(preview.amountDueToday).toBe(1850);
+      expect(preview.renewalAmount).toBe(5900);
+    });
+
+    it('rejects promotion codes during plan changes when stripePlanChangePromoEnabled is false (default)', async () => {
+      const preview = await service.previewSubscriptionPlanChange({
+        ...baseDowngradeRequest,
+        promotionCode: 'WELCOME20',
+      });
+      expect(preview.verified).toBe(false);
+      expect(preview.couponState).toBe('invalid_or_ineligible');
+      expect(preview.errorCode).toBe('PLAN_CHANGE_PROMO_UNSUPPORTED');
+    });
+
+    it('validates and applies eligible promotion codes during plan changes when stripePlanChangePromoEnabled is true', async () => {
+      vi.spyOn(runtimeConfig, 'stripePlanChangePromoEnabled', 'get').mockReturnValue(true);
+
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        valid: true,
+        promoCodeId: 'promo_welcome20',
+        name: 'WELCOME20',
+        percentOff: 20,
+        duration: 'forever',
+      });
+
+      const preview = await service.previewSubscriptionPlanChange({
+        ...baseDowngradeRequest,
+        promotionCode: 'WELCOME20',
+      });
+      expect(preview.verified).toBe(true);
+      expect(preview.couponState).toBe('verified_applied');
+      expect(preview.promoCodeId).toBe('promo_welcome20');
+      expect(preview.renewalAmount).toBe(2480); // 20% off $31.00 = $24.80
+    });
+
+    it('reconciles subscription state via getSubscription on retry after a network timeout in changeSubscriptionPlan', async () => {
+      const flowSpy = vi
+        .spyOn(service, 'flowPost')
+        .mockRejectedValueOnce(new Error('Network timeout during plan change'));
+
+      const getSubSpy = vi.spyOn(service, 'getSubscription').mockResolvedValueOnce({
+        subscriptionId: 'sub_123',
+        subscriptionItemId: 'si_456',
+        status: 'active',
+        cancelAtPeriodEnd: false,
+        currentPeriodStart: 1700000000,
+        currentPeriodEnd: 1702500000,
+        plan: {
+          priceId: 'price_basic_59',
+          productName: 'Basic Plan',
+          amount: 5900,
+          currency: 'usd',
+          interval: 'month',
+        },
+      });
+
+      await expect(
+        service.changeSubscriptionPlan(
+          'sub_123',
+          'si_456',
+          'price_basic_59',
+          true,
+          'Basic Plan',
+          1700000000,
+          1702500000,
+          'price_starter_31',
+          { customerEmail: 'business@example.com' },
+        ),
+      ).rejects.toThrow('Network timeout during plan change');
+
+      const reconciled = await service.changeSubscriptionPlan(
+        'sub_123',
+        'si_456',
+        'price_basic_59',
+        true,
+        'Basic Plan',
+        1700000000,
+        1702500000,
+        'price_starter_31',
+        { customerEmail: 'business@example.com' },
+      );
+
+      expect(reconciled.status).toBe('confirmed');
+      expect(reconciled.priceId).toBe('price_basic_59');
+      expect(getSubSpy).toHaveBeenCalledWith('business@example.com');
+      expect(flowSpy).toHaveBeenCalledTimes(1);
+    });
+  });
 });

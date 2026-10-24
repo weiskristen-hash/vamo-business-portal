@@ -17,6 +17,7 @@ import {
   CouponVerificationState,
   CheckoutVerificationStatus,
   CheckoutPreviewResult,
+  PlanChangePreviewResult,
   CheckoutChargeProtectionError,
   ScheduledDowngradeVerification,
   getCanonicalTierFeatures,
@@ -313,8 +314,8 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
           </p>
         </div>
 
-        <!-- Coupon Row (for new subscriptions) -->
-        <div *ngIf="subscription() === null" class="coupon-section">
+        <!-- Coupon Row (for new subscriptions or when plan-change promo codes are supported) -->
+        <div *ngIf="subscription() === null || isPlanChangePromoSupported()" class="coupon-section">
           <div class="coupon-header-row">
             <span class="coupon-section-label">{{ 'PORTAL.BILLING.PROMO_TAG' | translate }}</span>
             <span
@@ -347,13 +348,13 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               [attr.aria-label]="'PORTAL.BILLING.PROMO_TAG' | translate"
               [ngModel]="couponCode()"
               (ngModelChange)="onCouponCodeChange($event)"
-              [disabled]="couponLoading() || previewLoading()"
+              [disabled]="couponLoading() || previewLoading() || planChangePreviewLoading()"
             />
             <button
               *ngIf="couponCode().trim()"
               type="button"
               class="btn btn-ghost btn-sm coupon-clear-btn"
-              [disabled]="couponLoading() || previewLoading()"
+              [disabled]="couponLoading() || previewLoading() || planChangePreviewLoading()"
               (click)="removePromoCode()"
               [attr.aria-label]="'PORTAL.BILLING.PROMO_REMOVE' | translate"
               [attr.title]="'PORTAL.BILLING.PROMO_REMOVE' | translate"
@@ -361,7 +362,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             <button
               type="button"
               class="btn btn-secondary btn-sm coupon-apply-btn"
-              [disabled]="couponLoading() || previewLoading() || !couponCode().trim()"
+              [disabled]="couponLoading() || previewLoading() || planChangePreviewLoading() || !couponCode().trim()"
               (click)="applyPromoCode()"
             >
               {{ (couponLoading() ? 'PORTAL.BILLING.COUPON_APPLYING' : 'PORTAL.BILLING.COUPON_APPLY') | translate }}
@@ -480,6 +481,176 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
           </p>
         </div>
 
+        <!-- Explicit Plan-Change Review & Confirmation Step (for existing subscriptions) -->
+        <div
+          *ngIf="subscription() as sub"
+          class="verified-order-summary plan-change-review-summary"
+          data-testid="plan-change-review-summary"
+          role="region"
+          aria-labelledby="plan-change-review-title"
+        >
+          <div class="order-summary-header">
+            <h4 id="plan-change-review-title" class="order-summary-title">
+              {{ 'PORTAL.BILLING.REVIEW_PLAN_CHANGE_TITLE' | translate }}
+            </h4>
+            <span
+              class="verification-status-badge"
+              [attr.data-verification-status]="getEffectivePlanChangePreview(selPlan, sub)?.verificationStatus ?? 'unverified'"
+              [class.verification-status-badge--verified]="getEffectivePlanChangePreview(selPlan, sub)?.verificationStatus === 'verified'"
+              [class.verification-status-badge--verifying]="getEffectivePlanChangePreview(selPlan, sub)?.verificationStatus === 'verifying'"
+              [class.verification-status-badge--unavailable]="getEffectivePlanChangePreview(selPlan, sub)?.verificationStatus === 'unavailable'"
+            >
+              {{ getPlanChangeVerificationBadgeKey(selPlan, sub) | translate }}
+            </span>
+          </div>
+
+          <div class="order-summary-rows">
+            <div class="summary-row">
+              <span class="summary-label">{{ 'PORTAL.BILLING.REVIEW_CURRENT_PLAN' | translate }}</span>
+              <span class="summary-value" data-testid="review-current-plan">
+                {{ planTitleKey(sub.plan.productName) | translate }} ({{ formatExactPrice(sub.plan.amount, sub.plan.currency) }} / {{ (sub.plan.interval === 'year' ? 'PORTAL.BILLING.INTERVAL_YEAR' : 'PORTAL.BILLING.INTERVAL_MONTH') | translate }})
+              </span>
+            </div>
+
+            <div class="summary-row">
+              <span class="summary-label">{{ 'PORTAL.BILLING.REVIEW_NEW_PLAN' | translate }}</span>
+              <span class="summary-value" data-testid="review-new-plan">
+                {{ planTitleKey(selPlan.name) | translate }} ({{ formatExactPrice(selPlan.amount, selPlan.currency) }} / {{ (selPlan.interval === 'year' ? 'PORTAL.BILLING.INTERVAL_YEAR' : 'PORTAL.BILLING.INTERVAL_MONTH') | translate }})
+              </span>
+            </div>
+
+            <div class="summary-row">
+              <span class="summary-label">{{ 'PORTAL.BILLING.REVIEW_TIMING_LABEL' | translate }}</span>
+              <span class="summary-value" data-testid="review-change-timing">
+                {{ (isSelectedPlanUpgrade(selPlan, sub) ? 'PORTAL.BILLING.REVIEW_TIMING_IMMEDIATE' : 'PORTAL.BILLING.REVIEW_TIMING_SCHEDULED') | translate }}
+              </span>
+            </div>
+
+            <div class="summary-row">
+              <span class="summary-label">{{ 'PORTAL.BILLING.REVIEW_EFFECTIVE_DATE' | translate }}</span>
+              <span class="summary-value" data-testid="review-effective-date">
+                {{ isSelectedPlanUpgrade(selPlan, sub) ? ('PORTAL.BILLING.REVIEW_EFFECTIVE_IMMEDIATE' | translate) : formatDate(sub.currentPeriodEnd) }}
+              </span>
+            </div>
+
+            <div class="summary-row">
+              <span class="summary-label">{{ 'PORTAL.BILLING.PROMO_TAG' | translate }}</span>
+              <span class="summary-value summary-promo-value" data-testid="plan-change-promo-disclosure">
+                <ng-container *ngIf="!isPlanChangePromoSupported()">
+                  {{ 'PORTAL.BILLING.PLAN_CHANGE_PROMO_UNSUPPORTED_NOTICE' | translate }}
+                </ng-container>
+                <ng-container *ngIf="isPlanChangePromoSupported()">
+                  <ng-container *ngIf="getEffectivePlanChangePreview(selPlan, sub)?.promoCodeName || promoResult()?.name || couponCode().trim(); else noPlanChangePromoTpl">
+                    <span class="summary-promo-code">{{ getEffectivePlanChangePreview(selPlan, sub)?.promoCodeName || promoResult()?.name || couponCode().trim() }}</span>
+                    <span class="summary-promo-status">({{ getCouponStateLabelKey() | translate }})</span>
+                  </ng-container>
+                  <ng-template #noPlanChangePromoTpl>
+                    {{ 'PORTAL.BILLING.COUPON_STATE_NOT_APPLIED' | translate }}
+                  </ng-template>
+                </ng-container>
+              </span>
+            </div>
+
+            <div
+              *ngIf="isPlanChangePromoSupported() && getEffectivePlanChangePreview(selPlan, sub)?.verified && (getEffectivePlanChangePreview(selPlan, sub)?.discountAmount ?? 0) > 0"
+              class="summary-row summary-row--discount"
+            >
+              <span class="summary-label">{{ 'PORTAL.BILLING.SUMMARY_DISCOUNT' | translate }}</span>
+              <span class="summary-value summary-discount-amount" data-testid="plan-change-discount-amount">
+                -{{ formatExactPrice(getEffectivePlanChangePreview(selPlan, sub)!.discountAmount, getEffectivePlanChangePreview(selPlan, sub)!.currency) }}
+              </span>
+            </div>
+
+            <div class="summary-row">
+              <span class="summary-label">{{ 'PORTAL.BILLING.REVIEW_PAYMENT_METHOD_LABEL' | translate }}</span>
+              <span class="summary-value" data-testid="review-payment-method">
+                {{ getPlanChangePaymentMethodSummaryText() }}
+              </span>
+            </div>
+
+            <div class="summary-row summary-row--total">
+              <span class="summary-label">{{ 'PORTAL.BILLING.SUMMARY_DUE_TODAY' | translate }}</span>
+              <span class="summary-value summary-due-today-amount" data-testid="plan-change-amount-due-today">
+                {{ getPlanChangeDueTodayDisplay(selPlan, sub) }}
+              </span>
+            </div>
+
+            <div *ngIf="getPlanChangeRenewalDisclosure(selPlan, sub) as changeRenewalText" class="summary-row summary-row--renewal">
+              <span class="summary-label">{{ 'PORTAL.BILLING.SUMMARY_RENEWAL_LABEL' | translate }}</span>
+              <span class="summary-value summary-renewal-text" data-testid="plan-change-renewal-disclosure">
+                {{ changeRenewalText }}
+              </span>
+            </div>
+          </div>
+
+          <p
+            *ngIf="!isSelectedPlanUpgrade(selPlan, sub)"
+            class="charge-protection-note downgrade-no-charge-note"
+            data-testid="downgrade-confirmation-notice"
+          >
+            {{
+              'PORTAL.BILLING.REVIEW_DOWNGRADE_NO_CHARGE_TODAY'
+                | translate: {
+                    currentPlan: (planTitleKey(sub.plan.productName) | translate),
+                    date: formatDate(sub.currentPeriodEnd),
+                    newPlan: (planTitleKey(selPlan.name) | translate),
+                    amount: formatExactPrice(getEffectivePlanChangePreview(selPlan, sub)?.renewalAmount ?? selPlan.amount, selPlan.currency),
+                    interval: ((selPlan.interval === 'year' ? 'PORTAL.BILLING.INTERVAL_YEAR' : 'PORTAL.BILLING.INTERVAL_MONTH') | translate)
+                  }
+            }}
+          </p>
+
+          <p
+            *ngIf="hasScheduledDowngrade(sub)"
+            class="charge-protection-note existing-schedule-preservation-note"
+            data-testid="existing-scheduled-change-notice"
+          >
+            {{
+              'PORTAL.BILLING.REVIEW_EXISTING_SCHEDULE_NOTICE'
+                | translate: {
+                    plan: (planTitleKey(sub.pendingPlanName) | translate),
+                    date: formatDate(sub.pendingPeriodEnd!)
+                  }
+            }}
+          </p>
+
+          <div
+            *ngIf="isUpgradeBlockedByUnknownAmount(selPlan, sub)"
+            class="alert alert-warning upgrade-amount-unknown-alert"
+            data-testid="upgrade-amount-unknown-alert"
+            role="alert"
+          >
+            <span class="alert-icon">⚠️</span>
+            <span class="alert-text">{{ 'PORTAL.BILLING.ERROR_UPGRADE_AMOUNT_UNKNOWN' | translate }}</span>
+          </div>
+        </div>
+
+        <!-- Payment Method Required / Stale Alert for Plan Changes -->
+        <div
+          *ngIf="subscription() !== null && !savedMethodsLoading() && !hasUsablePlanChangePaymentMethod()"
+          class="alert alert-warning plan-change-payment-required-box"
+          data-testid="plan-change-payment-required"
+          role="alert"
+        >
+          <span class="alert-icon">⚠️</span>
+          <span class="alert-text">
+            {{
+              (getPlanChangePaymentMethodState() === 'stale'
+                ? 'PORTAL.BILLING.ERROR_PLAN_CHANGE_STALE_PAYMENT_METHOD'
+                : 'PORTAL.BILLING.ERROR_PLAN_CHANGE_PAYMENT_METHOD_REQUIRED') | translate
+            }}
+          </span>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm plan-change-add-card-btn"
+            data-testid="plan-change-add-card-btn"
+            [disabled]="isOpeningCardSetup() || isSavingCard()"
+            (click)="openAddCardForPlanChange()"
+          >
+            {{ 'PORTAL.BILLING.BTN_ADD_CARD' | translate }}
+          </button>
+        </div>
+
         <!-- Current Payment Method Notice (for plan changes on existing subscriptions) -->
         <p *ngIf="subscription() !== null" class="plan-change-payment-notice" role="note">
           {{ 'PORTAL.BILLING.PLAN_CHANGE_PAYMENT_METHOD_NOTICE' | translate }}
@@ -584,6 +755,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             <button
               type="button"
               class="btn btn-primary"
+              data-testid="confirm-plan-change-btn"
               *ngIf="subscription() !== null && !isPendingPlan(selPlan)"
               [disabled]="!canConfirmPlanChange()"
               (click)="confirmChangePlan()"
@@ -2290,8 +2462,21 @@ export class BillingComponent implements OnInit, OnDestroy {
   checkoutPreview = signal<CheckoutPreviewResult | null>(null);
   previewLoading = signal(false);
   checkoutVerificationStatus = signal<CheckoutVerificationStatus>('unverified');
+  planChangePreview = signal<PlanChangePreviewResult | null>(null);
+  planChangePreviewLoading = signal(false);
   private promoDismissedInCheckout = false;
   private previewRequestSeq = 0;
+  private planChangePreviewSeq = 0;
+  reviewSubscriptionSnapshot = signal<{
+    subscriptionId: string;
+    subscriptionItemId: string;
+    priceId: string;
+    currentPeriodStart: number;
+    currentPeriodEnd: number;
+    status: string;
+    pendingScheduleId: string | null;
+  } | null>(null);
+  reviewTargetPriceId = signal<string | null>(null);
 
   // Inline Payment Element (Subscription Checkout)
   clientSecret = signal<string | null>(null);
@@ -2536,6 +2721,13 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   // ─── Promotion Code & Authoritative Price Preview ──────────────────
 
+  isPlanChangePromoSupported(): boolean {
+    if (typeof this.stripeService.isPlanChangePromoSupported === 'function') {
+      return this.stripeService.isPlanChangePromoSupported();
+    }
+    return false;
+  }
+
   onCouponCodeChange(value: string): void {
     this.promoDismissedInCheckout = true;
     const nextVal = value ?? '';
@@ -2572,6 +2764,18 @@ export class BillingComponent implements OnInit, OnDestroy {
         void this.refreshCheckoutPreview(plan, null, true);
       }
     }
+
+    const currentPlanChangePreview = this.planChangePreview();
+    if (
+      currentPlanChangePreview &&
+      (currentPlanChangePreview.promoCodeId || currentPlanChangePreview.discountAmount > 0)
+    ) {
+      this.planChangePreview.set(null);
+      const plan = this.selectedPlan();
+      if (plan && this.subscription()) {
+        void this.refreshPlanChangePreview(plan, null, true);
+      }
+    }
   }
 
   async applyPromoCode(): Promise<void> {
@@ -2581,6 +2785,17 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (this.paymentActive() || this.clientSecret() || this.pendingSetupIntentId()) {
       this.cancelPayment();
     }
+
+    if (
+      this.subscription() !== null &&
+      (this.showChangePlanSection() || this.selectedPlan() !== null) &&
+      !this.isPlanChangePromoSupported()
+    ) {
+      this.couponState.set('invalid_or_ineligible');
+      this.couponError.set(this.i18n.t('PORTAL.BILLING.ERROR_PLAN_CHANGE_PROMO_UNSUPPORTED'));
+      return;
+    }
+
     this.couponLoading.set(true);
     this.couponError.set(null);
     this.promoResult.set(null);
@@ -2588,6 +2803,40 @@ export class BillingComponent implements OnInit, OnDestroy {
 
     const plan = this.selectedPlan();
     const user = this.authService.currentUser;
+    const sub = this.subscription();
+
+    if (sub && plan && this.isPlanChangePromoSupported()) {
+      try {
+        const preview = await this.refreshPlanChangePreview(plan, code);
+        if (preview && preview.couponState === 'verified_applied') {
+          this.couponState.set('verified_applied');
+          this.promoResult.set({
+            valid: true,
+            promoCodeId: preview.promoCodeId ?? undefined,
+            name: preview.promoCodeName ?? preview.promoCode ?? code,
+            duration: preview.couponDuration ?? undefined,
+            durationInMonths: preview.couponDurationInMonths ?? null,
+          });
+          return;
+        }
+        this.couponState.set(preview?.couponState ?? 'invalid_or_ineligible');
+        this.couponError.set(
+          this.i18n.t(
+            preview?.couponState === 'verification_unavailable'
+              ? 'PORTAL.BILLING.COUPON_ERROR'
+              : 'PORTAL.BILLING.COUPON_INVALID'
+          )
+        );
+        await this.refreshPlanChangePreview(plan, null, true);
+        return;
+      } catch {
+        this.couponState.set('verification_unavailable');
+        this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_ERROR'));
+        return;
+      } finally {
+        this.couponLoading.set(false);
+      }
+    }
 
     // When a plan is selected and previewSubscriptionCheckout is available, verify against the authoritative preview
     if (plan && user?.email && typeof this.stripeService.previewSubscriptionCheckout === 'function') {
@@ -2677,16 +2926,21 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.couponState.set(wasPaymentActive ? 'changed_after_init' : 'not_applied');
     this.checkoutPreview.set(null);
     this.checkoutVerificationStatus.set('unverified');
+    this.planChangePreview.set(null);
     const plan = this.selectedPlan();
     if (plan && !this.subscription()) {
       void this.refreshCheckoutPreview(plan, null, wasPaymentActive);
+    } else if (plan && this.subscription()) {
+      void this.refreshPlanChangePreview(plan, null);
     }
   }
 
   hasUnappliedCouponInput(): boolean {
-    if (this.subscription() !== null) return false;
     const trimmed = this.couponCode().trim();
     if (!trimmed) return false;
+    if (this.subscription() !== null && !this.isPlanChangePromoSupported()) {
+      return true;
+    }
     return !this.promoResult()?.valid || this.couponState() !== 'verified_applied';
   }
 
@@ -2947,8 +3201,17 @@ export class BillingComponent implements OnInit, OnDestroy {
     // Changing or deselecting plan invalidates prior verified total and requires recalculation
     this.checkoutPreview.set(null);
     this.checkoutVerificationStatus.set('unverified');
+    this.planChangePreview.set(null);
 
-    if (nextPlan && !this.subscription()) {
+    if (!nextPlan) {
+      this.reviewSubscriptionSnapshot.set(null);
+      this.reviewTargetPriceId.set(null);
+      return;
+    }
+
+    if (!this.subscription()) {
+      this.reviewSubscriptionSnapshot.set(null);
+      this.reviewTargetPriceId.set(null);
       this.prefillPromoCodeIfEligible();
       const appliedPromo = this.promoResult()?.valid
         ? (this.couponCode().trim() || this.promoResult()?.name || null)
@@ -2970,6 +3233,17 @@ export class BillingComponent implements OnInit, OnDestroy {
           Boolean(this.promoResult()?.valid || hasUnapplied)
         );
       }
+      return;
+    }
+
+    this.captureReviewSubscriptionSnapshot(this.subscription(), nextPlan.id);
+    if (this.isPlanChangePromoSupported()) {
+      const appliedPromo = this.promoResult()?.valid
+        ? (this.couponCode().trim() || this.promoResult()?.name || null)
+        : null;
+      void this.refreshPlanChangePreview(nextPlan, appliedPromo);
+    } else {
+      void this.refreshPlanChangePreview(nextPlan, null);
     }
   }
 
@@ -3480,8 +3754,18 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.selectedSavedMethod.set(null);
     this.planChangeUnverified.set(false);
     this.pendingPlanChangeTarget.set(null);
+    this.planChangePreview.set(null);
     this.clearError();
     this.successMessage.set(null);
+    const currentSelected = this.selectedPlan();
+    if (currentSelected && this.subscription()) {
+      this.captureReviewSubscriptionSnapshot(this.subscription(), currentSelected.id);
+      const appliedPromo =
+        this.isPlanChangePromoSupported() && this.promoResult()?.valid
+          ? (this.couponCode().trim() || this.promoResult()?.name || null)
+          : null;
+      void this.refreshPlanChangePreview(currentSelected, appliedPromo);
+    }
   }
 
   closeChangePlan(): void {
@@ -3493,28 +3777,522 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.selectedSavedMethod.set(null);
     this.planChangeUnverified.set(false);
     this.pendingPlanChangeTarget.set(null);
+    this.planChangePreview.set(null);
+    this.planChangePreviewLoading.set(false);
+    this.reviewSubscriptionSnapshot.set(null);
+    this.reviewTargetPriceId.set(null);
     this.downgradeWarning.set(null);
     this.bypassDowngradeCheck = false;
     this.clearError();
+  }
+
+  captureReviewSubscriptionSnapshot(
+    sub: StripeSubscription | null | undefined,
+    targetPriceId: string | null = null,
+  ): void {
+    if (!sub) {
+      this.reviewSubscriptionSnapshot.set(null);
+      this.reviewTargetPriceId.set(null);
+      return;
+    }
+    this.reviewSubscriptionSnapshot.set({
+      subscriptionId: sub.subscriptionId,
+      subscriptionItemId: sub.subscriptionItemId,
+      priceId: sub.plan?.priceId ?? '',
+      currentPeriodStart: sub.currentPeriodStart,
+      currentPeriodEnd: sub.currentPeriodEnd,
+      status: sub.status,
+      pendingScheduleId: sub.pendingScheduleId ?? null,
+    });
+    this.reviewTargetPriceId.set(targetPriceId);
+  }
+
+  hasSubscriptionChangedSinceReview(): boolean {
+    const snap = this.reviewSubscriptionSnapshot();
+    const sub = this.subscription();
+    if (!snap || !sub) return false;
+    return (
+      sub.subscriptionId !== snap.subscriptionId ||
+      sub.subscriptionItemId !== snap.subscriptionItemId ||
+      (sub.plan?.priceId ?? '') !== snap.priceId ||
+      sub.currentPeriodStart !== snap.currentPeriodStart ||
+      sub.currentPeriodEnd !== snap.currentPeriodEnd ||
+      sub.status !== snap.status
+    );
+  }
+
+  isSelectedPlanUpgrade(
+    selPlan: StripePlan | null = this.selectedPlan(),
+    sub: StripeSubscription | null | undefined = this.subscription(),
+  ): boolean {
+    if (!sub || !selPlan) return false;
+    return selPlan.amount > (sub.plan?.amount ?? 0);
+  }
+
+  async refreshPlanChangePreview(
+    plan: StripePlan,
+    promoCode?: string | null,
+    preserveCouponState = false,
+  ): Promise<PlanChangePreviewResult | null> {
+    const sub = this.subscription();
+    if (!sub || !plan) {
+      this.planChangePreview.set(null);
+      return null;
+    }
+
+    const isUpgrade = plan.amount > (sub.plan?.amount ?? 0);
+    const currency = (plan.currency || sub.plan?.currency || 'usd').toLowerCase();
+    const renewalInterval = plan.interval || 'month';
+    const promoSupported = this.isPlanChangePromoSupported();
+    this.reviewTargetPriceId.set(plan.id);
+
+    if (typeof this.stripeService.previewSubscriptionPlanChange !== 'function') {
+      const fallbackAmount = isUpgrade ? Math.max(0, plan.amount - (sub.plan?.amount ?? 0)) : 0;
+      const fallback: PlanChangePreviewResult = {
+        verified: true,
+        verificationStatus: 'verified',
+        isUpgrade,
+        timing: isUpgrade ? 'immediate' : 'scheduled',
+        effectiveDate: isUpgrade ? null : sub.currentPeriodEnd,
+        amountDueToday: fallbackAmount,
+        subtotal: fallbackAmount,
+        discountAmount: 0,
+        tax: 0,
+        currency,
+        renewalAmount: plan.amount,
+        renewalInterval,
+        promoSupported,
+        couponState: preserveCouponState ? this.couponState() : 'not_applied',
+        promoCode: null,
+        promoCodeId: null,
+        promoCodeName: null,
+        couponDuration: null,
+        couponDurationInMonths: null,
+        errorCode: null,
+        message: null,
+      };
+      this.planChangePreview.set(fallback);
+      return fallback;
+    }
+
+    const seq = ++this.planChangePreviewSeq;
+    this.planChangePreviewLoading.set(true);
+    try {
+      const preview = await this.stripeService.previewSubscriptionPlanChange({
+        subscriptionId: sub.subscriptionId,
+        subscriptionItemId: sub.subscriptionItemId,
+        currentPriceId: sub.plan?.priceId ?? '',
+        currentPlanName: sub.plan?.productName ?? '',
+        currentPlanAmount: sub.plan?.amount ?? 0,
+        currentPlanCurrency: sub.plan?.currency ?? 'usd',
+        currentPlanInterval: sub.plan?.interval ?? 'month',
+        newPriceId: plan.id,
+        newPlanName: plan.name,
+        newPlanAmount: plan.amount,
+        newPlanCurrency: plan.currency || 'usd',
+        newPlanInterval: renewalInterval,
+        isUpgrade,
+        currentPeriodStart: sub.currentPeriodStart,
+        currentPeriodEnd: sub.currentPeriodEnd,
+        promotionCode: promoCode ?? null,
+        promotionCodeId: this.promoResult()?.promoCodeId ?? null,
+        customerEmail: this.authService.currentUser?.email ?? null,
+      });
+      if (seq !== this.planChangePreviewSeq) {
+        return null;
+      }
+      this.planChangePreview.set(preview);
+      if (!preserveCouponState && promoCode) {
+        this.couponState.set(preview.couponState);
+      }
+      return preview;
+    } catch {
+      if (seq === this.planChangePreviewSeq) {
+        const unverifiedPreview: PlanChangePreviewResult = {
+          verified: !isUpgrade,
+          verificationStatus: isUpgrade ? 'unavailable' : 'verified',
+          isUpgrade,
+          timing: isUpgrade ? 'immediate' : 'scheduled',
+          effectiveDate: isUpgrade ? null : sub.currentPeriodEnd,
+          amountDueToday: isUpgrade ? null : 0,
+          subtotal: isUpgrade ? plan.amount : 0,
+          discountAmount: 0,
+          tax: 0,
+          currency,
+          renewalAmount: plan.amount,
+          renewalInterval,
+          promoSupported,
+          couponState: preserveCouponState ? this.couponState() : 'not_applied',
+          promoCode: null,
+          promoCodeId: null,
+          promoCodeName: null,
+          couponDuration: null,
+          couponDurationInMonths: null,
+          errorCode: isUpgrade ? 'UPGRADE_PREVIEW_UNAVAILABLE' : null,
+          message: null,
+        };
+        this.planChangePreview.set(unverifiedPreview);
+        return unverifiedPreview;
+      }
+      return null;
+    } finally {
+      if (seq === this.planChangePreviewSeq) {
+        this.planChangePreviewLoading.set(false);
+      }
+    }
+  }
+
+  getEffectivePlanChangePreview(
+    plan: StripePlan | null = this.selectedPlan(),
+    sub: StripeSubscription | null | undefined = this.subscription(),
+  ): PlanChangePreviewResult | null {
+    if (!plan || !sub) return null;
+    const isUpgrade = Boolean(plan.amount > (sub.plan?.amount ?? 0));
+    const currentPreview = this.planChangePreview();
+    if (currentPreview && this.reviewTargetPriceId() === plan.id && currentPreview.isUpgrade === isUpgrade) {
+      return currentPreview;
+    }
+    const currency = (plan.currency || sub.plan?.currency || 'usd').toLowerCase();
+    const renewalAmount = plan.amount ?? 0;
+    const renewalInterval = plan.interval || 'month';
+    const promoSupported = this.isPlanChangePromoSupported();
+
+    if (!isUpgrade) {
+      return {
+        verified: true,
+        verificationStatus: 'verified',
+        isUpgrade: false,
+        timing: 'scheduled',
+        effectiveDate: sub.currentPeriodEnd ?? null,
+        amountDueToday: 0,
+        subtotal: 0,
+        discountAmount: 0,
+        tax: 0,
+        currency,
+        renewalAmount,
+        renewalInterval,
+        promoSupported,
+        couponState: this.couponState(),
+        promoCode: null,
+        promoCodeId: null,
+        promoCodeName: null,
+        couponDuration: null,
+        couponDurationInMonths: null,
+        errorCode: null,
+        message: null,
+      };
+    }
+
+    if (typeof this.stripeService.previewSubscriptionPlanChange !== 'function') {
+      const fallbackAmount = Math.max(0, renewalAmount - (sub.plan?.amount ?? 0));
+      return {
+        verified: true,
+        verificationStatus: 'verified',
+        isUpgrade: true,
+        timing: 'immediate',
+        effectiveDate: null,
+        amountDueToday: fallbackAmount,
+        subtotal: fallbackAmount,
+        discountAmount: 0,
+        tax: 0,
+        currency,
+        renewalAmount,
+        renewalInterval,
+        promoSupported,
+        couponState: this.couponState(),
+        promoCode: null,
+        promoCodeId: null,
+        promoCodeName: null,
+        couponDuration: null,
+        couponDurationInMonths: null,
+        errorCode: null,
+        message: null,
+      };
+    }
+
+    return {
+      verified: false,
+      verificationStatus: 'unavailable',
+      isUpgrade: true,
+      timing: 'immediate',
+      effectiveDate: null,
+      amountDueToday: null,
+      subtotal: renewalAmount,
+      discountAmount: 0,
+      tax: 0,
+      currency,
+      renewalAmount,
+      renewalInterval,
+      promoSupported,
+      couponState: this.couponState(),
+      promoCode: null,
+      promoCodeId: null,
+      promoCodeName: null,
+      couponDuration: null,
+      couponDurationInMonths: null,
+      errorCode: 'UPGRADE_AMOUNT_UNKNOWN',
+      message: null,
+    };
+  }
+
+  isUpgradeBlockedByUnknownAmount(
+    selPlan: StripePlan | null = this.selectedPlan(),
+    sub: StripeSubscription | null | undefined = this.subscription(),
+  ): boolean {
+    if (!this.isSelectedPlanUpgrade(selPlan, sub)) return false;
+    if (this.planChangePreviewLoading()) return false;
+    const preview = this.getEffectivePlanChangePreview(selPlan, sub);
+    if (!preview) return true;
+    return (
+      !preview.verified ||
+      preview.verificationStatus !== 'verified' ||
+      typeof preview.amountDueToday !== 'number' ||
+      !Number.isFinite(preview.amountDueToday) ||
+      preview.amountDueToday < 0
+    );
+  }
+
+  getPlanChangeVerificationBadgeKey(
+    selPlan: StripePlan | null = this.selectedPlan(),
+    sub: StripeSubscription | null | undefined = this.subscription(),
+  ): string {
+    if (this.planChangePreviewLoading()) {
+      return 'PORTAL.BILLING.VERIFICATION_BADGE_VERIFYING';
+    }
+    if (this.isUpgradeBlockedByUnknownAmount(selPlan, sub)) {
+      return 'PORTAL.BILLING.VERIFICATION_BADGE_UNAVAILABLE';
+    }
+    return 'PORTAL.BILLING.VERIFICATION_BADGE_VERIFIED';
+  }
+
+  getPlanChangeDueTodayDisplay(
+    selPlan: StripePlan | null = this.selectedPlan(),
+    sub: StripeSubscription | null | undefined = this.subscription(),
+  ): string {
+    if (this.planChangePreviewLoading()) {
+      return this.i18n.t('PORTAL.BILLING.VERIFICATION_BADGE_VERIFYING');
+    }
+    const preview = this.getEffectivePlanChangePreview(selPlan, sub);
+    if (!preview) {
+      return this.i18n.t('PORTAL.BILLING.REVIEW_AMOUNT_UNKNOWN');
+    }
+    if (!preview.isUpgrade) {
+      return this.formatExactPrice(0, preview.currency);
+    }
+    if (
+      preview.verified &&
+      typeof preview.amountDueToday === 'number' &&
+      Number.isFinite(preview.amountDueToday)
+    ) {
+      return this.formatExactPrice(preview.amountDueToday, preview.currency);
+    }
+    return this.i18n.t('PORTAL.BILLING.REVIEW_AMOUNT_UNKNOWN');
+  }
+
+  getPlanChangeRenewalDisclosure(
+    plan: StripePlan | null = this.selectedPlan(),
+    sub: StripeSubscription | null | undefined = this.subscription(),
+  ): string {
+    if (!plan) return '';
+    const preview = this.getEffectivePlanChangePreview(plan, sub);
+    const amountFormatted = this.formatExactPrice(
+      preview?.renewalAmount ?? plan.amount,
+      preview?.currency || plan.currency,
+    );
+    const intervalKey =
+      (preview?.renewalInterval || plan.interval) === 'year'
+        ? 'PORTAL.BILLING.INTERVAL_YEAR'
+        : 'PORTAL.BILLING.INTERVAL_MONTH';
+    const interval = this.i18n.t(intervalKey);
+    if (!this.isSelectedPlanUpgrade(plan, sub) && sub?.currentPeriodEnd) {
+      return `${amountFormatted}/${interval} (${this.formatDate(sub.currentPeriodEnd)})`;
+    }
+    return `${amountFormatted}/${interval}`;
+  }
+
+  isPaymentMethodExpired(pm: SavedPaymentMethod | null | undefined): boolean {
+    if (!pm) return true;
+    const expYear = Number(pm.expYear);
+    const expMonth = Number(pm.expMonth);
+    if (!Number.isFinite(expYear) || !Number.isFinite(expMonth) || expMonth < 1 || expMonth > 12) {
+      return true;
+    }
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    if (expYear < currentYear) return true;
+    if (expYear === currentYear && expMonth < currentMonth) return true;
+    return false;
+  }
+
+  getPlanChangePaymentMethodState(): 'verified_card' | 'on_file' | 'missing' | 'stale' {
+    if (this.savedMethodsLoading() || this.savedMethodsError()) {
+      return 'missing';
+    }
+    const methods = this.savedMethods();
+    if (!Array.isArray(methods) || methods.length === 0) {
+      return 'missing';
+    }
+
+    if (this.defaultPaymentMethodVerified()) {
+      const defaultId = this.defaultPaymentMethodId();
+      if (!defaultId) {
+        return 'stale';
+      }
+      const matched = methods.find((m) => m.id === defaultId);
+      if (!matched || this.isPaymentMethodExpired(matched) || matched.isRenewalCard === false) {
+        return 'stale';
+      }
+      return 'verified_card';
+    }
+
+    const unverifiedDefaultId = this.defaultPaymentMethodId();
+    if (unverifiedDefaultId && !methods.some((m) => m.id === unverifiedDefaultId)) {
+      return 'stale';
+    }
+    const nonExpired = methods.filter((m) => !this.isPaymentMethodExpired(m));
+    if (nonExpired.length === 0) {
+      return 'stale';
+    }
+    return 'on_file';
+  }
+
+  hasUsablePlanChangePaymentMethod(): boolean {
+    const state = this.getPlanChangePaymentMethodState();
+    return state === 'verified_card' || state === 'on_file';
+  }
+
+  getVerifiedPlanChangePaymentMethod(): SavedPaymentMethod | null {
+    if (this.getPlanChangePaymentMethodState() !== 'verified_card') {
+      return null;
+    }
+    const defaultId = this.defaultPaymentMethodId();
+    if (!defaultId) return null;
+    return this.savedMethods().find((m) => m.id === defaultId) ?? null;
+  }
+
+  getPlanChangePaymentMethodSummaryText(): string {
+    const state = this.getPlanChangePaymentMethodState();
+    if (state === 'verified_card') {
+      const pm = this.getVerifiedPlanChangePaymentMethod();
+      if (pm) {
+        return `${(pm.brand || 'CARD').toUpperCase()} •••• ${pm.last4}`;
+      }
+    }
+    if (state === 'on_file') {
+      return this.i18n.t('PORTAL.BILLING.PLAN_CHANGE_PAYMENT_METHOD_ON_FILE');
+    }
+    if (state === 'stale') {
+      return this.i18n.t('PORTAL.BILLING.ERROR_PLAN_CHANGE_STALE_PAYMENT_METHOD');
+    }
+    return this.i18n.t('PORTAL.BILLING.PLAN_CHANGE_PAYMENT_METHOD_MISSING');
+  }
+
+  async openAddCardForPlanChange(): Promise<void> {
+    await this.openAddCard();
+    if (this.cardSetupOpen()) {
+      this.useCardForRenewals.set(true);
+    }
   }
 
   canConfirmPlanChange(): boolean {
     const sub = this.subscription();
     const newPlan = this.selectedPlan();
     if (!sub || !newPlan) return false;
-    if (this.planChangeInFlight || this.isLoading() || this.isProcessingPayment()) return false;
+    if (
+      this.planChangeInFlight ||
+      this.isLoading() ||
+      this.isProcessingPayment() ||
+      this.planChangePreviewLoading() ||
+      this.couponLoading()
+    ) {
+      return false;
+    }
+    if (this.paymentActive() || this.clientSecret() || this.pendingSetupIntentId()) return false;
     if (this.planChangeUnverified()) return false;
     if (this.isCurrentPlan(newPlan) || this.isPendingPlan(newPlan)) return false;
+    if (!this.hasUsablePlanChangePaymentMethod()) return false;
+    if (this.hasUnappliedCouponInput()) return false;
+    if (
+      !this.isPlanChangePromoSupported() &&
+      (this.couponCode().trim().length > 0 || this.promoResult()?.valid)
+    ) {
+      return false;
+    }
+    if (this.isUpgradeBlockedByUnknownAmount()) return false;
     return true;
   }
 
   async confirmChangePlan(): Promise<void> {
-    if (!this.canConfirmPlanChange()) return;
     const sub = this.subscription();
     const newPlan = this.selectedPlan();
     if (!sub || !newPlan) return;
+    if (
+      this.planChangeInFlight ||
+      this.isLoading() ||
+      this.isProcessingPayment() ||
+      this.planChangePreviewLoading() ||
+      this.couponLoading()
+    ) {
+      return;
+    }
+    if (this.paymentActive() || this.clientSecret() || this.pendingSetupIntentId()) return;
+    if (this.planChangeUnverified()) return;
+    if (this.isCurrentPlan(newPlan) || this.isPendingPlan(newPlan)) return;
+
+    if (this.hasSubscriptionChangedSinceReview()) {
+      this.captureReviewSubscriptionSnapshot(sub, newPlan.id);
+      const appliedPromo =
+        this.isPlanChangePromoSupported() && this.promoResult()?.valid
+          ? (this.couponCode().trim() || this.promoResult()?.name || null)
+          : null;
+      void this.refreshPlanChangePreview(newPlan, appliedPromo);
+      this.setTranslatedError('PORTAL.BILLING.ERROR_SUBSCRIPTION_STATE_CHANGED');
+      return;
+    }
+
+    const pmState = this.getPlanChangePaymentMethodState();
+    if (pmState === 'missing') {
+      this.setTranslatedError('PORTAL.BILLING.ERROR_PLAN_CHANGE_PAYMENT_METHOD_REQUIRED');
+      return;
+    }
+    if (pmState === 'stale') {
+      this.setTranslatedError('PORTAL.BILLING.ERROR_PLAN_CHANGE_STALE_PAYMENT_METHOD');
+      return;
+    }
+
+    if (
+      !this.isPlanChangePromoSupported() &&
+      (this.couponCode().trim().length > 0 || this.promoResult()?.valid)
+    ) {
+      this.setTranslatedError('PORTAL.BILLING.ERROR_PLAN_CHANGE_PROMO_UNSUPPORTED');
+      return;
+    }
+
+    if (this.hasUnappliedCouponInput()) {
+      this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_UNAPPLIED_HINT'));
+      this.setTranslatedError('PORTAL.BILLING.COUPON_UNAPPLIED_HINT');
+      return;
+    }
 
     const isUpgrade = newPlan.amount > (sub.plan.amount ?? 0);
+    const appliedPromoCode =
+      this.isPlanChangePromoSupported() && this.promoResult()?.valid
+        ? (this.couponCode().trim() || this.promoResult()?.name || null)
+        : null;
+
+    if (
+      isUpgrade &&
+      typeof this.stripeService.previewSubscriptionPlanChange === 'function' &&
+      (!this.planChangePreview() || this.reviewTargetPriceId() !== newPlan.id)
+    ) {
+      await this.refreshPlanChangePreview(newPlan, appliedPromoCode);
+    }
+
+    if (this.isUpgradeBlockedByUnknownAmount()) {
+      this.setTranslatedError('PORTAL.BILLING.ERROR_UPGRADE_AMOUNT_UNKNOWN');
+      return;
+    }
 
     if (!isUpgrade && !this.bypassDowngradeCheck) {
       const activePosts = this.postsUsed();
@@ -3542,19 +4320,73 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.pendingPlanChangeTarget.set(targetContext);
 
     try {
-      const result = await this.stripeService.changeSubscriptionPlan(
-        sub.subscriptionId,
-        sub.subscriptionItemId,
-        newPlan.id,
-        isUpgrade,
-        newPlan.name,
-        sub.currentPeriodStart,
-        sub.currentPeriodEnd,
-        sub.plan.priceId,
+      const effectivePreview = this.getEffectivePlanChangePreview(newPlan, sub);
+      const verifiedPm = this.getVerifiedPlanChangePaymentMethod();
+      const shouldPassOptions = Boolean(
+        this.isPlanChangePromoSupported() &&
+          (appliedPromoCode || effectivePreview?.promoCodeId || this.promoResult()?.promoCodeId)
       );
+
+      const result = shouldPassOptions
+        ? await this.stripeService.changeSubscriptionPlan(
+            sub.subscriptionId,
+            sub.subscriptionItemId,
+            newPlan.id,
+            isUpgrade,
+            newPlan.name,
+            sub.currentPeriodStart,
+            sub.currentPeriodEnd,
+            sub.plan.priceId,
+            {
+              promotionCode: appliedPromoCode,
+              promotionCodeId:
+                effectivePreview?.promoCodeId ?? this.promoResult()?.promoCodeId ?? null,
+              approvedAmountDue: effectivePreview?.verified ? effectivePreview.amountDueToday : null,
+              approvedCurrency: effectivePreview?.currency ?? newPlan.currency,
+              paymentMethodId: verifiedPm?.id ?? null,
+            },
+          )
+        : await this.stripeService.changeSubscriptionPlan(
+            sub.subscriptionId,
+            sub.subscriptionItemId,
+            newPlan.id,
+            isUpgrade,
+            newPlan.name,
+            sub.currentPeriodStart,
+            sub.currentPeriodEnd,
+            sub.plan.priceId,
+          );
 
       const status = result?.status;
       if (status === 'requires_action') {
+        if (
+          verifiedPm?.id &&
+          result?.clientSecret &&
+          result.clientSecret.startsWith('pi_') &&
+          result.clientSecret.includes('_secret_') &&
+          typeof this.stripeService.confirmWithSavedMethod === 'function'
+        ) {
+          const authRes = await this.stripeService.confirmWithSavedMethod(
+            result.clientSecret,
+            verifiedPm.id,
+          );
+          if (authRes?.error) {
+            this.pendingPlanChangeTarget.set(null);
+            this.activeErrorPayload.set(null);
+            this.errorMessage.set(
+              this.errorService.toCustomerMessage(authRes.error, 'save') ||
+                this.i18n.t('PORTAL.BILLING.ERROR_ACTION_REQUIRED')
+            );
+            return;
+          }
+          const userAfterAuth = this.authService.currentUser;
+          if (userAfterAuth?.email) {
+            await this.loadSubscription(userAfterAuth.email);
+          }
+          await this.verifyAndApplyPlanChange(targetContext);
+          return;
+        }
+
         this.pendingPlanChangeTarget.set(null);
         if (result.message) {
           this.activeErrorPayload.set(null);
@@ -3591,6 +4423,19 @@ export class BillingComponent implements OnInit, OnDestroy {
 
       await this.verifyAndApplyPlanChange(targetContext);
     } catch (err: any) {
+      const isTimeoutOrNetwork =
+        /timeout|network|failed to fetch|abort/i.test(String(err?.message ?? err ?? ''));
+      const user = this.authService.currentUser;
+      if (isTimeoutOrNetwork && user?.email) {
+        await this.loadSubscription(user.email);
+        const reconciled = await this.verifyAndApplyPlanChange(targetContext);
+        if (reconciled) {
+          return;
+        }
+        this.planChangeUnverified.set(true);
+        this.setTranslatedError('PORTAL.BILLING.ERROR_PLAN_CHANGE_UNVERIFIED');
+        return;
+      }
       this.pendingPlanChangeTarget.set(null);
       this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'save'));

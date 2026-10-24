@@ -11,6 +11,8 @@ export interface RuntimeConfig {
   stripeCreateSubscriptionFlow: string;
   stripeCreateSubscriptionFromSetupFlow: string;
   stripeChangeSubscriptionFlow: string;
+  stripePreviewPlanChangeFlow: string;
+  stripePlanChangePromoEnabled: boolean;
   stripeCancelSubscriptionFlow: string;
   stripeReleaseScheduleFlow: string;
   stripeGetPaymentMethodsFlow: string;
@@ -90,6 +92,10 @@ function buildInitialConfig(overrides: Record<string, any> = {}): RuntimeConfig 
       '',
     stripeChangeSubscriptionFlow:
       overrides['stripeChangeSubscriptionFlow'] || environment.STRIPE_CHANGE_SUBSCRIPTION_FLOW || '',
+    stripePreviewPlanChangeFlow:
+      overrides['stripePreviewPlanChangeFlow'] ?? ((environment as any).STRIPE_PREVIEW_PLAN_CHANGE_FLOW || ''),
+    stripePlanChangePromoEnabled:
+      overrides['stripePlanChangePromoEnabled'] ?? Boolean((environment as any).STRIPE_PLAN_CHANGE_PROMO_ENABLED),
     stripeCancelSubscriptionFlow:
       overrides['stripeCancelSubscriptionFlow'] || environment.STRIPE_CANCEL_SUBSCRIPTION_FLOW || '',
     stripeReleaseScheduleFlow:
@@ -198,6 +204,12 @@ export const runtimeConfig = {
   },
   get stripeChangeSubscriptionFlow(): string {
     return currentConfig.stripeChangeSubscriptionFlow;
+  },
+  get stripePreviewPlanChangeFlow(): string {
+    return currentConfig.stripePreviewPlanChangeFlow;
+  },
+  get stripePlanChangePromoEnabled(): boolean {
+    return currentConfig.stripePlanChangePromoEnabled;
   },
   get stripeCancelSubscriptionFlow(): string {
     return currentConfig.stripeCancelSubscriptionFlow;
