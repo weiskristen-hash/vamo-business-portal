@@ -204,6 +204,13 @@ export interface BillingHistoryItem {
   id: string;
   type: 'subscription' | 'plan_change' | 'addon' | 'invoice';
   label: string;
+  /**
+   * Invoice/receipt amount returned by `STRIPE_GET_BILLING_HISTORY_FLOW`
+   * (`f8be3b19-62c9-4d0d-91ca-701bdaeaac7e`) in major currency units (e.g. `59` for `$59.00`,
+   * `31` for `$31.00`, `30` for `$30.00`, `23` for `$23.00`, `0` for `$0.00`, `29.5` for `$29.50`).
+   * Unlike `StripePlan.amount` and `StripeSubscription.plan.amount` (which use minor units / cents),
+   * Directus already divides billing-history amounts by 100 before returning them.
+   */
   amount: number;
   currency: string;
   date: number; // unix timestamp
@@ -2983,13 +2990,33 @@ export class StripeService {
     await this.flowPost(flowId, { scheduleId });
   }
 
+  /**
+   * Fetches billing-history items from `STRIPE_GET_BILLING_HISTORY_FLOW`
+   * (`f8be3b19-62c9-4d0d-91ca-701bdaeaac7e`).
+   *
+   * Note on units: the Directus Flow already converts Stripe minor-unit invoice/payment
+   * amounts into major currency units (e.g. `59` for `$59.00`). Items are returned in raw
+   * major units and must be formatted via `formatBillingHistoryAmount()` so they are not
+   * divided by 100 a second time.
+   */
   async getBillingHistory(): Promise<BillingHistoryItem[]> {
     const flowId = runtimeConfig.stripeGetBillingHistoryFlow;
     if (!flowId) {
       return [];
     }
     const res = await this.flowPost(flowId, {});
-    return res?.history ?? [];
+    const history = Array.isArray(res?.history) ? res.history : [];
+    return history.map((item: BillingHistoryItem) => {
+      const numericAmount = typeof item.amount === 'number' ? item.amount : Number(item.amount);
+      return {
+        ...item,
+        amount: Number.isFinite(numericAmount)
+          ? Object.is(numericAmount, -0)
+            ? 0
+            : numericAmount
+          : 0,
+      };
+    });
   }
 
   async getSavedPaymentMethods(): Promise<SavedPaymentMethod[]> {
@@ -3350,6 +3377,35 @@ export class StripeService {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(safeAmount / 100);
+  }
+
+  /**
+   * Formats a billing-history receipt/invoice amount returned by
+   * `STRIPE_GET_BILLING_HISTORY_FLOW` (`f8be3b19-62c9-4d0d-91ca-701bdaeaac7e`).
+   *
+   * Normalization strategy (dedicated billing-history formatter):
+   * Unlike `StripePlan.amount`, `StripeSubscription.plan.amount`, and checkout preview
+   * amounts (which are in minor currency units / cents), `STRIPE_GET_BILLING_HISTORY_FLOW`
+   * already divides Stripe's minor-unit invoice/payment amounts by 100 and returns
+   * `history[].amount` in major currency units (e.g. `59` for `$59.00`, `31` for `$31.00`,
+   * `30` for `$30.00`, `23` for `$23.00`, `0` for `$0.00`, `29.5` for `$29.50`, `-23` for `-$23.00`).
+   *
+   * Therefore, this formatter does NOT divide `amount` by 100 a second time and always
+   * formats major-unit receipt amounts to two decimal places.
+   */
+  formatBillingHistoryAmount(amount: number, currency: string): string {
+    const numericAmount = typeof amount === 'number' ? amount : Number(amount);
+    const safeMajorAmount = Number.isFinite(numericAmount)
+      ? Object.is(numericAmount, -0)
+        ? 0
+        : numericAmount
+      : 0;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: (currency || 'usd').toUpperCase(),
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(safeMajorAmount);
   }
 
   cleanup(): void {

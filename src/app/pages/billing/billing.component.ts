@@ -810,7 +810,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               <tr *ngFor="let item of billingHistory()">
                 <td class="font-mono">{{ formatDate(item.date) }}</td>
                 <td>{{ item.label }}</td>
-                <td class="font-mono">{{ formatPrice(item.amount, item.currency) }}</td>
+                <td class="font-mono">{{ formatBillingHistoryAmount(item.amount, item.currency) }}</td>
                 <td>
                   <span
                     class="badge"
@@ -4211,6 +4211,30 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   formatPrice(amount: number, currency: string): string {
     return this.stripeService.formatPrice(amount, currency);
+  }
+
+  /**
+   * Formats a billing-history receipt/invoice amount from `STRIPE_GET_BILLING_HISTORY_FLOW`.
+   * Because the Directus Flow returns `history[].amount` in major currency units (dollars),
+   * this delegates to `StripeService.formatBillingHistoryAmount()` so receipt amounts are
+   * formatted to two decimal places without dividing by 100 a second time.
+   */
+  formatBillingHistoryAmount(amount: number, currency: string): string {
+    if (typeof this.stripeService.formatBillingHistoryAmount === 'function') {
+      return this.stripeService.formatBillingHistoryAmount(amount, currency);
+    }
+    const numericAmount = typeof amount === 'number' ? amount : Number(amount);
+    const safeMajorAmount = Number.isFinite(numericAmount)
+      ? Object.is(numericAmount, -0)
+        ? 0
+        : numericAmount
+      : 0;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: (currency || 'usd').toUpperCase(),
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(safeMajorAmount);
   }
 
   formatDate(timestamp: number): string {
