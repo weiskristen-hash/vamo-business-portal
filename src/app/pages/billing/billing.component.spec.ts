@@ -111,7 +111,7 @@ describe('BillingComponent', () => {
       id: 'in_1',
       type: 'subscription',
       label: 'Basic Plan Monthly Renewal',
-      amount: 4900,
+      amount: 49,
       currency: 'usd',
       date: 1700000000,
       status: 'paid',
@@ -244,7 +244,12 @@ describe('BillingComponent', () => {
         const i18n = TestBed.inject(I18nService);
         return i18n.t(key);
       }),
-      formatPrice: vi.fn((amount: number) => `$${amount / 100}`),
+      formatPrice: vi.fn((amount: number, currency = 'usd') =>
+        StripeService.prototype.formatPrice(amount, currency)
+      ),
+      formatBillingHistoryAmount: vi.fn((amount: number, currency = 'usd') =>
+        StripeService.prototype.formatBillingHistoryAmount(amount, currency)
+      ),
       cleanup: vi.fn(),
     };
 
@@ -2273,8 +2278,136 @@ describe('BillingComponent', () => {
     });
   });
 
+  describe('Invoice & Billing Receipts Amount Formatting', () => {
+    const getRenderedReceiptAmounts = (): string[] => {
+      const rows = Array.from(
+        fixture.nativeElement.querySelectorAll('.billing-history-section tbody tr')
+      ) as HTMLElement[];
+      return rows.map((row) => {
+        const cells = row.querySelectorAll('td');
+        return (cells[2]?.textContent ?? '').trim();
+      });
+    };
+
+    it('renders staging receipt amounts ($59.00, $31.00, $30.00, $23.00) with exact two-decimal USD formatting instead of dividing by 100 twice ($0.59, $0.31, $0.30, $0.23)', async () => {
+      stripeServiceSpy.getBillingHistory.mockResolvedValueOnce([
+        {
+          id: 'in_59',
+          type: 'subscription',
+          label: 'Basic Plan Subscription',
+          amount: 59,
+          currency: 'usd',
+          date: 1700000000,
+          status: 'paid',
+          invoice_pdf: 'https://stripe.com/in_59.pdf',
+          hosted_invoice_url: 'https://stripe.com/in_59',
+        },
+        {
+          id: 'in_31',
+          type: 'subscription',
+          label: 'Starter Plan Subscription',
+          amount: 31,
+          currency: 'usd',
+          date: 1700000100,
+          status: 'paid',
+          invoice_pdf: null,
+          hosted_invoice_url: 'https://stripe.com/in_31',
+        },
+        {
+          id: 'in_30',
+          type: 'subscription',
+          label: 'Discounted Subscription',
+          amount: 30,
+          currency: 'usd',
+          date: 1700000200,
+          status: 'paid',
+          invoice_pdf: null,
+          hosted_invoice_url: 'https://stripe.com/in_30',
+        },
+        {
+          id: 'in_23',
+          type: 'addon',
+          label: 'Single Post Add-On',
+          amount: 23,
+          currency: 'usd',
+          date: 1700000300,
+          status: 'paid',
+          invoice_pdf: null,
+          hosted_invoice_url: 'https://stripe.com/in_23',
+        },
+      ]);
+
+      await component.loadBillingHistory();
+      fixture.detectChanges();
+
+      const amounts = getRenderedReceiptAmounts();
+      expect(amounts).toEqual(['$59.00', '$31.00', '$30.00', '$23.00']);
+      expect(amounts).not.toContain('$0.59');
+      expect(amounts).not.toContain('$0.31');
+      expect(amounts).not.toContain('$0.30');
+      expect(amounts).not.toContain('$0.23');
+    });
+
+    it('renders $0.00 invoices, fractional-dollar receipts, and negative/refund amounts accurately in the Invoice & Billing Receipts table', async () => {
+      stripeServiceSpy.getBillingHistory.mockResolvedValueOnce([
+        {
+          id: 'in_zero',
+          type: 'subscription',
+          label: '100% Promo Invoice',
+          amount: 0,
+          currency: 'usd',
+          date: 1700000400,
+          status: 'paid',
+          invoice_pdf: null,
+          hosted_invoice_url: 'https://stripe.com/in_zero',
+        },
+        {
+          id: 'in_fractional',
+          type: 'plan_change',
+          label: 'Prorated Plan Upgrade',
+          amount: 29.5,
+          currency: 'usd',
+          date: 1700000500,
+          status: 'paid',
+          invoice_pdf: null,
+          hosted_invoice_url: 'https://stripe.com/in_fractional',
+        },
+        {
+          id: 'in_refund',
+          type: 'invoice',
+          label: 'Credit Note / Refund',
+          amount: -23,
+          currency: 'usd',
+          date: 1700000600,
+          status: 'paid',
+          invoice_pdf: null,
+          hosted_invoice_url: null,
+        },
+      ]);
+
+      await component.loadBillingHistory();
+      fixture.detectChanges();
+
+      expect(getRenderedReceiptAmounts()).toEqual(['$0.00', '$29.50', '-$23.00']);
+    });
+
+    it('preserves subscription plan card price formatting (minor units) and checkout calculations while formatting receipts in major units', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // Plan prices remain in minor units (2900 -> $29, 4900 -> $49, 8900 -> $89)
+      expect(component.formatPrice(2900, 'usd')).toBe('$29');
+      expect(component.formatPrice(4900, 'usd')).toBe('$49');
+      expect(component.formatPrice(5900, 'usd')).toBe('$59');
+      expect(component.formatPrice(8900, 'usd')).toBe('$89');
+
+      // Checkout exact price formatting remains in minor units (5900 -> $59.00)
+      expect(component.formatExactPrice(5900, 'usd')).toBe('$59.00');
+      expect(component.formatExactPrice(0, 'usd')).toBe('$0.00');
+
+      // Default mockHistory item (amount: 49 in major units) renders as $49.00 in the table
+      expect(getRenderedReceiptAmounts()).toEqual(['$49.00']);
+    });
+  });
+
 });
-
-
-
-

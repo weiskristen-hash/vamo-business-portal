@@ -1709,8 +1709,132 @@ describe('StripeService', () => {
       expect(flowSpy).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('Billing History & Receipt Amount Formatting (Directus major-unit contract)', () => {
+    it('returns major-unit billing history items from STRIPE_GET_BILLING_HISTORY_FLOW without dividing by 100 a second time', async () => {
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        history: [
+          {
+            id: 'in_59',
+            type: 'subscription',
+            label: 'Basic Plan',
+            amount: 59,
+            currency: 'usd',
+            date: 1700000000,
+            status: 'paid',
+            invoice_pdf: 'https://stripe.com/in_59.pdf',
+            hosted_invoice_url: 'https://stripe.com/in_59',
+          },
+          {
+            id: 'in_31',
+            type: 'subscription',
+            label: 'Starter Plan',
+            amount: 31,
+            currency: 'usd',
+            date: 1700000100,
+            status: 'paid',
+            invoice_pdf: null,
+            hosted_invoice_url: 'https://stripe.com/in_31',
+          },
+          {
+            id: 'in_30',
+            type: 'subscription',
+            label: 'Starter Plan Promo',
+            amount: 30,
+            currency: 'usd',
+            date: 1700000200,
+            status: 'paid',
+            invoice_pdf: null,
+            hosted_invoice_url: 'https://stripe.com/in_30',
+          },
+          {
+            id: 'in_23',
+            type: 'addon',
+            label: 'Single Post Add-On',
+            amount: 23,
+            currency: 'usd',
+            date: 1700000300,
+            status: 'paid',
+            invoice_pdf: null,
+            hosted_invoice_url: 'https://stripe.com/in_23',
+          },
+        ],
+      });
+
+      const history = await service.getBillingHistory();
+      expect(history.map((item) => item.amount)).toEqual([59, 31, 30, 23]);
+      expect(history.map((item) => service.formatBillingHistoryAmount(item.amount, item.currency))).toEqual([
+        '$59.00',
+        '$31.00',
+        '$30.00',
+        '$23.00',
+      ]);
+    });
+
+    it('1. formats a $59.00 receipt correctly (not $0.59)', () => {
+      expect(service.formatBillingHistoryAmount(59, 'usd')).toBe('$59.00');
+    });
+
+    it('2. formats a $31.00 receipt correctly (not $0.31)', () => {
+      expect(service.formatBillingHistoryAmount(31, 'usd')).toBe('$31.00');
+    });
+
+    it('3. formats a $30.00 receipt correctly (not $0.30)', () => {
+      expect(service.formatBillingHistoryAmount(30, 'usd')).toBe('$30.00');
+    });
+
+    it('4. formats a $23.00 receipt correctly (not $0.23)', () => {
+      expect(service.formatBillingHistoryAmount(23, 'usd')).toBe('$23.00');
+    });
+
+    it('5. formats a $0.00 invoice correctly', () => {
+      expect(service.formatBillingHistoryAmount(0, 'usd')).toBe('$0.00');
+      expect(service.formatBillingHistoryAmount(-0, 'usd')).toBe('$0.00');
+    });
+
+    it('6. formats fractional-dollar receipt amounts accurately without magnitude heuristics', () => {
+      expect(service.formatBillingHistoryAmount(29.5, 'usd')).toBe('$29.50');
+      expect(service.formatBillingHistoryAmount(14.75, 'usd')).toBe('$14.75');
+      expect(service.formatBillingHistoryAmount(0.5, 'usd')).toBe('$0.50');
+      expect(service.formatBillingHistoryAmount(1, 'usd')).toBe('$1.00');
+      expect(service.formatBillingHistoryAmount(99, 'usd')).toBe('$99.00');
+    });
+
+    it('7. formats negative / refund amounts safely', () => {
+      expect(service.formatBillingHistoryAmount(-23, 'usd')).toBe('-$23.00');
+      expect(service.formatBillingHistoryAmount(-14.75, 'usd')).toBe('-$14.75');
+    });
+
+    it('8. always formats USD billing-history amounts to two decimal places', () => {
+      expect(service.formatBillingHistoryAmount(59, 'USD')).toBe('$59.00');
+      expect(service.formatBillingHistoryAmount(31, 'usd')).toBe('$31.00');
+      expect(service.formatBillingHistoryAmount(30, '')).toBe('$30.00');
+      expect(service.formatBillingHistoryAmount(0, 'usd')).toBe('$0.00');
+    });
+
+    it('9. preserves minor-unit subscription plan price formatting in formatPrice()', () => {
+      expect(service.formatPrice(2900, 'usd')).toBe('$29');
+      expect(service.formatPrice(4900, 'usd')).toBe('$49');
+      expect(service.formatPrice(5900, 'usd')).toBe('$59');
+      expect(service.formatPrice(8900, 'usd')).toBe('$89');
+    });
+
+    it('10. preserves minor-unit checkout calculations and formatExactPrice()', async () => {
+      expect(service.formatExactPrice(5900, 'usd')).toBe('$59.00');
+      expect(service.formatExactPrice(3100, 'usd')).toBe('$31.00');
+      expect(service.formatExactPrice(0, 'usd')).toBe('$0.00');
+
+      const preview = await service.previewSubscriptionCheckout({
+        priceId: 'price_basic_59',
+        planAmount: 5900,
+        planCurrency: 'usd',
+        planInterval: 'month',
+        planName: 'Basic Plan',
+        customerEmail: 'business@example.com',
+      });
+      expect(preview.subtotal).toBe(5900);
+      expect(preview.amountDueToday).toBe(5900);
+      expect(service.formatExactPrice(preview.amountDueToday, preview.currency)).toBe('$59.00');
+    });
+  });
 });
-
-
-
-
