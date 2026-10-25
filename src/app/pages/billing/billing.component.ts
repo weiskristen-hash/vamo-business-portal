@@ -533,6 +533,21 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               </span>
             </div>
 
+            <div
+              *ngIf="isSelectedPlanUpgrade(selPlan, sub) && getEffectivePlanChangePreview(selPlan, sub)?.verified"
+              class="summary-row"
+            >
+              <span class="summary-label">{{ 'PORTAL.BILLING.REVIEW_PRORATION_ADJUSTMENT' | translate }}</span>
+              <span class="summary-value" data-testid="plan-change-proration-adjustment">
+                {{
+                  formatExactPrice(
+                    getEffectivePlanChangePreview(selPlan, sub)!.prorationDelta ?? getEffectivePlanChangePreview(selPlan, sub)!.subtotal,
+                    getEffectivePlanChangePreview(selPlan, sub)!.currency
+                  )
+                }}
+              </span>
+            </div>
+
             <div class="summary-row">
               <span class="summary-label">{{ 'PORTAL.BILLING.PROMO_TAG' | translate }}</span>
               <span class="summary-value summary-promo-value" data-testid="plan-change-promo-disclosure">
@@ -552,12 +567,24 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             </div>
 
             <div
-              *ngIf="isPlanChangePromoSupported() && getEffectivePlanChangePreview(selPlan, sub)?.verified && (getEffectivePlanChangePreview(selPlan, sub)?.discountAmount ?? 0) > 0"
+              *ngIf="getEffectivePlanChangePreview(selPlan, sub)?.verified && (getEffectivePlanChangePreview(selPlan, sub)?.discountAmount ?? 0) > 0"
               class="summary-row summary-row--discount"
             >
-              <span class="summary-label">{{ 'PORTAL.BILLING.SUMMARY_DISCOUNT' | translate }}</span>
+              <span class="summary-label">
+                {{ (isPlanChangePromoSupported() ? 'PORTAL.BILLING.SUMMARY_DISCOUNT' : 'PORTAL.BILLING.REVIEW_EXISTING_DISCOUNT') | translate }}
+              </span>
               <span class="summary-value summary-discount-amount" data-testid="plan-change-discount-amount">
                 -{{ formatExactPrice(getEffectivePlanChangePreview(selPlan, sub)!.discountAmount, getEffectivePlanChangePreview(selPlan, sub)!.currency) }}
+              </span>
+            </div>
+
+            <div
+              *ngIf="getEffectivePlanChangePreview(selPlan, sub)?.verified && (getEffectivePlanChangePreview(selPlan, sub)?.tax ?? 0) > 0"
+              class="summary-row summary-row--tax"
+            >
+              <span class="summary-label">{{ 'PORTAL.BILLING.SUMMARY_TAX' | translate }}</span>
+              <span class="summary-value" data-testid="plan-change-tax-amount">
+                {{ formatExactPrice(getEffectivePlanChangePreview(selPlan, sub)!.tax, getEffectivePlanChangePreview(selPlan, sub)!.currency) }}
               </span>
             </div>
 
@@ -621,11 +648,37 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             role="alert"
           >
             <span class="alert-icon">⚠️</span>
-            <span class="alert-text">{{ 'PORTAL.BILLING.ERROR_UPGRADE_AMOUNT_UNKNOWN' | translate }}</span>
+            <span class="alert-text">
+              {{
+                (isPlanChangePreviewExpired(selPlan, sub)
+                  ? 'PORTAL.BILLING.ERROR_UPGRADE_PREVIEW_EXPIRED'
+                  : 'PORTAL.BILLING.ERROR_UPGRADE_AMOUNT_UNKNOWN') | translate
+              }}
+            </span>
+          </div>
+
+          <div
+            *ngIf="isUpgradeBlockedByChargeEnforcement(selPlan, sub)"
+            class="alert alert-warning upgrade-charge-enforcement-alert"
+            data-testid="upgrade-charge-enforcement-alert"
+            role="alert"
+          >
+            <span class="alert-icon">⚠️</span>
+            <span class="alert-text">
+              {{
+                'PORTAL.BILLING.ERROR_UPGRADE_CHARGE_ENFORCEMENT_REQUIRED'
+                  | translate: {
+                      amount: formatExactPrice(
+                        getEffectivePlanChangePreview(selPlan, sub)?.amountDueToday ?? 0,
+                        getEffectivePlanChangePreview(selPlan, sub)?.currency || selPlan.currency
+                      )
+                    }
+              }}
+            </span>
           </div>
         </div>
 
-        <!-- Payment Method Required / Stale Alert for Plan Changes -->
+        <!-- Payment Method Required / Stale / Unverified Alert for Plan Changes -->
         <div
           *ngIf="subscription() !== null && !savedMethodsLoading() && !hasUsablePlanChangePaymentMethod()"
           class="alert alert-warning plan-change-payment-required-box"
@@ -637,7 +690,9 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             {{
               (getPlanChangePaymentMethodState() === 'stale'
                 ? 'PORTAL.BILLING.ERROR_PLAN_CHANGE_STALE_PAYMENT_METHOD'
-                : 'PORTAL.BILLING.ERROR_PLAN_CHANGE_PAYMENT_METHOD_REQUIRED') | translate
+                : getPlanChangePaymentMethodState() === 'unverified'
+                  ? 'PORTAL.BILLING.ERROR_PLAN_CHANGE_PAYMENT_VERIFICATION_UNAVAILABLE'
+                  : 'PORTAL.BILLING.ERROR_PLAN_CHANGE_PAYMENT_METHOD_REQUIRED') | translate
             }}
           </span>
           <button
@@ -2433,6 +2488,8 @@ export class BillingComponent implements OnInit, OnDestroy {
   savedMethodsError = signal(false);
   defaultPaymentMethodId = signal<string | null>(null);
   defaultPaymentMethodVerified = signal(false);
+  defaultPaymentMethodSource = signal<'subscription' | 'customer' | null>(null);
+  paymentMethodVerificationFailed = signal(false);
   selectedSavedMethod = signal<SavedPaymentMethod | null>(null);
   deletingMethodId = signal<string | null>(null);
   settingRenewalCardId = signal<string | null>(null);
@@ -2665,33 +2722,32 @@ export class BillingComponent implements OnInit, OnDestroy {
   async loadSavedMethods(): Promise<void> {
     this.savedMethodsLoading.set(true);
     this.savedMethodsError.set(false);
+    this.paymentMethodVerificationFailed.set(false);
     try {
       if (typeof this.stripeService.loadSavedPaymentMethods === 'function') {
         const result = await this.stripeService.loadSavedPaymentMethods();
         this.savedMethods.set(result.paymentMethods);
+        this.defaultPaymentMethodSource.set(result.defaultPaymentMethodSource ?? null);
         if (result.defaultVerified) {
           this.defaultPaymentMethodId.set(result.defaultPaymentMethodId);
           this.defaultPaymentMethodVerified.set(true);
+          this.paymentMethodVerificationFailed.set(false);
         } else {
-          const currentVerifiedId = this.defaultPaymentMethodVerified()
-            ? this.defaultPaymentMethodId()
-            : null;
-          if (currentVerifiedId && result.paymentMethods.some((m) => m.id === currentVerifiedId)) {
-            this.defaultPaymentMethodId.set(currentVerifiedId);
-            this.defaultPaymentMethodVerified.set(true);
-          } else {
-            this.defaultPaymentMethodId.set(null);
-            this.defaultPaymentMethodVerified.set(false);
-          }
+          this.defaultPaymentMethodId.set(null);
+          this.defaultPaymentMethodVerified.set(false);
+          this.defaultPaymentMethodSource.set(null);
+          this.paymentMethodVerificationFailed.set(true);
         }
       } else {
         const methods = await this.stripeService.getSavedPaymentMethods();
         const itemDefault = methods.find((m) => m.isRenewalCard === true);
         const hasVerifiedFlag = methods.some((m) => typeof m.isRenewalCard === 'boolean');
         this.savedMethods.set(methods);
+        this.defaultPaymentMethodSource.set(null);
         if (hasVerifiedFlag) {
           this.defaultPaymentMethodId.set(itemDefault?.id ?? null);
           this.defaultPaymentMethodVerified.set(true);
+          this.paymentMethodVerificationFailed.set(false);
         } else {
           this.defaultPaymentMethodId.set(null);
           this.defaultPaymentMethodVerified.set(false);
@@ -2699,9 +2755,11 @@ export class BillingComponent implements OnInit, OnDestroy {
       }
     } catch {
       this.savedMethodsError.set(true);
+      this.paymentMethodVerificationFailed.set(true);
       this.savedMethods.set([]);
       this.defaultPaymentMethodId.set(null);
       this.defaultPaymentMethodVerified.set(false);
+      this.defaultPaymentMethodSource.set(null);
     } finally {
       this.savedMethodsLoading.set(false);
     }
@@ -3949,8 +4007,37 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (!plan || !sub) return null;
     const isUpgrade = Boolean(plan.amount > (sub.plan?.amount ?? 0));
     const currentPreview = this.planChangePreview();
-    if (currentPreview && this.reviewTargetPriceId() === plan.id && currentPreview.isUpgrade === isUpgrade) {
-      return currentPreview;
+    if (
+      currentPreview &&
+      this.reviewTargetPriceId() === plan.id &&
+      currentPreview.isUpgrade === isUpgrade
+    ) {
+      const targetPriceOnPreview = currentPreview.targetPriceId ?? currentPreview.newPriceId ?? null;
+      const matchesTarget = !targetPriceOnPreview || targetPriceOnPreview === plan.id;
+      const matchesSub =
+        !currentPreview.subscriptionId || currentPreview.subscriptionId === sub.subscriptionId;
+      const matchesItem =
+        !currentPreview.subscriptionItemId ||
+        currentPreview.subscriptionItemId === sub.subscriptionItemId;
+      const matchesCurrentPrice =
+        !currentPreview.currentPriceId ||
+        currentPreview.currentPriceId === (sub.plan?.priceId ?? '');
+      const matchesPeriodEnd =
+        typeof currentPreview.currentPeriodEnd !== 'number' ||
+        currentPreview.currentPeriodEnd === sub.currentPeriodEnd;
+
+      if (matchesTarget && matchesSub && matchesItem && matchesCurrentPrice && matchesPeriodEnd) {
+        if (typeof currentPreview.expiresAt === 'number' && currentPreview.expiresAt <= Date.now()) {
+          return {
+            ...currentPreview,
+            verified: false,
+            verificationStatus: 'expired',
+            amountDueToday: null,
+            errorCode: 'PREVIEW_EXPIRED',
+          };
+        }
+        return currentPreview;
+      }
     }
     const currency = (plan.currency || sub.plan?.currency || 'usd').toLowerCase();
     const renewalAmount = plan.amount ?? 0;
@@ -4035,6 +4122,22 @@ export class BillingComponent implements OnInit, OnDestroy {
     };
   }
 
+  isPlanChangePreviewExpired(
+    selPlan: StripePlan | null = this.selectedPlan(),
+    sub: StripeSubscription | null | undefined = this.subscription(),
+  ): boolean {
+    if (!this.isSelectedPlanUpgrade(selPlan, sub)) return false;
+    if (this.planChangePreviewLoading()) return false;
+    const preview = this.getEffectivePlanChangePreview(selPlan, sub);
+    if (!preview) return false;
+    return (
+      preview.verificationStatus === 'expired' ||
+      preview.errorCode === 'PREVIEW_EXPIRED' ||
+      preview.errorCode === 'PREVIEW_STALE_PERIOD_CHANGED' ||
+      (typeof preview.expiresAt === 'number' && preview.expiresAt <= Date.now())
+    );
+  }
+
   isUpgradeBlockedByUnknownAmount(
     selPlan: StripePlan | null = this.selectedPlan(),
     sub: StripeSubscription | null | undefined = this.subscription(),
@@ -4043,13 +4146,27 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (this.planChangePreviewLoading()) return false;
     const preview = this.getEffectivePlanChangePreview(selPlan, sub);
     if (!preview) return true;
+    const expectedCurrency = (selPlan?.currency || sub?.plan?.currency || 'usd').toLowerCase();
+    const previewCurrency = (preview.currency || expectedCurrency).toLowerCase();
     return (
       !preview.verified ||
       preview.verificationStatus !== 'verified' ||
+      previewCurrency !== expectedCurrency ||
       typeof preview.amountDueToday !== 'number' ||
       !Number.isFinite(preview.amountDueToday) ||
       preview.amountDueToday < 0
     );
+  }
+
+  isUpgradeBlockedByChargeEnforcement(
+    selPlan: StripePlan | null = this.selectedPlan(),
+    sub: StripeSubscription | null | undefined = this.subscription(),
+  ): boolean {
+    if (!this.isSelectedPlanUpgrade(selPlan, sub)) return false;
+    if (this.planChangePreviewLoading()) return false;
+    if (this.isUpgradeBlockedByUnknownAmount(selPlan, sub)) return false;
+    const preview = this.getEffectivePlanChangePreview(selPlan, sub);
+    return preview?.chargeAmountEnforcedByServer === false;
   }
 
   getPlanChangeVerificationBadgeKey(
@@ -4058,6 +4175,9 @@ export class BillingComponent implements OnInit, OnDestroy {
   ): string {
     if (this.planChangePreviewLoading()) {
       return 'PORTAL.BILLING.VERIFICATION_BADGE_VERIFYING';
+    }
+    if (this.isPlanChangePreviewExpired(selPlan, sub)) {
+      return 'PORTAL.BILLING.VERIFICATION_BADGE_EXPIRED';
     }
     if (this.isUpgradeBlockedByUnknownAmount(selPlan, sub)) {
       return 'PORTAL.BILLING.VERIFICATION_BADGE_UNAVAILABLE';
@@ -4125,17 +4245,20 @@ export class BillingComponent implements OnInit, OnDestroy {
     return false;
   }
 
-  getPlanChangePaymentMethodState(): 'verified_card' | 'on_file' | 'missing' | 'stale' {
-    if (this.savedMethodsLoading() || this.savedMethodsError()) {
+  getPlanChangePaymentMethodState(): 'verified_card' | 'unverified' | 'missing' | 'stale' {
+    if (this.savedMethodsLoading()) {
       return 'missing';
+    }
+    if (this.savedMethodsError()) {
+      return 'unverified';
     }
     const methods = this.savedMethods();
-    if (!Array.isArray(methods) || methods.length === 0) {
-      return 'missing';
-    }
 
     if (this.defaultPaymentMethodVerified()) {
       const defaultId = this.defaultPaymentMethodId();
+      if (!Array.isArray(methods) || methods.length === 0) {
+        return defaultId ? 'stale' : 'missing';
+      }
       if (!defaultId) {
         return 'stale';
       }
@@ -4146,20 +4269,14 @@ export class BillingComponent implements OnInit, OnDestroy {
       return 'verified_card';
     }
 
-    const unverifiedDefaultId = this.defaultPaymentMethodId();
-    if (unverifiedDefaultId && !methods.some((m) => m.id === unverifiedDefaultId)) {
-      return 'stale';
+    if (!Array.isArray(methods) || methods.length === 0) {
+      return 'missing';
     }
-    const nonExpired = methods.filter((m) => !this.isPaymentMethodExpired(m));
-    if (nonExpired.length === 0) {
-      return 'stale';
-    }
-    return 'on_file';
+    return 'unverified';
   }
 
   hasUsablePlanChangePaymentMethod(): boolean {
-    const state = this.getPlanChangePaymentMethodState();
-    return state === 'verified_card' || state === 'on_file';
+    return this.getPlanChangePaymentMethodState() === 'verified_card';
   }
 
   getVerifiedPlanChangePaymentMethod(): SavedPaymentMethod | null {
@@ -4179,8 +4296,8 @@ export class BillingComponent implements OnInit, OnDestroy {
         return `${(pm.brand || 'CARD').toUpperCase()} •••• ${pm.last4}`;
       }
     }
-    if (state === 'on_file') {
-      return this.i18n.t('PORTAL.BILLING.PLAN_CHANGE_PAYMENT_METHOD_ON_FILE');
+    if (state === 'unverified') {
+      return this.i18n.t('PORTAL.BILLING.PLAN_CHANGE_PAYMENT_METHOD_UNVERIFIED');
     }
     if (state === 'stale') {
       return this.i18n.t('PORTAL.BILLING.ERROR_PLAN_CHANGE_STALE_PAYMENT_METHOD');
@@ -4220,6 +4337,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       return false;
     }
     if (this.isUpgradeBlockedByUnknownAmount()) return false;
+    if (this.isUpgradeBlockedByChargeEnforcement()) return false;
     return true;
   }
 
@@ -4260,6 +4378,10 @@ export class BillingComponent implements OnInit, OnDestroy {
       this.setTranslatedError('PORTAL.BILLING.ERROR_PLAN_CHANGE_STALE_PAYMENT_METHOD');
       return;
     }
+    if (pmState === 'unverified') {
+      this.setTranslatedError('PORTAL.BILLING.ERROR_PLAN_CHANGE_PAYMENT_VERIFICATION_UNAVAILABLE');
+      return;
+    }
 
     if (
       !this.isPlanChangePromoSupported() &&
@@ -4290,7 +4412,22 @@ export class BillingComponent implements OnInit, OnDestroy {
     }
 
     if (this.isUpgradeBlockedByUnknownAmount()) {
-      this.setTranslatedError('PORTAL.BILLING.ERROR_UPGRADE_AMOUNT_UNKNOWN');
+      if (this.isPlanChangePreviewExpired(newPlan, sub)) {
+        this.setTranslatedError('PORTAL.BILLING.ERROR_UPGRADE_PREVIEW_EXPIRED');
+      } else {
+        this.setTranslatedError('PORTAL.BILLING.ERROR_UPGRADE_AMOUNT_UNKNOWN');
+      }
+      return;
+    }
+
+    if (this.isUpgradeBlockedByChargeEnforcement(newPlan, sub)) {
+      const preview = this.getEffectivePlanChangePreview(newPlan, sub);
+      this.setTranslatedError('PORTAL.BILLING.ERROR_UPGRADE_CHARGE_ENFORCEMENT_REQUIRED', {
+        amount: this.formatExactPrice(
+          preview?.amountDueToday ?? 0,
+          preview?.currency || newPlan.currency,
+        ),
+      });
       return;
     }
 

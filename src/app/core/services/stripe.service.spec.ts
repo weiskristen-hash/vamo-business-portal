@@ -1997,5 +1997,180 @@ describe('StripeService', () => {
       expect(getSubSpy).toHaveBeenCalledWith('business@example.com');
       expect(flowSpy).toHaveBeenCalledTimes(1);
     });
+
+    it('Phase 1.1: subscription-level default card takes precedence over customer-level default card in loadSavedPaymentMethods', async () => {
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        paymentMethods: [
+          { id: 'pm_cust_1', brand: 'visa', last4: '1111', expMonth: 10, expYear: 2029 },
+          { id: 'pm_sub_2', brand: 'mastercard', last4: '2222', expMonth: 12, expYear: 2029 },
+        ],
+        customerDefaultPaymentMethodId: 'pm_cust_1',
+        subscriptionDefaultPaymentMethodId: 'pm_sub_2',
+        defaultPaymentMethodId: 'pm_sub_2',
+        defaultPaymentMethodSource: 'subscription',
+        defaultVerified: true,
+      });
+
+      const res = await service.loadSavedPaymentMethods();
+      expect(res.defaultVerified).toBe(true);
+      expect(res.defaultPaymentMethodId).toBe('pm_sub_2');
+      expect(res.defaultPaymentMethodSource).toBe('subscription');
+      expect(res.subscriptionDefaultPaymentMethodId).toBe('pm_sub_2');
+      expect(res.customerDefaultPaymentMethodId).toBe('pm_cust_1');
+      expect(res.paymentMethods.find((m) => m.id === 'pm_sub_2')?.isRenewalCard).toBe(true);
+      expect(res.paymentMethods.find((m) => m.id === 'pm_cust_1')?.isRenewalCard).toBe(false);
+    });
+
+    it('Phase 1.2: customer-level default card is used when subscription-level default is empty', async () => {
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        paymentMethods: [
+          { id: 'pm_cust_1', brand: 'visa', last4: '1111', expMonth: 10, expYear: 2029 },
+        ],
+        customerDefaultPaymentMethodId: 'pm_cust_1',
+        subscriptionDefaultPaymentMethodId: null,
+        defaultPaymentMethodId: 'pm_cust_1',
+        defaultPaymentMethodSource: 'customer',
+        defaultVerified: true,
+      });
+
+      const res = await service.loadSavedPaymentMethods();
+      expect(res.defaultVerified).toBe(true);
+      expect(res.defaultPaymentMethodId).toBe('pm_cust_1');
+      expect(res.defaultPaymentMethodSource).toBe('customer');
+      expect(res.paymentMethods[0].isRenewalCard).toBe(true);
+    });
+
+    it('Phase 1.3: saved card that is not the default is never treated as the default', async () => {
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        paymentMethods: [
+          { id: 'pm_saved_only', brand: 'visa', last4: '4242', expMonth: 10, expYear: 2029, isRenewalCard: false },
+        ],
+        customerDefaultPaymentMethodId: null,
+        subscriptionDefaultPaymentMethodId: null,
+        defaultPaymentMethodId: null,
+        defaultPaymentMethodSource: null,
+        defaultVerified: true,
+      });
+
+      const res = await service.loadSavedPaymentMethods();
+      expect(res.defaultVerified).toBe(true);
+      expect(res.defaultPaymentMethodId).toBeNull();
+      expect(res.defaultPaymentMethodSource).toBeNull();
+      expect(res.paymentMethods[0].isRenewalCard).toBe(false);
+    });
+
+    it('Phase 1.7: payment-method verification failure (defaultVerified: false or legacy unverified list) does not report a verified default card', async () => {
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        paymentMethods: [
+          { id: 'pm_unverified', brand: 'visa', last4: '4242', expMonth: 10, expYear: 2029 },
+        ],
+      });
+
+      const unverifiedLegacy = await service.loadSavedPaymentMethods();
+      expect(unverifiedLegacy.defaultVerified).toBe(false);
+      expect(unverifiedLegacy.defaultPaymentMethodId).toBeNull();
+      expect(unverifiedLegacy.defaultPaymentMethodSource).toBeNull();
+
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        paymentMethods: [],
+        defaultPaymentMethodId: null,
+        defaultVerified: false,
+        error: true,
+        code: 'PAYMENT_METHOD_VERIFICATION_UNAVAILABLE',
+      });
+
+      const failedVerification = await service.loadSavedPaymentMethods();
+      expect(failedVerification.defaultVerified).toBe(false);
+      expect(failedVerification.defaultPaymentMethodId).toBeNull();
+    });
+
+    it('Phase 2: parses authoritative Stripe invoice preview breakdown including prorationDelta, discount, tax, previewTimestamp, and chargeAmountEnforcedByServer=false', async () => {
+      vi.spyOn(runtimeConfig, 'stripePreviewPlanChangeFlow', 'get').mockReturnValue(
+        'e5f7b1d5-0a6c-4b2d-9f4e-5a8c9d2b3f64',
+      );
+      const nowSec = Math.floor(Date.now() / 1000);
+
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        verified: true,
+        customerId: 'cus_test_123',
+        subscriptionId: 'sub_123',
+        subscriptionItemId: 'si_456',
+        currentPriceId: 'price_starter_31',
+        targetPriceId: 'price_basic_59',
+        newPriceId: 'price_basic_59',
+        currency: 'usd',
+        subtotal: 1500,
+        prorationDelta: 1500,
+        discountAmount: 300,
+        tax: 120,
+        amountDueToday: 1320,
+        totalAmountDue: 1320,
+        renewalAmount: 5900,
+        renewalInterval: 'month',
+        previewTimestamp: nowSec,
+        effectiveDate: nowSec,
+        currentPeriodStart: 1700000000,
+        currentPeriodEnd: 1702500000,
+        nextBillingDate: 1702500000,
+        expiresAt: (nowSec + 300) * 1000,
+        chargeAmountEnforcedByServer: false,
+      });
+
+      const preview = await service.previewSubscriptionPlanChange(baseUpgradeRequest);
+      expect(preview.verified).toBe(true);
+      expect(preview.customerId).toBe('cus_test_123');
+      expect(preview.subscriptionId).toBe('sub_123');
+      expect(preview.subscriptionItemId).toBe('si_456');
+      expect(preview.currentPriceId).toBe('price_starter_31');
+      expect(preview.targetPriceId).toBe('price_basic_59');
+      expect(preview.prorationDelta).toBe(1500);
+      expect(preview.discountAmount).toBe(300);
+      expect(preview.tax).toBe(120);
+      expect(preview.amountDueToday).toBe(1320);
+      expect(preview.renewalAmount).toBe(5900);
+      expect(preview.chargeAmountEnforcedByServer).toBe(false);
+    });
+
+    it('Phase 2: rejects stale, mismatched, or unauthorized upgrade preview responses', async () => {
+      vi.spyOn(runtimeConfig, 'stripePreviewPlanChangeFlow', 'get').mockReturnValue(
+        'e5f7b1d5-0a6c-4b2d-9f4e-5a8c9d2b3f64',
+      );
+
+      // 1. Expired preview
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        verified: true,
+        amountDueToday: 1500,
+        subtotal: 1500,
+        currency: 'usd',
+        expiresAt: Date.now() - 10_000,
+      });
+      const expired = await service.previewSubscriptionPlanChange(baseUpgradeRequest);
+      expect(expired.verified).toBe(false);
+      expect(expired.verificationStatus).toBe('expired');
+      expect(expired.errorCode).toBe('PREVIEW_EXPIRED');
+
+      // 2. Mismatched target price
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        verified: true,
+        targetPriceId: 'price_other_99',
+        amountDueToday: 4000,
+        subtotal: 4000,
+        currency: 'usd',
+      });
+      const mismatchedTarget = await service.previewSubscriptionPlanChange(baseUpgradeRequest);
+      expect(mismatchedTarget.verified).toBe(false);
+      expect(mismatchedTarget.errorCode).toBe('TARGET_PRICE_MISMATCH');
+
+      // 3. Unauthorized or ownership mismatch from backend
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        verified: false,
+        error: true,
+        errorCode: 'SUBSCRIPTION_OWNERSHIP_MISMATCH',
+        message: 'Subscription does not belong to authenticated customer.',
+      });
+      const unauthorized = await service.previewSubscriptionPlanChange(baseUpgradeRequest);
+      expect(unauthorized.verified).toBe(false);
+      expect(unauthorized.errorCode).toBe('SUBSCRIPTION_OWNERSHIP_MISMATCH');
+    });
   });
 });

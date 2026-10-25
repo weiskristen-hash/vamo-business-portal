@@ -228,10 +228,15 @@ export interface SavedPaymentMethod {
   isRenewalCard?: boolean;
 }
 
+export type DefaultPaymentMethodSource = 'subscription' | 'customer' | null;
+
 export interface SavedPaymentMethodsResult {
   paymentMethods: SavedPaymentMethod[];
   defaultPaymentMethodId: string | null;
   defaultVerified: boolean;
+  defaultPaymentMethodSource?: DefaultPaymentMethodSource;
+  subscriptionDefaultPaymentMethodId?: string | null;
+  customerDefaultPaymentMethodId?: string | null;
 }
 
 export interface CardSetupIntentResult {
@@ -340,6 +345,7 @@ export interface PlanChangePreviewResult {
   effectiveDate: number | null;
   amountDueToday: number | null;
   subtotal: number;
+  prorationDelta?: number | null;
   discountAmount: number;
   tax: number;
   currency: string;
@@ -347,6 +353,18 @@ export interface PlanChangePreviewResult {
   renewalInterval: string;
   promoSupported: boolean;
   couponState: CouponVerificationState;
+  customerId?: string | null;
+  subscriptionId?: string | null;
+  subscriptionItemId?: string | null;
+  currentPriceId?: string | null;
+  targetPriceId?: string | null;
+  newPriceId?: string | null;
+  previewTimestamp?: number | null;
+  currentPeriodStart?: number | null;
+  currentPeriodEnd?: number | null;
+  nextBillingDate?: number | null;
+  expiresAt?: number | null;
+  chargeAmountEnforcedByServer?: boolean;
   promoCode?: string | null;
   promoCodeId?: string | null;
   promoCodeName?: string | null;
@@ -2610,6 +2628,45 @@ export class StripeService {
     }
 
     // Upgrade path: requires an authoritative proration preview from Stripe/Directus
+    const isValidSubId =
+      typeof request.subscriptionId === 'string' && /^sub_[A-Za-z0-9_]+$/.test(request.subscriptionId.trim());
+    const isValidItemId =
+      typeof request.subscriptionItemId === 'string' &&
+      /^si_[A-Za-z0-9_]+$/.test(request.subscriptionItemId.trim());
+    const isValidCurrentPrice =
+      typeof request.currentPriceId === 'string' && /^price_[A-Za-z0-9_]+$/.test(request.currentPriceId.trim());
+    const isValidNewPrice =
+      typeof request.newPriceId === 'string' &&
+      /^price_[A-Za-z0-9_]+$/.test(request.newPriceId.trim()) &&
+      request.newPriceId.trim() !== request.currentPriceId.trim();
+
+    if (!isValidSubId || !isValidItemId || !isValidCurrentPrice || !isValidNewPrice) {
+      return {
+        verified: false,
+        verificationStatus: 'unavailable',
+        isUpgrade: true,
+        timing: 'immediate',
+        effectiveDate: null,
+        amountDueToday: null,
+        subtotal: baseNewAmount,
+        prorationDelta: null,
+        discountAmount: promoPreview ? promoPreview.discountAmount : 0,
+        tax: 0,
+        currency,
+        renewalAmount: promoPreview ? (promoPreview.renewalAmount ?? baseNewAmount) : baseNewAmount,
+        renewalInterval,
+        promoSupported,
+        couponState: promoPreview ? 'verified_applied' : 'not_applied',
+        promoCode: promoPreview?.promoCode ?? cleanPromoCode,
+        promoCodeId: promoPreview?.promoCodeId ?? null,
+        promoCodeName: promoPreview?.promoCodeName ?? null,
+        couponDuration: promoPreview?.couponDuration ?? null,
+        couponDurationInMonths: promoPreview?.couponDurationInMonths ?? null,
+        errorCode: 'INVALID_PREVIEW_PARAMETERS',
+        message: 'Valid subscription, subscription item, and price identifiers are required to preview an upgrade.',
+      };
+    }
+
     const previewFlowId = (runtimeConfig.stripePreviewPlanChangeFlow || '').trim();
     if (!previewFlowId) {
       return {
@@ -2620,6 +2677,7 @@ export class StripeService {
         effectiveDate: null,
         amountDueToday: null,
         subtotal: baseNewAmount,
+        prorationDelta: null,
         discountAmount: promoPreview ? promoPreview.discountAmount : 0,
         tax: 0,
         currency,
@@ -2644,6 +2702,7 @@ export class StripeService {
         subscriptionItemId: request.subscriptionItemId,
         currentPriceId: request.currentPriceId,
         newPriceId: request.newPriceId,
+        targetPriceId: request.newPriceId,
         isUpgrade: true,
         currentPeriodStart: request.currentPeriodStart,
         currentPeriodEnd: request.currentPeriodEnd,
@@ -2662,7 +2721,12 @@ export class StripeService {
         raw;
 
       const rawAmountDue =
-        body?.amountDueToday ?? body?.amount_due ?? body?.amountDue ?? body?.total ?? null;
+        body?.amountDueToday ??
+        body?.totalAmountDue ??
+        body?.amount_due ??
+        body?.amountDue ??
+        body?.total ??
+        null;
       if (
         !body ||
         typeof body !== 'object' ||
@@ -2681,6 +2745,7 @@ export class StripeService {
           effectiveDate: null,
           amountDueToday: null,
           subtotal: baseNewAmount,
+          prorationDelta: null,
           discountAmount: promoPreview ? promoPreview.discountAmount : 0,
           tax: 0,
           currency,
@@ -2695,10 +2760,207 @@ export class StripeService {
           couponDurationInMonths: promoPreview?.couponDurationInMonths ?? null,
           errorCode:
             (typeof body?.errorCode === 'string' && body.errorCode) ||
+            (typeof body?.code === 'string' && body.code) ||
             'UPGRADE_PRORATION_PREVIEW_UNAVAILABLE',
           message:
             (typeof (body?.error ?? body?.message) === 'string' && (body?.error ?? body?.message)) ||
             'We could not verify the exact prorated charge due today with Stripe.',
+        };
+      }
+
+      const returnedSubId =
+        typeof body.subscriptionId === 'string' && body.subscriptionId.trim()
+          ? body.subscriptionId.trim()
+          : null;
+      if (returnedSubId && returnedSubId !== request.subscriptionId.trim()) {
+        return {
+          verified: false,
+          verificationStatus: 'unavailable',
+          isUpgrade: true,
+          timing: 'immediate',
+          effectiveDate: null,
+          amountDueToday: null,
+          subtotal: baseNewAmount,
+          prorationDelta: null,
+          discountAmount: 0,
+          tax: 0,
+          currency,
+          renewalAmount: baseNewAmount,
+          renewalInterval,
+          promoSupported,
+          couponState: 'not_applied',
+          errorCode: 'SUBSCRIPTION_MISMATCH',
+          message: 'Preview subscription does not match the active subscription.',
+        };
+      }
+
+      const returnedItemId =
+        typeof body.subscriptionItemId === 'string' && body.subscriptionItemId.trim()
+          ? body.subscriptionItemId.trim()
+          : null;
+      if (returnedItemId && returnedItemId !== request.subscriptionItemId.trim()) {
+        return {
+          verified: false,
+          verificationStatus: 'unavailable',
+          isUpgrade: true,
+          timing: 'immediate',
+          effectiveDate: null,
+          amountDueToday: null,
+          subtotal: baseNewAmount,
+          prorationDelta: null,
+          discountAmount: 0,
+          tax: 0,
+          currency,
+          renewalAmount: baseNewAmount,
+          renewalInterval,
+          promoSupported,
+          couponState: 'not_applied',
+          errorCode: 'SUBSCRIPTION_ITEM_MISMATCH',
+          message: 'Preview subscription item does not match the active subscription item.',
+        };
+      }
+
+      const returnedCurrentPriceId =
+        typeof body.currentPriceId === 'string' && body.currentPriceId.trim()
+          ? body.currentPriceId.trim()
+          : null;
+      if (returnedCurrentPriceId && returnedCurrentPriceId !== request.currentPriceId.trim()) {
+        return {
+          verified: false,
+          verificationStatus: 'unavailable',
+          isUpgrade: true,
+          timing: 'immediate',
+          effectiveDate: null,
+          amountDueToday: null,
+          subtotal: baseNewAmount,
+          prorationDelta: null,
+          discountAmount: 0,
+          tax: 0,
+          currency,
+          renewalAmount: baseNewAmount,
+          renewalInterval,
+          promoSupported,
+          couponState: 'not_applied',
+          errorCode: 'CONCURRENT_SUBSCRIPTION_CHANGE',
+          message: 'Your subscription plan changed since you opened this review.',
+        };
+      }
+
+      const returnedTargetPriceId =
+        typeof (body.targetPriceId ?? body.newPriceId) === 'string' &&
+        String(body.targetPriceId ?? body.newPriceId).trim()
+          ? String(body.targetPriceId ?? body.newPriceId).trim()
+          : null;
+      if (returnedTargetPriceId && returnedTargetPriceId !== request.newPriceId.trim()) {
+        return {
+          verified: false,
+          verificationStatus: 'unavailable',
+          isUpgrade: true,
+          timing: 'immediate',
+          effectiveDate: null,
+          amountDueToday: null,
+          subtotal: baseNewAmount,
+          prorationDelta: null,
+          discountAmount: 0,
+          tax: 0,
+          currency,
+          renewalAmount: baseNewAmount,
+          renewalInterval,
+          promoSupported,
+          couponState: 'not_applied',
+          errorCode: 'TARGET_PRICE_MISMATCH',
+          message: 'Preview target price does not match the selected plan.',
+        };
+      }
+
+      const returnedPeriodEnd =
+        typeof body.currentPeriodEnd === 'number' && Number.isFinite(body.currentPeriodEnd)
+          ? Math.trunc(body.currentPeriodEnd)
+          : null;
+      if (
+        returnedPeriodEnd !== null &&
+        request.currentPeriodEnd &&
+        returnedPeriodEnd !== Math.trunc(request.currentPeriodEnd)
+      ) {
+        return {
+          verified: false,
+          verificationStatus: 'expired',
+          isUpgrade: true,
+          timing: 'immediate',
+          effectiveDate: null,
+          amountDueToday: null,
+          subtotal: baseNewAmount,
+          prorationDelta: null,
+          discountAmount: 0,
+          tax: 0,
+          currency,
+          renewalAmount: baseNewAmount,
+          renewalInterval,
+          promoSupported,
+          couponState: 'not_applied',
+          errorCode: 'PREVIEW_STALE_PERIOD_CHANGED',
+          message: 'Your subscription billing period updated. Please refresh billing.',
+        };
+      }
+
+      const verifiedCurrency =
+        typeof body.currency === 'string' && body.currency.trim()
+          ? body.currency.trim().toLowerCase()
+          : currency;
+      if (verifiedCurrency !== currency) {
+        return {
+          verified: false,
+          verificationStatus: 'unavailable',
+          isUpgrade: true,
+          timing: 'immediate',
+          effectiveDate: null,
+          amountDueToday: null,
+          subtotal: baseNewAmount,
+          prorationDelta: null,
+          discountAmount: 0,
+          tax: 0,
+          currency,
+          renewalAmount: baseNewAmount,
+          renewalInterval,
+          promoSupported,
+          couponState: 'not_applied',
+          errorCode: 'CURRENCY_MISMATCH',
+          message: 'Preview currency does not match the selected plan currency.',
+        };
+      }
+
+      const previewTimestamp =
+        typeof body.previewTimestamp === 'number' && Number.isFinite(body.previewTimestamp)
+          ? Math.trunc(body.previewTimestamp)
+          : null;
+      const expiresAt =
+        typeof body.expiresAt === 'number' && Number.isFinite(body.expiresAt)
+          ? Math.trunc(body.expiresAt)
+          : previewTimestamp !== null
+            ? (previewTimestamp + 300) * 1000
+            : Date.now() + 300_000;
+
+      if (expiresAt <= Date.now()) {
+        return {
+          verified: false,
+          verificationStatus: 'expired',
+          isUpgrade: true,
+          timing: 'immediate',
+          effectiveDate: null,
+          amountDueToday: null,
+          subtotal: baseNewAmount,
+          prorationDelta: null,
+          discountAmount: 0,
+          tax: 0,
+          currency: verifiedCurrency,
+          renewalAmount: baseNewAmount,
+          renewalInterval,
+          promoSupported,
+          couponState: 'not_applied',
+          previewTimestamp,
+          expiresAt,
+          errorCode: 'PREVIEW_EXPIRED',
+          message: 'This upgrade price preview has expired. Please re-select the plan to refresh.',
         };
       }
 
@@ -2707,6 +2969,10 @@ export class StripeService {
         typeof body.subtotal === 'number' && Number.isFinite(body.subtotal)
           ? Math.round(body.subtotal)
           : verifiedAmountDue + (promoPreview ? promoPreview.discountAmount : 0);
+      const verifiedProrationDelta =
+        typeof body.prorationDelta === 'number' && Number.isFinite(body.prorationDelta)
+          ? Math.round(body.prorationDelta)
+          : verifiedSubtotal;
       const verifiedDiscount =
         typeof body.discountAmount === 'number' && Number.isFinite(body.discountAmount)
           ? Math.round(body.discountAmount)
@@ -2715,32 +2981,59 @@ export class StripeService {
             : 0;
       const verifiedTax =
         typeof body.tax === 'number' && Number.isFinite(body.tax) ? Math.round(body.tax) : 0;
-      const verifiedCurrency =
-        typeof body.currency === 'string' && body.currency.trim()
-          ? body.currency.trim().toLowerCase()
-          : currency;
       const verifiedRenewalAmount =
         typeof body.renewalAmount === 'number' && Number.isFinite(body.renewalAmount)
           ? Math.round(body.renewalAmount)
           : promoPreview
             ? (promoPreview.renewalAmount ?? baseNewAmount)
             : baseNewAmount;
+      const verifiedEffectiveDate =
+        typeof body.effectiveDate === 'number' && Number.isFinite(body.effectiveDate)
+          ? Math.trunc(body.effectiveDate)
+          : previewTimestamp;
+      const verifiedNextBillingDate =
+        typeof (body.nextBillingDate ?? body.currentPeriodEnd) === 'number' &&
+        Number.isFinite(body.nextBillingDate ?? body.currentPeriodEnd)
+          ? Math.trunc(body.nextBillingDate ?? body.currentPeriodEnd)
+          : request.currentPeriodEnd;
+      const chargeAmountEnforcedByServer =
+        typeof body.chargeAmountEnforcedByServer === 'boolean'
+          ? body.chargeAmountEnforcedByServer
+          : true;
 
       return {
         verified: true,
         verificationStatus: 'verified',
         isUpgrade: true,
         timing: 'immediate',
-        effectiveDate: null,
+        effectiveDate: verifiedEffectiveDate,
         amountDueToday: verifiedAmountDue,
         subtotal: verifiedSubtotal,
+        prorationDelta: verifiedProrationDelta,
         discountAmount: verifiedDiscount,
         tax: verifiedTax,
         currency: verifiedCurrency,
         renewalAmount: verifiedRenewalAmount,
-        renewalInterval,
+        renewalInterval:
+          (typeof body.renewalInterval === 'string' && body.renewalInterval.trim()) ||
+          renewalInterval,
         promoSupported,
         couponState: promoPreview ? 'verified_applied' : 'not_applied',
+        customerId: typeof body.customerId === 'string' ? body.customerId.trim() : null,
+        subscriptionId: returnedSubId ?? request.subscriptionId,
+        subscriptionItemId: returnedItemId ?? request.subscriptionItemId,
+        currentPriceId: returnedCurrentPriceId ?? request.currentPriceId,
+        targetPriceId: returnedTargetPriceId ?? request.newPriceId,
+        newPriceId: returnedTargetPriceId ?? request.newPriceId,
+        previewTimestamp,
+        currentPeriodStart:
+          typeof body.currentPeriodStart === 'number'
+            ? Math.trunc(body.currentPeriodStart)
+            : request.currentPeriodStart,
+        currentPeriodEnd: returnedPeriodEnd ?? request.currentPeriodEnd,
+        nextBillingDate: verifiedNextBillingDate,
+        expiresAt,
+        chargeAmountEnforcedByServer,
         promoCode: promoPreview?.promoCode ?? cleanPromoCode,
         promoCodeId:
           (typeof body.promoCodeId === 'string' && body.promoCodeId) ||
@@ -2764,6 +3057,7 @@ export class StripeService {
         effectiveDate: null,
         amountDueToday: null,
         subtotal: baseNewAmount,
+        prorationDelta: null,
         discountAmount: promoPreview ? promoPreview.discountAmount : 0,
         tax: 0,
         currency,
@@ -3577,25 +3871,61 @@ export class StripeService {
     }
     const res = await this.flowPost(flowId, {});
     const body = res?.data ?? res ?? {};
+
+    if (
+      body &&
+      typeof body === 'object' &&
+      (body.code === 'UNAUTHORIZED' || body.code === 'PAYMENT_METHOD_OWNERSHIP_MISMATCH')
+    ) {
+      const err: any = new Error(body.message || 'Unauthorized payment method access.');
+      err.code = body.code;
+      throw err;
+    }
+
     const rawMethods = Array.isArray(body?.paymentMethods) ? body.paymentMethods : [];
+
+    const explicitUnverified =
+      Boolean(body && typeof body === 'object') &&
+      (body.defaultVerified === false || Boolean(body.error) || Boolean(body.stripeError));
+
+    const hasSubDefaultField =
+      Boolean(body && typeof body === 'object') && 'subscriptionDefaultPaymentMethodId' in body;
+    const hasCustDefaultField =
+      Boolean(body && typeof body === 'object') && 'customerDefaultPaymentMethodId' in body;
+
+    const subDefaultId =
+      typeof body?.subscriptionDefaultPaymentMethodId === 'string' &&
+      body.subscriptionDefaultPaymentMethodId.trim().startsWith('pm_')
+        ? body.subscriptionDefaultPaymentMethodId.trim()
+        : null;
+
+    const custDefaultId =
+      typeof body?.customerDefaultPaymentMethodId === 'string' &&
+      body.customerDefaultPaymentMethodId.trim().startsWith('pm_')
+        ? body.customerDefaultPaymentMethodId.trim()
+        : null;
+
+    const topLevelDefaultRaw = body?.defaultPaymentMethodId ?? body?.renewalPaymentMethodId ?? null;
+    const topLevelDefaultId =
+      typeof topLevelDefaultRaw === 'string' && topLevelDefaultRaw.trim().startsWith('pm_')
+        ? topLevelDefaultRaw.trim()
+        : null;
 
     const hasExplicitDefaultField =
       Boolean(body && typeof body === 'object') &&
-      ('defaultPaymentMethodId' in body ||
+      (body.defaultVerified === true ||
+        'defaultPaymentMethodId' in body ||
         'renewalPaymentMethodId' in body ||
-        'subscriptionDefaultPaymentMethodId' in body ||
-        'customerDefaultPaymentMethodId' in body);
-
-    const rawDefaultId =
-      body?.defaultPaymentMethodId ??
-      body?.renewalPaymentMethodId ??
-      body?.subscriptionDefaultPaymentMethodId ??
-      body?.customerDefaultPaymentMethodId ??
-      null;
+        hasSubDefaultField ||
+        hasCustDefaultField);
 
     const itemLevelDefault = rawMethods.find(
       (pm: any) => pm && (pm.isRenewalCard === true || pm.isDefault === true),
     );
+    const itemLevelDefaultId =
+      typeof itemLevelDefault?.id === 'string' && itemLevelDefault.id.trim().startsWith('pm_')
+        ? itemLevelDefault.id.trim()
+        : null;
 
     const hasItemExplicitFlag = rawMethods.some(
       (pm: any) =>
@@ -3603,14 +3933,41 @@ export class StripeService {
         (typeof pm.isRenewalCard === 'boolean' || typeof pm.isDefault === 'boolean'),
     );
 
-    const defaultVerified = hasExplicitDefaultField || hasItemExplicitFlag;
-    const verifiedDefaultId: string | null = defaultVerified
-      ? typeof rawDefaultId === 'string' && rawDefaultId.trim().startsWith('pm_')
-        ? rawDefaultId.trim()
-        : typeof itemLevelDefault?.id === 'string' && itemLevelDefault.id.trim().startsWith('pm_')
-          ? itemLevelDefault.id.trim()
-          : null
-      : null;
+    const defaultVerified = !explicitUnverified && (hasExplicitDefaultField || hasItemExplicitFlag);
+
+    // Enforce Stripe's exact subscription billing precedence:
+    // 1. subscription.default_payment_method
+    // 2. customer.invoice_settings.default_payment_method
+    let verifiedDefaultId: string | null = null;
+    let defaultPaymentMethodSource: DefaultPaymentMethodSource = null;
+
+    if (defaultVerified) {
+      if (hasSubDefaultField || hasCustDefaultField) {
+        if (subDefaultId) {
+          verifiedDefaultId = subDefaultId;
+          defaultPaymentMethodSource = 'subscription';
+        } else if (custDefaultId) {
+          verifiedDefaultId = custDefaultId;
+          defaultPaymentMethodSource = 'customer';
+        } else if (topLevelDefaultId) {
+          verifiedDefaultId = topLevelDefaultId;
+          defaultPaymentMethodSource =
+            body?.defaultPaymentMethodSource === 'subscription' ||
+            body?.defaultPaymentMethodSource === 'customer'
+              ? body.defaultPaymentMethodSource
+              : null;
+        }
+      } else {
+        verifiedDefaultId = topLevelDefaultId ?? itemLevelDefaultId ?? null;
+        if (
+          verifiedDefaultId &&
+          (body?.defaultPaymentMethodSource === 'subscription' ||
+            body?.defaultPaymentMethodSource === 'customer')
+        ) {
+          defaultPaymentMethodSource = body.defaultPaymentMethodSource;
+        }
+      }
+    }
 
     const paymentMethods: SavedPaymentMethod[] = rawMethods
       .filter((pm: any) => pm && typeof pm.id === 'string' && pm.id.trim().length > 0)
@@ -3632,6 +3989,9 @@ export class StripeService {
       paymentMethods,
       defaultPaymentMethodId: verifiedDefaultId,
       defaultVerified,
+      defaultPaymentMethodSource,
+      subscriptionDefaultPaymentMethodId: defaultVerified ? subDefaultId : null,
+      customerDefaultPaymentMethodId: defaultVerified ? custDefaultId : null,
     };
   }
 
