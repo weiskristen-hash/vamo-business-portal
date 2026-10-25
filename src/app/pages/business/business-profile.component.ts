@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, AfterViewInit, OnDestroy, ViewChild, ElementRef, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -419,7 +419,7 @@ export interface OfferingOption {
                     type="text"
                     class="form-control"
                     [(ngModel)]="form().city"
-                    (input)="markDirty()"
+                    (input)="onCityInput()"
                     [placeholder]="'PORTAL.PROFILE.CITY_PLACEHOLDER' | translate"
                     list="city-suggestions"
                   />
@@ -460,26 +460,40 @@ export interface OfferingOption {
                 <!-- Coordinates: Latitude & Longitude -->
                 <div class="form-group span-2">
                   <div class="coords-header">
-                    <label class="form-label">
-                      {{ 'PORTAL.PROFILE.COORDS_LABEL' | translate }}
-                    </label>
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-sm btn-detect"
-                      (click)="detectLocation()"
-                      [disabled]="detectingLocation()"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
-                      </svg>
-                      <span>{{ detectingLocation() ? ('PORTAL.PROFILE.DETECTING' | translate) : ('PORTAL.PROFILE.USE_DEVICE_LOCATION' | translate) }}</span>
-                    </button>
+                    <div>
+                      <label class="form-label">
+                        {{ 'PORTAL.PROFILE.COORDS_LABEL' | translate }}
+                      </label>
+                      <p class="lp-subhint">{{ 'PORTAL.PROFILE.PIN_HINT' | translate }}</p>
+                    </div>
+                    <div class="lp-quick-actions">
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-sm btn-detect"
+                        (click)="detectLocation()"
+                        [disabled]="detectingLocation()"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+                        </svg>
+                        <span>{{ detectingLocation() ? ('PORTAL.PROFILE.DETECTING' | translate) : ('PORTAL.PROFILE.USE_DEVICE_LOCATION' | translate) }}</span>
+                      </button>
+                      <button
+                        *ngIf="hasValidCoords()"
+                        type="button"
+                        class="btn btn-ghost btn-sm btn-clear-pin"
+                        (click)="clearLocation()"
+                      >
+                        {{ 'PORTAL.PROFILE.CLEAR_PIN' | translate }}
+                      </button>
+                    </div>
                   </div>
 
                   <div class="coords-grid">
                     <div>
                       <span class="coord-label">{{ 'PORTAL.PROFILE.LATITUDE' | translate }}</span>
                       <input
+                        id="profile-coord-lat"
                         type="number"
                         step="0.000001"
                         class="form-control"
@@ -492,6 +506,7 @@ export interface OfferingOption {
                     <div>
                       <span class="coord-label">{{ 'PORTAL.PROFILE.LONGITUDE' | translate }}</span>
                       <input
+                        id="profile-coord-lng"
                         type="number"
                         step="0.000001"
                         class="form-control"
@@ -503,7 +518,34 @@ export interface OfferingOption {
                     </div>
                   </div>
 
-                  <div *ngIf="lat() && lng()" class="coords-preview">
+                  <!-- Geolocation / Coordinate Validation Error Banner -->
+                  <div *ngIf="locationError()" class="lp-error-banner" role="alert">
+                    <span>⚠️ {{ locationError() }}</span>
+                    <button type="button" class="btn-text-close" (click)="locationError.set(null)">✕</button>
+                  </div>
+
+                  <!-- Map Loading Error Fallback Notice -->
+                  <div *ngIf="mapError()" class="lp-error-banner" role="status">
+                    <span>⚠️ {{ 'PORTAL.PROFILE.MAP_LOAD_ERROR' | translate }}</span>
+                  </div>
+
+                  <!-- Interactive Visual Map & Pin Picker -->
+                  <div class="lp-map-wrapper" *ngIf="!mapError()">
+                    <div #profileMapContainer id="profile-map-canvas" class="lp-map"></div>
+
+                    <!-- Overlay prompt if no pin set -->
+                    <div *ngIf="!hasValidCoords()" class="lp-map-overlay" (click)="focusMap()">
+                      <div class="lp-overlay-content">
+                        <span class="lp-overlay-icon">📍</span>
+                        <div>
+                          <strong>{{ 'PORTAL.PROFILE.NO_PIN_TITLE' | translate }}</strong>
+                          <p>{{ 'PORTAL.PROFILE.NO_PIN_DESC' | translate }}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div *ngIf="hasValidCoords()" class="coords-preview">
                     <span>📍 {{ 'PORTAL.PROFILE.COORDS_PINNED' | translate:{ lat: (lat() | number:'1.4-4'), lng: (lng() | number:'1.4-4') } }}</span>
                     <a
                       [href]="'https://www.google.com/maps?q=' + lat() + ',' + lng()"
@@ -1374,9 +1416,14 @@ export interface OfferingOption {
     .coords-header {
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
       margin-bottom: 8px;
     }
+
+    .lp-subhint { margin: 2px 0 0; font-size: 0.8rem; color: var(--vamo-text-muted); }
+    .lp-quick-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
     .btn-detect {
       display: inline-flex;
@@ -1386,6 +1433,20 @@ export interface OfferingOption {
       font-weight: 600;
       font-size: 0.82rem;
     }
+
+    .btn-clear-pin { font-size: 0.8rem; color: var(--vamo-text-muted); }
+    .lp-error-banner { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding: 8px 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--vamo-radius-sm); font-size: 0.82rem; color: #dc2626; }
+    .btn-text-close { background: none; border: none; color: inherit; cursor: pointer; font-size: 0.9rem; padding: 0 4px; }
+    .lp-map-wrapper { position: relative; width: 100%; height: 280px; margin-top: 12px; border-radius: var(--vamo-radius-sm); overflow: hidden; border: 1px solid var(--vamo-border); background: #e2e8f0; }
+    .lp-map { width: 100%; height: 100%; z-index: 1; }
+    .lp-map-overlay { position: absolute; top: 12px; left: 12px; right: 12px; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(4px); color: #ffffff; padding: 10px 14px; border-radius: var(--vamo-radius-sm); z-index: 500; cursor: pointer; }
+    .lp-overlay-content { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; }
+    .lp-overlay-content strong { display: block; color: #ffffff; }
+    .lp-overlay-content p { margin: 2px 0 0; opacity: 0.85; font-size: 0.78rem; }
+    .lp-overlay-icon { font-size: 1.2rem; }
+    :host ::ng-deep .custom-vamo-pin-wrap { background: transparent !important; border: none !important; }
+    :host ::ng-deep .vamo-pin-bubble { display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.35)); cursor: grab; transition: transform 0.15s ease; }
+    :host ::ng-deep .vamo-pin-bubble:hover { transform: scale(1.12); }
 
     .coords-grid {
       display: grid;
@@ -1404,6 +1465,8 @@ export interface OfferingOption {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
       margin-top: 10px;
       padding: 10px 14px;
       background: var(--vamo-surface-subtle);
@@ -1982,7 +2045,9 @@ export interface OfferingOption {
     }
   `],
 })
-export class BusinessProfileComponent implements OnInit {
+export class BusinessProfileComponent implements OnInit, AfterViewInit, OnDestroy {
+  @ViewChild('profileMapContainer', { static: false }) profileMapContainer?: ElementRef<HTMLDivElement>;
+
   authService = inject(AuthService);
   businessService = inject(BusinessService);
   customerErrorService = inject(CustomerErrorService);
@@ -1998,6 +2063,8 @@ export class BusinessProfileComponent implements OnInit {
   private galleryDragDepth = 0;
   uploadProgressMessage = signal<string | null>(null);
   detectingLocation = signal(false);
+  locationError = signal<string | null>(null);
+  mapError = signal(false);
   loadError = signal<string | null>(null);
   saveSuccess = signal(false);
   saveError = signal<string | null>(null);
@@ -2005,6 +2072,33 @@ export class BusinessProfileComponent implements OnInit {
   isDirty = signal(false);
 
   provider = signal<Provider | null>(null);
+
+  private map: any = null;
+  private marker: any = null;
+  private mapInitialized = false;
+  private destroyed = false;
+  private mapInitTimers: Array<ReturnType<typeof setTimeout>> = [];
+  private mapResizeObserver: ResizeObserver | null = null;
+  private readonly onWindowResizeBound = () => this.focusMap();
+
+  private static readonly DEFAULT_HUB_CENTER = { lat: 19.3175, lng: -69.5422 };
+  private static readonly DESTINATION_HUB_COORDS: Record<string, { lat: number; lng: number }> = {
+    'las terrenas': { lat: 19.3175, lng: -69.5422 },
+    'las terrenas/samana': { lat: 19.3175, lng: -69.5422 },
+    'samana': { lat: 19.2056, lng: -69.3369 },
+    'cabarete': { lat: 19.7498, lng: -70.4083 },
+    'sosua': { lat: 19.7522, lng: -70.5199 },
+    'puerto plata': { lat: 19.7938, lng: -70.6918 },
+    'punta cana': { lat: 18.5622, lng: -68.4044 },
+    'bavaro': { lat: 18.6815, lng: -68.4504 },
+    'bayahibe': { lat: 18.3685, lng: -68.8398 },
+    'la romana': { lat: 18.4273, lng: -68.9728 },
+    'santo domingo': { lat: 18.4861, lng: -69.9312 },
+    'santiago': { lat: 19.4517, lng: -70.697 },
+    'jarabacoa': { lat: 19.1167, lng: -70.6333 },
+    'constanza': { lat: 18.9092, lng: -70.7449 },
+    'las galeras': { lat: 19.2897, lng: -69.2022 },
+  };
 
   form = signal<{
     id: string;
@@ -2115,8 +2209,9 @@ export class BusinessProfileComponent implements OnInit {
     { day: 'sunday', opens_at: '', closes_at: '', break_from: '', break_to: '', closed: true },
   ];
 
-  lat = computed(() => this.form().location?.coordinates[1] ?? null);
-  lng = computed(() => this.form().location?.coordinates[0] ?? null);
+  lat = computed(() => this.form().location?.coordinates?.[1] ?? null);
+  lng = computed(() => this.form().location?.coordinates?.[0] ?? null);
+  hasValidCoords = computed(() => this.isValidCoordinatePair(this.lat(), this.lng()));
 
   get currentOfferingChoices(): OfferingOption[] {
     const type = this.form().business_type;
@@ -2174,6 +2269,61 @@ export class BusinessProfileComponent implements OnInit {
     await this.loadProfile();
   }
 
+  async ngAfterViewInit(): Promise<void> {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', this.onWindowResizeBound);
+    }
+    if (!this.loading() && this.provider()) {
+      await this.initMap();
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.destroyed = true;
+    this.clearMapInitTimers();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', this.onWindowResizeBound);
+    }
+    if (this.mapResizeObserver) {
+      try {
+        this.mapResizeObserver.disconnect();
+      } catch {}
+      this.mapResizeObserver = null;
+    }
+    if (this.marker) {
+      try {
+        this.marker.off?.();
+        this.marker.remove?.();
+      } catch {}
+      this.marker = null;
+    }
+    if (this.map) {
+      try {
+        this.map.off?.();
+        this.map.remove?.();
+      } catch {}
+      this.map = null;
+    }
+    this.mapInitialized = false;
+  }
+
+  private clearMapInitTimers(): void {
+    for (const timer of this.mapInitTimers) {
+      clearTimeout(timer);
+    }
+    this.mapInitTimers = [];
+  }
+
+  private scheduleMapInit(delayMs = 50): void {
+    if (this.destroyed || typeof window === 'undefined') return;
+    const timer = setTimeout(() => {
+      if (!this.destroyed) {
+        void this.initMap();
+      }
+    }, delayMs);
+    this.mapInitTimers.push(timer);
+  }
+
   async loadProfile(): Promise<void> {
     this.loading.set(true);
     this.loadError.set(null);
@@ -2195,13 +2345,35 @@ export class BusinessProfileComponent implements OnInit {
       this.loadError.set(this.customerErrorService.toCustomerMessage(err, 'load'));
     } finally {
       this.loading.set(false);
+      if (this.provider() && !this.destroyed) {
+        this.scheduleMapInit(50);
+      }
     }
+  }
+
+  private normalizeSavedLocation(
+    loc: Provider['location'] | null | undefined,
+  ): { type: 'Point'; coordinates: [number, number] } | null {
+    if (!loc || !Array.isArray(loc.coordinates) || loc.coordinates.length < 2) {
+      return null;
+    }
+    const lng = Number(loc.coordinates[0]);
+    const lat = Number(loc.coordinates[1]);
+    if (!this.isValidCoordinatePair(lat, lng)) {
+      return null;
+    }
+    return {
+      type: 'Point',
+      coordinates: [lng, lat],
+    };
   }
 
   populateForm(p: Provider): void {
     const hours = p.opening_times?.length
       ? structuredClone(p.opening_times)
       : structuredClone(this.DEFAULT_HOURS);
+
+    const normalizedLocation = this.normalizeSavedLocation(p.location);
 
     this.form.set({
       id: p.id,
@@ -2217,7 +2389,7 @@ export class BusinessProfileComponent implements OnInit {
       facebook: p.facebook || '',
       instagram: p.instagram || '',
       google_business_link: p.google_business_link || '',
-      location: p.location || null,
+      location: normalizedLocation,
       offerings: [...(p.offerings || [])],
       opening_times: hours,
       logo: p.logo || null,
@@ -2232,7 +2404,9 @@ export class BusinessProfileComponent implements OnInit {
       p.phone.trim() === p.wa_number.trim()
     );
 
+    this.locationError.set(null);
     this.isDirty.set(false);
+    this.syncMapToFormState();
   }
 
   markDirty(): void {
@@ -2287,58 +2461,312 @@ export class BusinessProfileComponent implements OnInit {
     this.markDirty();
   }
 
+  isValidLatitude(lat: unknown): lat is number {
+    return typeof lat === 'number' && Number.isFinite(lat) && lat >= -90 && lat <= 90;
+  }
+
+  isValidLongitude(lng: unknown): lng is number {
+    return typeof lng === 'number' && Number.isFinite(lng) && lng >= -180 && lng <= 180;
+  }
+
+  isValidCoordinatePair(lat: unknown, lng: unknown): boolean {
+    return this.isValidLatitude(lat) && this.isValidLongitude(lng);
+  }
+
+  getDefaultMapCenter(city: string = this.form().city): { lat: number; lng: number } {
+    const normalized = (city || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    if (!normalized) {
+      return BusinessProfileComponent.DEFAULT_HUB_CENTER;
+    }
+    const exact = BusinessProfileComponent.DESTINATION_HUB_COORDS[normalized];
+    if (exact) {
+      return exact;
+    }
+    for (const [hubKey, coords] of Object.entries(BusinessProfileComponent.DESTINATION_HUB_COORDS)) {
+      if (normalized.includes(hubKey) || hubKey.includes(normalized)) {
+        return coords;
+      }
+    }
+    return BusinessProfileComponent.DEFAULT_HUB_CENTER;
+  }
+
+  onCityInput(): void {
+    this.markDirty();
+    if (!this.hasValidCoords() && this.map) {
+      const center = this.getDefaultMapCenter(this.form().city);
+      this.map.setView([center.lat, center.lng], 12);
+    }
+  }
+
   setCity(city: string): void {
     this.form.update((f) => ({ ...f, city }));
     this.markDirty();
+    if (!this.hasValidCoords() && this.map) {
+      const center = this.getDefaultMapCenter(city);
+      this.map.setView([center.lat, center.lng], 12);
+    }
   }
 
-  onLatChange(val: number | null): void {
-    const currentLng = this.lng() ?? -69.5422;
-    if (val === null || isNaN(val)) {
-      this.form.update((f) => ({ ...f, location: null }));
-    } else {
-      this.form.update((f) => ({
-        ...f,
-        location: { type: 'Point', coordinates: [currentLng, Number(val)] },
-      }));
+  private createVamoPinIcon(L: any): any {
+    return L.divIcon({
+      className: 'custom-vamo-pin-wrap',
+      html: `<div class="vamo-pin-bubble"><svg width="28" height="34" viewBox="0 0 24 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 0C5.37 0 0 5.37 0 12C0 21 12 30 12 30C12 30 24 21 24 12C24 5.37 18.63 0 12 0Z" fill="#6366f1"/>
+        <circle cx="12" cy="11" r="5" fill="#ffffff"/>
+        <circle cx="12" cy="11" r="2.5" fill="#6366f1"/>
+      </svg></div>`,
+      iconSize: [28, 34],
+      iconAnchor: [14, 34],
+    });
+  }
+
+  async initMap(): Promise<void> {
+    if (this.mapInitialized || this.destroyed || typeof window === 'undefined') return;
+
+    const container =
+      this.profileMapContainer?.nativeElement || document.getElementById('profile-map-canvas');
+    if (!container) {
+      this.scheduleMapInit(150);
+      return;
     }
+
+    try {
+      const L = await this.loadLeaflet();
+      if (!L || this.map || this.destroyed) return;
+
+      const hasCoords = this.hasValidCoords();
+      const defaultCenter = this.getDefaultMapCenter();
+      const initialLat = hasCoords ? (this.lat() as number) : defaultCenter.lat;
+      const initialLng = hasCoords ? (this.lng() as number) : defaultCenter.lng;
+      const initialZoom = hasCoords ? 15 : 12;
+
+      this.map = L.map(container, {
+        center: [initialLat, initialLng],
+        zoom: initialZoom,
+        zoomControl: true,
+      });
+
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
+      }).addTo(this.map);
+
+      this.mapInitialized = true;
+      this.mapError.set(false);
+
+      if (hasCoords) {
+        this.syncMapMarker(initialLat, initialLng, false);
+      }
+
+      this.map.on('click', (e: any) => {
+        if (!e?.latlng) return;
+        const clickedLat = parseFloat(Number(e.latlng.lat).toFixed(6));
+        const clickedLng = parseFloat(Number(e.latlng.lng).toFixed(6));
+        this.setCoordinates(clickedLat, clickedLng, true);
+      });
+
+      if (typeof ResizeObserver !== 'undefined') {
+        try {
+          this.mapResizeObserver?.disconnect();
+          this.mapResizeObserver = new ResizeObserver(() => {
+            if (!this.destroyed) {
+              this.map?.invalidateSize();
+            }
+          });
+          this.mapResizeObserver.observe(container);
+        } catch {}
+      }
+
+      const t1 = setTimeout(() => {
+        if (!this.destroyed) this.map?.invalidateSize();
+      }, 200);
+      const t2 = setTimeout(() => {
+        if (!this.destroyed) this.map?.invalidateSize();
+      }, 600);
+      this.mapInitTimers.push(t1, t2);
+    } catch (err) {
+      console.warn('[BusinessProfile] Leaflet map init failed or blocked:', err);
+      this.mapError.set(true);
+    }
+  }
+
+  private loadLeaflet(): Promise<any> {
+    if (typeof window === 'undefined') return Promise.reject('No window');
+    if ((window as any).L) return Promise.resolve((window as any).L);
+
+    return new Promise((resolve, reject) => {
+      if (!document.getElementById('leaflet-css')) {
+        const link = document.createElement('link');
+        link.id = 'leaflet-css';
+        link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        document.head.appendChild(link);
+      }
+
+      const existingScript = document.getElementById('leaflet-js') as HTMLScriptElement | null;
+      if (existingScript) {
+        if ((window as any).L) {
+          resolve((window as any).L);
+          return;
+        }
+        existingScript.addEventListener('load', () => resolve((window as any).L), { once: true });
+        existingScript.addEventListener('error', (e) => reject(e), { once: true });
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.id = 'leaflet-js';
+      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      script.async = true;
+      script.onload = () => resolve((window as any).L);
+      script.onerror = (e) => reject(e);
+      document.head.appendChild(script);
+    });
+  }
+
+  private syncMapMarker(lat: number, lng: number, updateMapView = true): void {
+    if (!this.map || typeof window === 'undefined' || !(window as any).L) return;
+    const L = (window as any).L;
+    const vamoIcon = this.createVamoPinIcon(L);
+
+    if (this.marker) {
+      this.marker.setLatLng([lat, lng]);
+    } else {
+      this.marker = L.marker([lat, lng], { icon: vamoIcon, draggable: true }).addTo(this.map);
+      this.marker.on('dragend', () => {
+        const pos = this.marker?.getLatLng?.();
+        if (!pos) return;
+        this.setCoordinates(
+          parseFloat(Number(pos.lat).toFixed(6)),
+          parseFloat(Number(pos.lng).toFixed(6)),
+          false,
+        );
+      });
+    }
+
+    if (updateMapView) {
+      const currentZoom = typeof this.map.getZoom === 'function' ? this.map.getZoom() : 14;
+      this.map.setView([lat, lng], Math.max(currentZoom, 14));
+    }
+  }
+
+  private removeMapMarker(): void {
+    if (this.marker) {
+      try {
+        this.marker.off?.();
+        this.marker.remove?.();
+      } catch {}
+      this.marker = null;
+    }
+  }
+
+  private syncMapToFormState(): void {
+    if (!this.map) return;
+    if (this.hasValidCoords()) {
+      this.syncMapMarker(this.lat() as number, this.lng() as number, true);
+    } else {
+      this.removeMapMarker();
+      const center = this.getDefaultMapCenter();
+      this.map.setView([center.lat, center.lng], 12);
+    }
+  }
+
+  setCoordinates(lat: number, lng: number, updateMapView = true): void {
+    if (!this.isValidCoordinatePair(lat, lng)) {
+      this.locationError.set(this.i18n.t('PORTAL.PROFILE.COORDS_INVALID'));
+      return;
+    }
+    const normalizedLat = parseFloat(Number(lat).toFixed(6));
+    const normalizedLng = parseFloat(Number(lng).toFixed(6));
+    this.form.update((f) => ({
+      ...f,
+      location: {
+        type: 'Point',
+        coordinates: [normalizedLng, normalizedLat],
+      },
+    }));
+    this.locationError.set(null);
+    this.markDirty();
+    this.syncMapMarker(normalizedLat, normalizedLng, updateMapView);
+  }
+
+  clearLocation(): void {
+    this.form.update((f) => ({ ...f, location: null }));
+    this.locationError.set(null);
+    this.removeMapMarker();
     this.markDirty();
   }
 
-  onLngChange(val: number | null): void {
-    const currentLat = this.lat() ?? 19.3175;
-    if (val === null || isNaN(val)) {
-      this.form.update((f) => ({ ...f, location: null }));
-    } else {
-      this.form.update((f) => ({
-        ...f,
-        location: { type: 'Point', coordinates: [Number(val), currentLat] },
-      }));
+  focusMap(): void {
+    if (this.map) {
+      this.map.invalidateSize();
     }
-    this.markDirty();
+  }
+
+  onLatChange(val: number | string | null): void {
+    if (val === null || val === '' || Number.isNaN(Number(val))) {
+      this.form.update((f) => ({ ...f, location: null }));
+      this.locationError.set(null);
+      this.removeMapMarker();
+      this.markDirty();
+      return;
+    }
+    const parsedLat = Number(val);
+    if (!this.isValidLatitude(parsedLat)) {
+      this.locationError.set(this.i18n.t('PORTAL.PROFILE.COORDS_INVALID'));
+      return;
+    }
+    const currentLng = this.isValidLongitude(this.lng())
+      ? (this.lng() as number)
+      : this.getDefaultMapCenter().lng;
+    this.setCoordinates(parsedLat, currentLng, true);
+  }
+
+  onLngChange(val: number | string | null): void {
+    if (val === null || val === '' || Number.isNaN(Number(val))) {
+      this.form.update((f) => ({ ...f, location: null }));
+      this.locationError.set(null);
+      this.removeMapMarker();
+      this.markDirty();
+      return;
+    }
+    const parsedLng = Number(val);
+    if (!this.isValidLongitude(parsedLng)) {
+      this.locationError.set(this.i18n.t('PORTAL.PROFILE.COORDS_INVALID'));
+      return;
+    }
+    const currentLat = this.isValidLatitude(this.lat())
+      ? (this.lat() as number)
+      : this.getDefaultMapCenter().lat;
+    this.setCoordinates(currentLat, parsedLng, true);
   }
 
   detectLocation(): void {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      alert(this.i18n.t('PORTAL.PROFILE.GEO_NOT_SUPPORTED'));
+      const msg = this.i18n.t('PORTAL.PROFILE.GEO_NOT_SUPPORTED');
+      this.locationError.set(msg);
+      alert(msg);
       return;
     }
 
     this.detectingLocation.set(true);
+    this.locationError.set(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         this.detectingLocation.set(false);
         const { latitude, longitude } = pos.coords;
-        this.form.update((f) => ({
-          ...f,
-          location: { type: 'Point', coordinates: [longitude, latitude] },
-        }));
-        this.markDirty();
+        this.setCoordinates(latitude, longitude, true);
       },
       (err) => {
         this.detectingLocation.set(false);
         console.warn('[BusinessProfile] Geolocation error:', err);
-        alert(this.i18n.t('PORTAL.PROFILE.GEO_FAILED'));
+        const msg = this.i18n.t('PORTAL.PROFILE.GEO_FAILED');
+        this.locationError.set(msg);
+        alert(msg);
       },
       { timeout: 10000, enableHighAccuracy: true }
     );

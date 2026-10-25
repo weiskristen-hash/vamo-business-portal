@@ -706,5 +706,279 @@ describe('BusinessProfileComponent', () => {
     });
   });
 
+  describe('Interactive Map Picker & Coordinate Synchronization', () => {
+    let mockLeaflet: any;
+    let mockMapInstance: any;
+    let mockMarkerInstance: any;
+    let mapClickHandler: ((e: { latlng: { lat: number; lng: number } }) => void) | null;
+    let markerDragEndHandler: (() => void) | null;
+    let currentMarkerLatLng: { lat: number; lng: number };
+
+    beforeEach(() => {
+      mapClickHandler = null;
+      markerDragEndHandler = null;
+      currentMarkerLatLng = { lat: 0, lng: 0 };
+
+      mockMarkerInstance = {
+        setLatLng: vi.fn((coords: [number, number]) => {
+          currentMarkerLatLng = { lat: coords[0], lng: coords[1] };
+        }),
+        getLatLng: vi.fn(() => currentMarkerLatLng),
+        addTo: vi.fn().mockReturnThis(),
+        on: vi.fn((event: string, cb: () => void) => {
+          if (event === 'dragend') {
+            markerDragEndHandler = cb;
+          }
+          return mockMarkerInstance;
+        }),
+        remove: vi.fn(),
+      };
+
+      mockMapInstance = {
+        setView: vi.fn().mockReturnThis(),
+        getZoom: vi.fn(() => 15),
+        invalidateSize: vi.fn(),
+        on: vi.fn((event: string, cb: any) => {
+          if (event === 'click') {
+            mapClickHandler = cb;
+          }
+          return mockMapInstance;
+        }),
+        remove: vi.fn(),
+      };
+
+      mockLeaflet = {
+        map: vi.fn(() => mockMapInstance),
+        tileLayer: vi.fn(() => ({ addTo: vi.fn() })),
+        divIcon: vi.fn((opts: any) => opts),
+        marker: vi.fn((coords: [number, number]) => {
+          currentMarkerLatLng = { lat: coords[0], lng: coords[1] };
+          return mockMarkerInstance;
+        }),
+      };
+
+      (window as any).L = mockLeaflet;
+    });
+
+    afterEach(() => {
+      delete (window as any).L;
+    });
+
+    it('initializes map with saved coordinates and positions the pin without reversing [longitude, latitude]', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      await (component as any).initMap();
+
+      // Saved mockProvider has location.coordinates = [-69.5422, 19.3175] ([lng, lat])
+      expect(mockLeaflet.map).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          center: [19.3175, -69.5422],
+          zoom: 15,
+        })
+      );
+      expect(mockLeaflet.marker).toHaveBeenCalledWith(
+        [19.3175, -69.5422],
+        expect.objectContaining({ draggable: true })
+      );
+      expect(component.lat()).toBe(19.3175);
+      expect(component.lng()).toBe(-69.5422);
+      expect(component.form().location).toEqual({
+        type: 'Point',
+        coordinates: [-69.5422, 19.3175],
+      });
+    });
+
+    it('updates coordinates and Directus GeoJSON [lng, lat] when clicking the map or dragging the pin', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await (component as any).initMap();
+
+      expect(mapClickHandler).toBeTruthy();
+
+      // Simulate map click
+      mapClickHandler!({ latlng: { lat: 19.3212349, lng: -69.5387654 } });
+
+      expect(component.lat()).toBe(19.321235);
+      expect(component.lng()).toBe(-69.538765);
+      expect(component.form().location).toEqual({
+        type: 'Point',
+        coordinates: [-69.538765, 19.321235],
+      });
+      expect(mockMarkerInstance.setLatLng).toHaveBeenCalledWith([19.321235, -69.538765]);
+      expect(component.isDirty()).toBe(true);
+
+      // Simulate pin dragend
+      expect(markerDragEndHandler).toBeTruthy();
+      currentMarkerLatLng = { lat: 19.3300012, lng: -69.5500098 };
+      markerDragEndHandler!();
+
+      expect(component.lat()).toBe(19.330001);
+      expect(component.lng()).toBe(-69.55001);
+      expect(component.form().location).toEqual({
+        type: 'Point',
+        coordinates: [-69.55001, 19.330001],
+      });
+    });
+
+    it('repositions the map pin when manual coordinates are entered and rejects invalid coordinates gracefully', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await (component as any).initMap();
+
+      mockMarkerInstance.setLatLng.mockClear();
+      mockMapInstance.setView.mockClear();
+
+      component.onLatChange(18.5622);
+      expect(component.lat()).toBe(18.5622);
+      expect(component.lng()).toBe(-69.5422);
+      expect(component.form().location).toEqual({
+        type: 'Point',
+        coordinates: [-69.5422, 18.5622],
+      });
+      expect(mockMarkerInstance.setLatLng).toHaveBeenCalledWith([18.5622, -69.5422]);
+
+      component.onLngChange(-68.3725);
+      expect(component.form().location).toEqual({
+        type: 'Point',
+        coordinates: [-68.3725, 18.5622],
+      });
+      expect(mockMarkerInstance.setLatLng).toHaveBeenCalledWith([18.5622, -68.3725]);
+
+      // Out-of-range latitude should surface locationError without corrupting coordinates
+      mockMarkerInstance.setLatLng.mockClear();
+      component.onLatChange(125);
+      expect(component.locationError()).toContain('Please enter a valid latitude (-90 to 90)');
+      expect(component.form().location).toEqual({
+        type: 'Point',
+        coordinates: [-68.3725, 18.5622],
+      });
+      expect(mockMarkerInstance.setLatLng).not.toHaveBeenCalled();
+    });
+
+    it('updates the map pin and coordinates when Use Current Device Location succeeds', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await (component as any).initMap();
+
+      const mockGeolocation = {
+        getCurrentPosition: vi.fn((successCb: any) => {
+          successCb({
+            coords: {
+              latitude: 19.7541234,
+              longitude: -70.4129876,
+            },
+          });
+        }),
+      };
+      Object.defineProperty(navigator, 'geolocation', {
+        value: mockGeolocation,
+        configurable: true,
+      });
+
+      mockMarkerInstance.setLatLng.mockClear();
+      mockMapInstance.setView.mockClear();
+
+      component.detectLocation();
+
+      expect(component.lat()).toBe(19.754123);
+      expect(component.lng()).toBe(-70.412988);
+      expect(component.form().location).toEqual({
+        type: 'Point',
+        coordinates: [-70.412988, 19.754123],
+      });
+      expect(mockMarkerInstance.setLatLng).toHaveBeenCalledWith([19.754123, -70.412988]);
+      expect(mockMapInstance.setView).toHaveBeenCalledWith([19.754123, -70.412988], 15);
+    });
+
+    it('centers on the business destination when no coordinates exist without automatically assigning or saving coordinates', async () => {
+      await fixture.whenStable();
+      // Clear coordinates and set city to Cabarete before initializing map
+      component.clearLocation();
+      component.setCity('Cabarete');
+      fixture.detectChanges();
+
+      mockLeaflet.map.mockClear();
+      mockLeaflet.marker.mockClear();
+
+      await (component as any).initMap();
+
+      // Should initialize centered on Cabarete hub [19.7498, -70.4083] at zoom 12 without placing a marker or setting location
+      expect(mockLeaflet.map).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          center: [19.7498, -70.4083],
+          zoom: 12,
+        })
+      );
+      expect(mockLeaflet.marker).not.toHaveBeenCalled();
+      expect(component.form().location).toBeNull();
+      expect(component.lat()).toBeNull();
+      expect(component.lng()).toBeNull();
+
+      // Changing destination while no coordinates exist re-centers map without assigning coordinates
+      mockMapInstance.setView.mockClear();
+      component.setCity('Punta Cana');
+      expect(mockMapInstance.setView).toHaveBeenCalledWith([18.5622, -68.4044], 12);
+      expect(component.form().location).toBeNull();
+    });
+
+    it('preserves and restores the saved pin position when resetting or reloading the profile', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await (component as any).initMap();
+
+      // Change location to somewhere else
+      component.setCoordinates(18.4861, -69.9312);
+      expect(component.form().location?.coordinates).toEqual([-69.9312, 18.4861]);
+
+      mockMarkerInstance.setLatLng.mockClear();
+      mockMapInstance.setView.mockClear();
+
+      // Reset form back to saved provider state
+      component.resetForm();
+
+      expect(component.form().location).toEqual({
+        type: 'Point',
+        coordinates: [-69.5422, 19.3175],
+      });
+      expect(mockMarkerInstance.setLatLng).toHaveBeenCalledWith([19.3175, -69.5422]);
+      expect(mockMapInstance.setView).toHaveBeenCalledWith([19.3175, -69.5422], 15);
+    });
+
+    it('cleans up map, marker, and observers on ngOnDestroy without leaking resources', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await (component as any).initMap();
+
+      component.ngOnDestroy();
+
+      expect(mockMarkerInstance.remove).toHaveBeenCalled();
+      expect(mockMapInstance.remove).toHaveBeenCalled();
+      expect((component as any).map).toBeNull();
+      expect((component as any).marker).toBeNull();
+    });
+
+    it('sets mapError gracefully when Leaflet fails to load while keeping manual coordinate inputs functional', async () => {
+      await fixture.whenStable();
+      delete (window as any).L;
+      vi.spyOn(component as any, 'loadLeaflet').mockRejectedValueOnce(new Error('CDN blocked'));
+
+      await (component as any).initMap();
+
+      expect(component.mapError()).toBe(true);
+
+      // Manual coordinate updates still work even when map failed to load
+      component.onLatChange(19.45);
+      component.onLngChange(-70.69);
+      expect(component.form().location).toEqual({
+        type: 'Point',
+        coordinates: [-70.69, 19.45],
+      });
+    });
+  });
+
 });
+
 
