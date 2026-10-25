@@ -982,6 +982,12 @@ export const enTranslations: Record<string, any> = {
       "LAT_PLACEHOLDER": "e.g. 19.3175",
       "LONGITUDE": "Longitude",
       "LNG_PLACEHOLDER": "e.g. -69.5422",
+      "PIN_HINT": "Click anywhere on the map or drag the purple pin to set your exact business location.",
+      "NO_PIN_TITLE": "No pin placed yet",
+      "NO_PIN_DESC": "Click on the map to drop your business pin, or use your current device location.",
+      "CLEAR_PIN": "✕ Clear Pin",
+      "COORDS_INVALID": "Please enter a valid latitude (-90 to 90) and longitude (-180 to 180).",
+      "MAP_LOAD_ERROR": "Interactive map could not be loaded. You can still enter coordinates manually above.",
       "COORDS_PINNED": "Coordinates pinned: {{lat}}, {{lng}}",
       "PREVIEW_MAPS": "Preview on Google Maps ↗",
 
