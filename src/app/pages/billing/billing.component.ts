@@ -642,7 +642,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
           </p>
 
           <div
-            *ngIf="isUpgradeBlockedByUnknownAmount(selPlan, sub)"
+            *ngIf="isUpgradeAmountUnknown(selPlan, sub)"
             class="alert alert-warning upgrade-amount-unknown-alert"
             data-testid="upgrade-amount-unknown-alert"
             role="alert"
@@ -657,8 +657,24 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             </span>
           </div>
 
+          <label
+            *ngIf="canAcknowledgeUnknownUpgradeAmount(selPlan, sub)"
+            class="card-setup-checkbox-label upgrade-unknown-charge-ack"
+            data-testid="acknowledge-unknown-upgrade-charge-label"
+          >
+            <input
+              type="checkbox"
+              class="upgrade-unknown-charge-checkbox"
+              data-testid="acknowledge-unknown-upgrade-charge-checkbox"
+              [ngModel]="upgradeUnverifiedAmountAcknowledged()"
+              (ngModelChange)="upgradeUnverifiedAmountAcknowledged.set(!!$event)"
+              [disabled]="isLoading() || isProcessingPayment() || planChangePreviewLoading()"
+            />
+            <span>{{ 'PORTAL.BILLING.ACKNOWLEDGE_UNKNOWN_UPGRADE_CHARGE' | translate }}</span>
+          </label>
+
           <div
-            *ngIf="isUpgradeBlockedByChargeEnforcement(selPlan, sub)"
+            *ngIf="isUpgradePreviewChargeUnenforced(selPlan, sub)"
             class="alert alert-warning upgrade-charge-enforcement-alert"
             data-testid="upgrade-charge-enforcement-alert"
             role="alert"
@@ -2521,6 +2537,7 @@ export class BillingComponent implements OnInit, OnDestroy {
   checkoutVerificationStatus = signal<CheckoutVerificationStatus>('unverified');
   planChangePreview = signal<PlanChangePreviewResult | null>(null);
   planChangePreviewLoading = signal(false);
+  upgradeUnverifiedAmountAcknowledged = signal(false);
   private promoDismissedInCheckout = false;
   private previewRequestSeq = 0;
   private planChangePreviewSeq = 0;
@@ -3260,6 +3277,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.checkoutPreview.set(null);
     this.checkoutVerificationStatus.set('unverified');
     this.planChangePreview.set(null);
+    this.upgradeUnverifiedAmountAcknowledged.set(false);
 
     if (!nextPlan) {
       this.reviewSubscriptionSnapshot.set(null);
@@ -3813,6 +3831,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.planChangeUnverified.set(false);
     this.pendingPlanChangeTarget.set(null);
     this.planChangePreview.set(null);
+    this.upgradeUnverifiedAmountAcknowledged.set(false);
     this.clearError();
     this.successMessage.set(null);
     const currentSelected = this.selectedPlan();
@@ -3837,6 +3856,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.pendingPlanChangeTarget.set(null);
     this.planChangePreview.set(null);
     this.planChangePreviewLoading.set(false);
+    this.upgradeUnverifiedAmountAcknowledged.set(false);
     this.reviewSubscriptionSnapshot.set(null);
     this.reviewTargetPriceId.set(null);
     this.downgradeWarning.set(null);
@@ -3892,6 +3912,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     promoCode?: string | null,
     preserveCouponState = false,
   ): Promise<PlanChangePreviewResult | null> {
+    this.upgradeUnverifiedAmountAcknowledged.set(false);
     const sub = this.subscription();
     if (!sub || !plan) {
       this.planChangePreview.set(null);
@@ -4138,7 +4159,28 @@ export class BillingComponent implements OnInit, OnDestroy {
     );
   }
 
-  isUpgradeBlockedByUnknownAmount(
+  isUpgradePreviewHardRejected(
+    selPlan: StripePlan | null = this.selectedPlan(),
+    sub: StripeSubscription | null | undefined = this.subscription(),
+  ): boolean {
+    if (!this.isSelectedPlanUpgrade(selPlan, sub)) return false;
+    const preview = this.getEffectivePlanChangePreview(selPlan, sub);
+    if (!preview) return false;
+    const code = preview.errorCode ?? '';
+    return [
+      'UNAUTHORIZED',
+      'SUBSCRIPTION_OWNERSHIP_MISMATCH',
+      'CUSTOMER_OWNERSHIP_MISMATCH',
+      'CROSS_BUSINESS_ACCESS_DENIED',
+      'SUBSCRIPTION_MISMATCH',
+      'SUBSCRIPTION_ITEM_MISMATCH',
+      'TARGET_PRICE_MISMATCH',
+      'CURRENCY_MISMATCH',
+      'CONCURRENT_SUBSCRIPTION_CHANGE',
+    ].includes(code);
+  }
+
+  isUpgradeAmountUnknown(
     selPlan: StripePlan | null = this.selectedPlan(),
     sub: StripeSubscription | null | undefined = this.subscription(),
   ): boolean {
@@ -4158,15 +4200,43 @@ export class BillingComponent implements OnInit, OnDestroy {
     );
   }
 
-  isUpgradeBlockedByChargeEnforcement(
+  canAcknowledgeUnknownUpgradeAmount(
+    selPlan: StripePlan | null = this.selectedPlan(),
+    sub: StripeSubscription | null | undefined = this.subscription(),
+  ): boolean {
+    return (
+      this.isUpgradeAmountUnknown(selPlan, sub) &&
+      !this.isPlanChangePreviewExpired(selPlan, sub) &&
+      !this.isUpgradePreviewHardRejected(selPlan, sub)
+    );
+  }
+
+  isUpgradeBlockedByUnknownAmount(
+    selPlan: StripePlan | null = this.selectedPlan(),
+    sub: StripeSubscription | null | undefined = this.subscription(),
+  ): boolean {
+    if (!this.isUpgradeAmountUnknown(selPlan, sub)) return false;
+    if (this.isPlanChangePreviewExpired(selPlan, sub)) return true;
+    if (this.isUpgradePreviewHardRejected(selPlan, sub)) return true;
+    return !this.upgradeUnverifiedAmountAcknowledged();
+  }
+
+  isUpgradePreviewChargeUnenforced(
     selPlan: StripePlan | null = this.selectedPlan(),
     sub: StripeSubscription | null | undefined = this.subscription(),
   ): boolean {
     if (!this.isSelectedPlanUpgrade(selPlan, sub)) return false;
     if (this.planChangePreviewLoading()) return false;
-    if (this.isUpgradeBlockedByUnknownAmount(selPlan, sub)) return false;
+    if (this.isUpgradeAmountUnknown(selPlan, sub)) return false;
     const preview = this.getEffectivePlanChangePreview(selPlan, sub);
     return preview?.chargeAmountEnforcedByServer === false;
+  }
+
+  isUpgradeBlockedByChargeEnforcement(
+    _selPlan: StripePlan | null = this.selectedPlan(),
+    _sub: StripeSubscription | null | undefined = this.subscription(),
+  ): boolean {
+    return false;
   }
 
   getPlanChangeVerificationBadgeKey(
@@ -4179,7 +4249,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (this.isPlanChangePreviewExpired(selPlan, sub)) {
       return 'PORTAL.BILLING.VERIFICATION_BADGE_EXPIRED';
     }
-    if (this.isUpgradeBlockedByUnknownAmount(selPlan, sub)) {
+    if (this.isUpgradeAmountUnknown(selPlan, sub)) {
       return 'PORTAL.BILLING.VERIFICATION_BADGE_UNAVAILABLE';
     }
     return 'PORTAL.BILLING.VERIFICATION_BADGE_VERIFIED';
@@ -4420,17 +4490,6 @@ export class BillingComponent implements OnInit, OnDestroy {
       return;
     }
 
-    if (this.isUpgradeBlockedByChargeEnforcement(newPlan, sub)) {
-      const preview = this.getEffectivePlanChangePreview(newPlan, sub);
-      this.setTranslatedError('PORTAL.BILLING.ERROR_UPGRADE_CHARGE_ENFORCEMENT_REQUIRED', {
-        amount: this.formatExactPrice(
-          preview?.amountDueToday ?? 0,
-          preview?.currency || newPlan.currency,
-        ),
-      });
-      return;
-    }
-
     if (!isUpgrade && !this.bypassDowngradeCheck) {
       const activePosts = this.postsUsed();
       if (activePosts > newPlan.maxPosts) {
@@ -4497,6 +4556,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       const approvedAmount =
         isUpgrade &&
         effectivePreview?.verified &&
+        effectivePreview?.chargeAmountEnforcedByServer !== false &&
         typeof effectivePreview.amountDueToday === 'number' &&
         Number.isFinite(effectivePreview.amountDueToday)
           ? Math.round(effectivePreview.amountDueToday)

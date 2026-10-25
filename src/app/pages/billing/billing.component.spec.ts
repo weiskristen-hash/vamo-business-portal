@@ -3796,7 +3796,7 @@ describe('BillingComponent', () => {
       expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
     });
 
-    it('21. Upgrade remains blocked when chargeAmountEnforcedByServer is false even if preview is verified', async () => {
+    it('21. Upgrade can proceed when chargeAmountEnforcedByServer is false after disclosing that final Stripe charge may differ', async () => {
       stripeServiceSpy.previewSubscriptionPlanChange = vi.fn().mockResolvedValue({
         verified: true,
         verificationStatus: 'verified',
@@ -3821,29 +3821,48 @@ describe('BillingComponent', () => {
         promoSupported: false,
         couponState: 'not_applied',
       });
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
+        ...mockSubscription,
+        plan: {
+          ...mockSubscription.plan,
+          priceId: mockPlans[2].id,
+          name: mockPlans[2].name,
+          amount: mockPlans[2].amount,
+          maxPosts: mockPlans[2].maxPosts,
+        },
+      });
 
       component.openChangePlan();
       component.selectPlan(mockPlans[2]);
       await fixture.whenStable();
       fixture.detectChanges();
 
-      // Exact preview amount is still shown to the customer
+      // Exact preview amount is shown to the customer along with warning that final Stripe charge may differ
       expect(
         fixture.nativeElement.querySelector('[data-testid="plan-change-amount-due-today"]')?.textContent?.trim(),
       ).toBe('$24.50');
-      // But Section 9 safety gate keeps upgrade blocked because backend does not yet enforce the previewed charge amount
-      expect(component.isUpgradeBlockedByChargeEnforcement()).toBe(true);
-      expect(component.canConfirmPlanChange()).toBe(false);
+      expect(component.isUpgradeBlockedByChargeEnforcement()).toBe(false);
+      expect(component.isUpgradePreviewChargeUnenforced()).toBe(true);
+      expect(component.canConfirmPlanChange()).toBe(true);
       const enforcementAlert: HTMLElement = fixture.nativeElement.querySelector(
         '[data-testid="upgrade-charge-enforcement-alert"]',
       );
       expect(enforcementAlert).toBeTruthy();
       expect(enforcementAlert.textContent).toContain('$24.50');
+      expect(enforcementAlert.textContent).toContain(
+        'final Stripe charge may differ slightly because the existing subscription-change Flow does not enforce the previewed amount',
+      );
 
       await component.confirmChangePlan();
-      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
-      expect(component.errorMessage()).toContain(
-        'immediate upgrade charging is currently disabled until server-side approved-amount enforcement is enabled',
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledWith(
+        'sub_123',
+        'si_456',
+        mockPlans[2].id,
+        true,
+        mockPlans[2].name,
+        mockSubscription.currentPeriodStart,
+        mockSubscription.currentPeriodEnd,
+        mockSubscription.plan.priceId,
       );
     });
 
@@ -3991,6 +4010,75 @@ describe('BillingComponent', () => {
       fixture.detectChanges();
       expect(component.errorMessage()).toContain('Pago detenido por tu seguridad');
       i18n.setLang('en');
+    });
+
+    it('25. When no authoritative upgrade preview amount is available, requires separate explicit acknowledgement before allowing upgrade', async () => {
+      stripeServiceSpy.previewSubscriptionPlanChange = vi.fn().mockResolvedValue({
+        verified: false,
+        verificationStatus: 'unavailable',
+        isUpgrade: true,
+        timing: 'immediate',
+        effectiveDate: null,
+        amountDueToday: null,
+        subtotal: 8900,
+        discountAmount: 0,
+        tax: 0,
+        currency: 'usd',
+        renewalAmount: 8900,
+        renewalInterval: 'month',
+        promoSupported: false,
+        couponState: 'not_applied',
+        errorCode: 'PREVIEW_ENDPOINT_UNAVAILABLE',
+      });
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
+        ...mockSubscription,
+        plan: {
+          ...mockSubscription.plan,
+          priceId: mockPlans[2].id,
+          name: mockPlans[2].name,
+          amount: mockPlans[2].amount,
+          maxPosts: mockPlans[2].maxPosts,
+        },
+      });
+
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // Does not display an invented amount
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="plan-change-amount-due-today"]')?.textContent?.trim(),
+      ).toBe('Unable to verify');
+      expect(component.isUpgradeAmountUnknown()).toBe(true);
+      expect(component.canAcknowledgeUnknownUpgradeAmount()).toBe(true);
+      expect(component.canConfirmPlanChange()).toBe(false);
+
+      const ackCheckbox: HTMLInputElement | null = fixture.nativeElement.querySelector(
+        '[data-testid="acknowledge-unknown-upgrade-charge-checkbox"]',
+      );
+      expect(ackCheckbox).toBeTruthy();
+
+      // Blocked until explicit acknowledgement is checked
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+
+      // Customer explicitly acknowledges unconfirmed immediate charge
+      component.upgradeUnverifiedAmountAcknowledged.set(true);
+      fixture.detectChanges();
+
+      expect(component.canConfirmPlanChange()).toBe(true);
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).toHaveBeenCalledWith(
+        'sub_123',
+        'si_456',
+        mockPlans[2].id,
+        true,
+        mockPlans[2].name,
+        mockSubscription.currentPeriodStart,
+        mockSubscription.currentPeriodEnd,
+        mockSubscription.plan.priceId,
+      );
     });
   });
 
