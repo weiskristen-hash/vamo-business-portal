@@ -131,10 +131,7 @@ Complete, importable Directus flow and operation definitions (including determin
 ---
 
 ### 2.4 `Stripe - Get Payment Methods` (`44946457-c8cd-42e2-98b2-a7a0672d59d3`)
-- Backward-compatible with existing `paymentMethods` callers (such as `Isla-Labs-DR/vamo-app`, which reads `data?.paymentMethods || []`) and returns authoritative default/renewal metadata resolved using Stripe's exact subscription billing precedence:
-  1. `subscription.default_payment_method` (`defaultPaymentMethodSource: "subscription"`)
-  2. `customer.invoice_settings.default_payment_method` (`defaultPaymentMethodSource: "customer"`)
-- Success response:
+- Backward-compatible with existing `paymentMethods` callers and returns verified default/renewal metadata:
   ```json
   {
     "paymentMethods": [
@@ -149,24 +146,9 @@ Complete, importable Directus flow and operation definitions (including determin
       }
     ],
     "defaultPaymentMethodId": "pm_...",
-    "defaultPaymentMethodSource": "subscription",
     "customerDefaultPaymentMethodId": "pm_...",
     "subscriptionDefaultPaymentMethodId": "pm_...",
-    "subscriptionId": "sub_...",
     "defaultVerified": true
-  }
-  ```
-- If any upstream Stripe lookup (`get_customer`, `get_payment_methods`, or `get_active_subscription`) fails or if the authenticated user email cannot be resolved, the Flow explicitly sets `defaultVerified: false` so the frontend never treats an unverified response as a verified payment method:
-  ```json
-  {
-    "paymentMethods": [],
-    "defaultPaymentMethodId": null,
-    "defaultPaymentMethodSource": null,
-    "customerDefaultPaymentMethodId": null,
-    "subscriptionDefaultPaymentMethodId": null,
-    "defaultVerified": false,
-    "error": true,
-    "code": "PAYMENT_METHOD_VERIFICATION_UNAVAILABLE"
   }
   ```
 

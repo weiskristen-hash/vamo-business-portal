@@ -1869,7 +1869,8 @@ describe('StripeService', () => {
       isUpgrade: false,
     };
 
-    it('returns unverified preview with amountDueToday=null for an upgrade when stripePreviewPlanChangeFlow is not configured', async () => {
+    it('returns unverified preview with amountDueToday=null for an upgrade when stripePlanChangePreviewEndpoint is empty or unconfigured', async () => {
+      vi.spyOn(runtimeConfig, 'stripePlanChangePreviewEndpoint', 'get').mockReturnValue('');
       const preview = await service.previewSubscriptionPlanChange(baseUpgradeRequest);
       expect(preview.verified).toBe(false);
       expect(preview.verificationStatus).toBe('unavailable');
@@ -1878,11 +1879,13 @@ describe('StripeService', () => {
       expect(preview.errorCode).toBe('UPGRADE_PRORATION_PREVIEW_UNAVAILABLE');
     });
 
-    it('returns verified $0.00 due today and scheduled effectiveDate for a downgrade without calling an external preview flow', async () => {
+    it('returns verified $0.00 due today and scheduled effectiveDate for a downgrade without calling an external preview endpoint', async () => {
       const flowSpy = vi.spyOn(service, 'flowPost');
+      const workerSpy = vi.spyOn(service, 'workerPost');
       const preview = await service.previewSubscriptionPlanChange(baseDowngradeRequest);
 
       expect(flowSpy).not.toHaveBeenCalled();
+      expect(workerSpy).not.toHaveBeenCalled();
       expect(preview.verified).toBe(true);
       expect(preview.verificationStatus).toBe('verified');
       expect(preview.isUpgrade).toBe(false);
@@ -1892,12 +1895,8 @@ describe('StripeService', () => {
       expect(preview.renewalAmount).toBe(3100);
     });
 
-    it('returns verified proration amountDueToday when stripePreviewPlanChangeFlow is configured and returns an invoice preview', async () => {
-      vi.spyOn(runtimeConfig, 'stripePreviewPlanChangeFlow', 'get').mockReturnValue(
-        'flow-preview-plan-change-uuid',
-      );
-
-      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+    it('returns verified proration amountDueToday when the independent Worker preview endpoint returns an invoice preview', async () => {
+      vi.spyOn(service, 'workerPost').mockResolvedValueOnce({
         amountDueToday: 1850,
         subtotal: 1850,
         discountAmount: 0,
@@ -2059,11 +2058,39 @@ describe('StripeService', () => {
       expect(res.paymentMethods[0].isRenewalCard).toBe(false);
     });
 
-    it('Phase 1.7: payment-method verification failure (defaultVerified: false or legacy unverified list) does not report a verified default card', async () => {
+    it('Phase 1.4: verifies default payment method via independent Worker endpoint when unchanged Directus Flow returns raw card list', async () => {
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        paymentMethods: [
+          { id: 'pm_cust_1', brand: 'visa', last4: '1111', expMonth: 10, expYear: 2029 },
+          { id: 'pm_sub_2', brand: 'mastercard', last4: '2222', expMonth: 12, expYear: 2029 },
+        ],
+      });
+      vi.spyOn(service, 'workerPost').mockResolvedValueOnce({
+        defaultVerified: true,
+        defaultPaymentMethodId: 'pm_sub_2',
+        defaultPaymentMethodSource: 'subscription',
+        subscriptionDefaultPaymentMethodId: 'pm_sub_2',
+        customerDefaultPaymentMethodId: 'pm_cust_1',
+      });
+
+      const res = await service.loadSavedPaymentMethods('sub_123');
+      expect(res.defaultVerified).toBe(true);
+      expect(res.defaultPaymentMethodId).toBe('pm_sub_2');
+      expect(res.defaultPaymentMethodSource).toBe('subscription');
+      expect(res.paymentMethods.find((m) => m.id === 'pm_sub_2')?.isRenewalCard).toBe(true);
+      expect(res.paymentMethods.find((m) => m.id === 'pm_cust_1')?.isRenewalCard).toBe(false);
+    });
+
+    it('Phase 1.7: payment-method verification failure (defaultVerified: false or legacy unverified list with unavailable Worker) does not report a verified default card', async () => {
       vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
         paymentMethods: [
           { id: 'pm_unverified', brand: 'visa', last4: '4242', expMonth: 10, expYear: 2029 },
         ],
+      });
+      vi.spyOn(service, 'workerPost').mockResolvedValueOnce({
+        defaultVerified: false,
+        error: true,
+        code: 'STRIPE_CREDENTIALS_MISSING',
       });
 
       const unverifiedLegacy = await service.loadSavedPaymentMethods();
@@ -2084,13 +2111,10 @@ describe('StripeService', () => {
       expect(failedVerification.defaultPaymentMethodId).toBeNull();
     });
 
-    it('Phase 2: parses authoritative Stripe invoice preview breakdown including prorationDelta, discount, tax, previewTimestamp, and chargeAmountEnforcedByServer=false', async () => {
-      vi.spyOn(runtimeConfig, 'stripePreviewPlanChangeFlow', 'get').mockReturnValue(
-        'e5f7b1d5-0a6c-4b2d-9f4e-5a8c9d2b3f64',
-      );
+    it('Phase 2: parses authoritative Stripe invoice preview breakdown from Worker including prorationDelta, discount, tax, previewTimestamp, and chargeAmountEnforcedByServer=false', async () => {
       const nowSec = Math.floor(Date.now() / 1000);
 
-      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+      vi.spyOn(service, 'workerPost').mockResolvedValueOnce({
         verified: true,
         customerId: 'cus_test_123',
         subscriptionId: 'sub_123',
@@ -2132,12 +2156,8 @@ describe('StripeService', () => {
     });
 
     it('Phase 2: rejects stale, mismatched, or unauthorized upgrade preview responses', async () => {
-      vi.spyOn(runtimeConfig, 'stripePreviewPlanChangeFlow', 'get').mockReturnValue(
-        'e5f7b1d5-0a6c-4b2d-9f4e-5a8c9d2b3f64',
-      );
-
       // 1. Expired preview
-      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+      vi.spyOn(service, 'workerPost').mockResolvedValueOnce({
         verified: true,
         amountDueToday: 1500,
         subtotal: 1500,
@@ -2150,7 +2170,7 @@ describe('StripeService', () => {
       expect(expired.errorCode).toBe('PREVIEW_EXPIRED');
 
       // 2. Mismatched target price
-      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+      vi.spyOn(service, 'workerPost').mockResolvedValueOnce({
         verified: true,
         targetPriceId: 'price_other_99',
         amountDueToday: 4000,
@@ -2162,7 +2182,7 @@ describe('StripeService', () => {
       expect(mismatchedTarget.errorCode).toBe('TARGET_PRICE_MISMATCH');
 
       // 3. Unauthorized or ownership mismatch from backend
-      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+      vi.spyOn(service, 'workerPost').mockResolvedValueOnce({
         verified: false,
         error: true,
         errorCode: 'SUBSCRIPTION_OWNERSHIP_MISMATCH',

@@ -550,6 +550,38 @@ export class StripeService {
     });
   }
 
+  async workerPost(endpoint: string, payload: object): Promise<any> {
+    if (!endpoint) {
+      throw new Error('Worker endpoint configuration is missing.');
+    }
+    return this.authService.safeRequest(async () => {
+      const headers = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(await this.authHeaders()),
+      };
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const text = await response.text();
+      if (!text) {
+        if (!response.ok) {
+          const err: any = new Error(`Worker request failed (${response.status})`);
+          err.status = response.status;
+          throw err;
+        }
+        return null;
+      }
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error('Worker endpoint returned invalid JSON.');
+      }
+    });
+  }
+
   async getPlans(): Promise<StripePlan[]> {
     const flowId = runtimeConfig.stripeGetPricesFlow;
     if (!flowId) {
@@ -2515,8 +2547,8 @@ export class StripeService {
 
   isPlanChangeUpgradePreviewConfigured(): boolean {
     return Boolean(
-      runtimeConfig.stripePreviewPlanChangeFlow &&
-        runtimeConfig.stripePreviewPlanChangeFlow.trim().length > 0,
+      runtimeConfig.stripePlanChangePreviewEndpoint &&
+        runtimeConfig.stripePlanChangePreviewEndpoint.trim().length > 0,
     );
   }
 
@@ -2667,8 +2699,8 @@ export class StripeService {
       };
     }
 
-    const previewFlowId = (runtimeConfig.stripePreviewPlanChangeFlow || '').trim();
-    if (!previewFlowId) {
+    const previewEndpoint = (runtimeConfig.stripePlanChangePreviewEndpoint || '').trim();
+    if (!previewEndpoint) {
       return {
         verified: false,
         verificationStatus: 'unavailable',
@@ -2706,12 +2738,13 @@ export class StripeService {
         isUpgrade: true,
         currentPeriodStart: request.currentPeriodStart,
         currentPeriodEnd: request.currentPeriodEnd,
+        customerEmail: request.customerEmail ?? this.authService.currentUser?.email ?? null,
       };
       if (promoSupported && (promoPreview?.promoCodeId || cleanPromoCode)) {
         previewPayload['promotionCode'] = promoPreview?.promoCodeId ?? cleanPromoCode;
       }
 
-      const raw = await this.flowPost(previewFlowId, previewPayload);
+      const raw = await this.workerPost(previewEndpoint, previewPayload);
       const body =
         raw?.preview_result ??
         raw?.change_preview ??
@@ -3864,13 +3897,13 @@ export class StripeService {
     }
   }
 
-  async loadSavedPaymentMethods(): Promise<SavedPaymentMethodsResult> {
+  async loadSavedPaymentMethods(subscriptionId?: string): Promise<SavedPaymentMethodsResult> {
     const flowId = runtimeConfig.stripeGetPaymentMethodsFlow;
     if (!flowId) {
       throw new Error('Get payment methods flow is not configured.');
     }
     const res = await this.flowPost(flowId, {});
-    const body = res?.data ?? res ?? {};
+    let body = res?.data ?? res ?? {};
 
     if (
       body &&
@@ -3882,16 +3915,90 @@ export class StripeService {
       throw err;
     }
 
-    const rawMethods = Array.isArray(body?.paymentMethods) ? body.paymentMethods : [];
+    let rawMethods = Array.isArray(body?.paymentMethods) ? body.paymentMethods : [];
 
-    const explicitUnverified =
+    let explicitUnverified =
       Boolean(body && typeof body === 'object') &&
       (body.defaultVerified === false || Boolean(body.error) || Boolean(body.stripeError));
 
-    const hasSubDefaultField =
+    let hasSubDefaultField =
       Boolean(body && typeof body === 'object') && 'subscriptionDefaultPaymentMethodId' in body;
-    const hasCustDefaultField =
+    let hasCustDefaultField =
       Boolean(body && typeof body === 'object') && 'customerDefaultPaymentMethodId' in body;
+
+    let hasExplicitDefaultField =
+      Boolean(body && typeof body === 'object') &&
+      (body.defaultVerified === true ||
+        'defaultPaymentMethodId' in body ||
+        'renewalPaymentMethodId' in body ||
+        hasSubDefaultField ||
+        hasCustDefaultField);
+
+    let hasItemExplicitFlag = rawMethods.some(
+      (pm: any) =>
+        pm &&
+        (typeof pm.isRenewalCard === 'boolean' || typeof pm.isDefault === 'boolean'),
+    );
+
+    const statusEndpoint = (runtimeConfig.stripePaymentMethodStatusEndpoint || '').trim();
+    if (!explicitUnverified && !hasExplicitDefaultField && !hasItemExplicitFlag && statusEndpoint) {
+      try {
+        const statusRes = await this.workerPost(statusEndpoint, {
+          subscriptionId: subscriptionId ?? null,
+          customerEmail: this.authService.currentUser?.email ?? null,
+        });
+        const statusBody = statusRes?.data ?? statusRes;
+        if (
+          statusBody &&
+          typeof statusBody === 'object' &&
+          (statusBody.code === 'UNAUTHORIZED' ||
+            statusBody.code === 'PAYMENT_METHOD_OWNERSHIP_MISMATCH' ||
+            statusBody.code === 'CUSTOMER_OWNERSHIP_MISMATCH' ||
+            statusBody.code === 'CROSS_BUSINESS_ACCESS_DENIED')
+        ) {
+          const err: any = new Error(statusBody.message || 'Unauthorized payment method access.');
+          err.code = statusBody.code;
+          throw err;
+        }
+        if (
+          statusBody &&
+          typeof statusBody === 'object' &&
+          statusBody.defaultVerified === true &&
+          !statusBody.error &&
+          !statusBody.stripeError
+        ) {
+          body = {
+            ...body,
+            ...statusBody,
+            paymentMethods:
+              rawMethods.length > 0
+                ? rawMethods
+                : Array.isArray(statusBody.paymentMethods)
+                  ? statusBody.paymentMethods
+                  : [],
+          };
+          rawMethods = Array.isArray(body.paymentMethods) ? body.paymentMethods : [];
+          hasSubDefaultField = 'subscriptionDefaultPaymentMethodId' in body;
+          hasCustDefaultField = 'customerDefaultPaymentMethodId' in body;
+          hasExplicitDefaultField = true;
+          hasItemExplicitFlag = rawMethods.some(
+            (pm: any) =>
+              pm &&
+              (typeof pm.isRenewalCard === 'boolean' || typeof pm.isDefault === 'boolean'),
+          );
+        }
+      } catch (err: any) {
+        if (
+          err?.code === 'UNAUTHORIZED' ||
+          err?.code === 'PAYMENT_METHOD_OWNERSHIP_MISMATCH' ||
+          err?.code === 'CUSTOMER_OWNERSHIP_MISMATCH' ||
+          err?.code === 'CROSS_BUSINESS_ACCESS_DENIED'
+        ) {
+          throw err;
+        }
+        // If independent read-only Worker status endpoint is unavailable, retain defaultVerified: false safety block.
+      }
+    }
 
     const subDefaultId =
       typeof body?.subscriptionDefaultPaymentMethodId === 'string' &&
@@ -3911,14 +4018,6 @@ export class StripeService {
         ? topLevelDefaultRaw.trim()
         : null;
 
-    const hasExplicitDefaultField =
-      Boolean(body && typeof body === 'object') &&
-      (body.defaultVerified === true ||
-        'defaultPaymentMethodId' in body ||
-        'renewalPaymentMethodId' in body ||
-        hasSubDefaultField ||
-        hasCustDefaultField);
-
     const itemLevelDefault = rawMethods.find(
       (pm: any) => pm && (pm.isRenewalCard === true || pm.isDefault === true),
     );
@@ -3926,12 +4025,6 @@ export class StripeService {
       typeof itemLevelDefault?.id === 'string' && itemLevelDefault.id.trim().startsWith('pm_')
         ? itemLevelDefault.id.trim()
         : null;
-
-    const hasItemExplicitFlag = rawMethods.some(
-      (pm: any) =>
-        pm &&
-        (typeof pm.isRenewalCard === 'boolean' || typeof pm.isDefault === 'boolean'),
-    );
 
     const defaultVerified = !explicitUnverified && (hasExplicitDefaultField || hasItemExplicitFlag);
 

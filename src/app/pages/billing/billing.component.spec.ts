@@ -3888,6 +3888,110 @@ describe('BillingComponent', () => {
       });
       await fixture.whenStable();
     });
+
+    it('23. Blocks confirmation and refreshes preview when subscription state changes between preview and confirmation (EN/ES)', async () => {
+      stripeServiceSpy.previewSubscriptionPlanChange = vi.fn().mockResolvedValue({
+        verified: true,
+        verificationStatus: 'verified',
+        isUpgrade: true,
+        timing: 'immediate',
+        effectiveDate: 1701250000,
+        subscriptionId: 'sub_123',
+        subscriptionItemId: 'si_456',
+        currentPriceId: mockPlans[1].id,
+        targetPriceId: mockPlans[2].id,
+        amountDueToday: 2450,
+        subtotal: 2450,
+        discountAmount: 0,
+        tax: 0,
+        currency: 'usd',
+        renewalAmount: 8900,
+        renewalInterval: 'month',
+        expiresAt: Date.now() + 300_000,
+        chargeAmountEnforcedByServer: true,
+        promoSupported: false,
+        couponState: 'not_applied',
+      });
+
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // Simulate subscription billing period changing in background before customer confirms
+      component.subscription.set({
+        ...mockSubscription,
+        currentPeriodEnd: mockSubscription.currentPeriodEnd + 86400,
+      });
+      fixture.detectChanges();
+
+      expect(component.hasSubscriptionChangedSinceReview()).toBe(true);
+
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.previewSubscriptionPlanChange).toHaveBeenCalledTimes(2);
+      expect(component.errorMessage()).toContain(
+        'Your subscription details changed while reviewing this plan change',
+      );
+
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+      fixture.detectChanges();
+      expect(component.errorMessage()).toContain(
+        'Los detalles de tu suscripción cambiaron mientras revisabas este cambio de plan',
+      );
+      i18n.setLang('en');
+    });
+
+    it('24. Halts upgrade completion and 3DS confirmation when returned invoiceAmountDue mismatches customer-approved preview amount (EN/ES)', async () => {
+      stripeServiceSpy.previewSubscriptionPlanChange = vi.fn().mockResolvedValue({
+        verified: true,
+        verificationStatus: 'verified',
+        isUpgrade: true,
+        timing: 'immediate',
+        effectiveDate: 1701250000,
+        subscriptionId: 'sub_123',
+        subscriptionItemId: 'si_456',
+        currentPriceId: mockPlans[1].id,
+        targetPriceId: mockPlans[2].id,
+        amountDueToday: 2450,
+        subtotal: 2450,
+        discountAmount: 0,
+        tax: 0,
+        currency: 'usd',
+        renewalAmount: 8900,
+        renewalInterval: 'month',
+        expiresAt: Date.now() + 300_000,
+        chargeAmountEnforcedByServer: true,
+        promoSupported: false,
+        couponState: 'not_applied',
+      });
+
+      stripeServiceSpy.changeSubscriptionPlan.mockResolvedValueOnce({
+        status: 'requires_action',
+        clientSecret: 'pi_mismatch_secret_123',
+        invoiceAmountDue: 3900,
+      });
+
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      await component.confirmChangePlan();
+      fixture.detectChanges();
+
+      expect(stripeServiceSpy.confirmWithSavedMethod).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.setProviderTier).not.toHaveBeenCalled();
+      expect(component.errorMessage()).toContain('$39.00');
+      expect(component.errorMessage()).toContain('$24.50');
+
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+      fixture.detectChanges();
+      expect(component.errorMessage()).toContain('Pago detenido por tu seguridad');
+      i18n.setLang('en');
+    });
   });
 
 });

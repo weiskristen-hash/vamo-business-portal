@@ -4494,6 +4494,35 @@ export class BillingComponent implements OnInit, OnDestroy {
             sub.plan.priceId,
           );
 
+      const approvedAmount =
+        isUpgrade &&
+        effectivePreview?.verified &&
+        typeof effectivePreview.amountDueToday === 'number' &&
+        Number.isFinite(effectivePreview.amountDueToday)
+          ? Math.round(effectivePreview.amountDueToday)
+          : null;
+      if (
+        (isUpgrade &&
+          approvedAmount !== null &&
+          typeof result?.invoiceAmountDue === 'number' &&
+          Number.isFinite(result.invoiceAmountDue) &&
+          Math.round(result.invoiceAmountDue) !== approvedAmount) ||
+        result?.errorCode === 'AMOUNT_MISMATCH_BLOCKED'
+      ) {
+        this.pendingPlanChangeTarget.set(null);
+        this.setTranslatedError('PORTAL.BILLING.ERROR_AMOUNT_MISMATCH_BLOCKED', {
+          approved: this.formatExactPrice(
+            approvedAmount ?? 0,
+            effectivePreview?.currency || newPlan.currency,
+          ),
+          actual: this.formatExactPrice(
+            Math.round(result?.invoiceAmountDue ?? 0),
+            effectivePreview?.currency || newPlan.currency,
+          ),
+        });
+        return;
+      }
+
       const status = result?.status;
       if (status === 'requires_action') {
         if (
