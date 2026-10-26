@@ -276,7 +276,7 @@ export interface StripePlan {
   features: string[];
 }
 
-export type AddonType = 'main_banner' | 'whats_hot';
+export type AddonType = 'single_post' | 'main_banner' | 'whats_hot';
 
 export interface StripeAddonPlan {
   id: string;
@@ -284,7 +284,8 @@ export interface StripeAddonPlan {
   description: string;
   amount: number;
   currency: string;
-  interval: string;
+  interval?: string;
+  productName?: string;
 }
 
 export interface BoostAvailabilitySlot {
@@ -525,6 +526,7 @@ export class StripeService {
         amount: price.unit_amount ?? 0,
         currency: price.currency ?? 'usd',
         interval: 'one_time',
+        productName: price.product?.name ?? 'Add-On',
       }))
       .filter((p: StripeAddonPlan) => !!p.id);
   }
@@ -568,29 +570,73 @@ export class StripeService {
     };
   }
 
+  private inFlightAddonPayments = new Map<
+    string,
+    Promise<
+      | { clientSecret: string; paymentIntentId: string; free?: false }
+      | { free: true; clientSecret?: null; paymentIntentId?: null }
+    >
+  >();
+  private inFlightApplyAddons = new Map<string, Promise<any>>();
+
   async createAddonPayment(
     priceId: string,
     type: AddonType,
-    providerId: string,
+    providerId?: string,
     eventId?: string,
     scheduledStart?: string,
     promotionCode?: string,
-  ): Promise<{ clientSecret: string; paymentIntentId: string } | { free: true }> {
+  ): Promise<
+    | { clientSecret: string; paymentIntentId: string; free?: false }
+    | { free: true; clientSecret?: null; paymentIntentId?: null }
+  > {
     const flowId = runtimeConfig.stripeCreateAddonPaymentFlow;
     if (!flowId) {
       throw new Error('Boost payment flow is not configured.');
     }
-    const data = await this.flowPost(flowId, {
-      priceId,
-      type,
-      providerId,
-      eventId: eventId ?? null,
-      scheduledStart: scheduledStart ?? null,
-      promotionCode: promotionCode ?? null,
-    });
-    if (data?.return_free_addon?.free) return { free: true };
-    const paid = data?.extract_cs_discounted ?? data?.extract_client_secret ?? data;
-    return paid;
+    const lockKey = `${priceId}:${type}:${providerId ?? ''}:${eventId ?? ''}:${scheduledStart ?? ''}:${promotionCode ?? ''}`;
+    const existing = this.inFlightAddonPayments.get(lockKey);
+    if (existing) {
+      return existing;
+    }
+
+    const execution = (async (): Promise<
+      | { clientSecret: string; paymentIntentId: string; free?: false }
+      | { free: true; clientSecret?: null; paymentIntentId?: null }
+    > => {
+      const payload: Record<string, any> = {
+        priceId,
+        type,
+        providerId: providerId ?? null,
+        eventId: eventId ?? null,
+        scheduledStart: scheduledStart ?? null,
+        promotionCode: promotionCode ?? null,
+      };
+      const data = await this.flowPost(flowId, payload);
+      if (data?.return_free_addon?.free || data?.extract_addon_secret?.free || data?.free === true) {
+        return { free: true, clientSecret: null, paymentIntentId: null };
+      }
+      const paid =
+        data?.extract_addon_secret ??
+        data?.extract_cs_discounted ??
+        data?.extract_client_secret ??
+        data;
+      if (paid?.stripeError || paid?.error) {
+        throw new Error(
+          typeof paid.error === 'string'
+            ? paid.error
+            : paid?.error?.message || paid?.stripeError || paid?.message || 'Payment creation failed.',
+        );
+      }
+      return paid;
+    })();
+
+    this.inFlightAddonPayments.set(lockKey, execution);
+    try {
+      return await execution;
+    } finally {
+      this.inFlightAddonPayments.delete(lockKey);
+    }
   }
 
   async applyAddon(
@@ -609,7 +655,19 @@ export class StripeService {
       eventId: eventId ?? null,
       scheduledStart: scheduledStart ?? null,
     };
-    return this.flowPost(flowId, payload);
+    const lockKey = `${type}:${internalDataId ?? ''}:${eventId ?? ''}:${scheduledStart ?? ''}`;
+    const existing = this.inFlightApplyAddons.get(lockKey);
+    if (existing) {
+      return existing;
+    }
+
+    const execution = this.flowPost(flowId, payload);
+    this.inFlightApplyAddons.set(lockKey, execution);
+    try {
+      return await execution;
+    } finally {
+      this.inFlightApplyAddons.delete(lockKey);
+    }
   }
 
   async validatePromoCode(code: string): Promise<PromoResult> {

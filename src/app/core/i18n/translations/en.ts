@@ -1500,7 +1500,20 @@ export const enTranslations: Record<string, any> = {
       "SUCCESS_DOWNGRADE_SCHEDULED": "Your downgrade to {{plan}} is scheduled for the end of your billing cycle.",
       "SUCCESS_DOWNGRADE_CANCELED": "Scheduled downgrade has been canceled. Your current plan remains active.",
       "SUCCESS_CANCELED": "Subscription canceled. You will continue to have access until {{date}}.",
-      "SUCCESS_REACTIVATED": "Welcome back! Your subscription renewal has been reactivated."
+      "SUCCESS_REACTIVATED": "Welcome back! Your subscription renewal has been reactivated.",
+
+      "ADDON_SINGLE_POST_EYEBROW": "One-Time Add-On",
+      "ADDON_SINGLE_POST_TITLE": "Add 1 More Post",
+      "ADDON_SINGLE_POST_DESC": "Need more posts? Add one additional active event or activity listing to your current plan. This is a one-time purchase for 1 extra active post — not a recurring subscription upgrade.",
+      "ADDON_SINGLE_POST_ONE_TIME_NOTE": "One-time purchase · Adds +1 active post slot",
+      "ADDON_SINGLE_POST_BUY_BTN": "Buy Single Post",
+      "ADDON_SINGLE_POST_PAY_BTN": "Pay {{amount}}",
+      "ADDON_SINGLE_POST_SUCCESS": "1 additional active post slot has been added to your plan.",
+      "ADDON_SINGLE_POST_DRAFT_READY": "Your extra post slot is active. Return to your saved draft when you're ready to review and publish it.",
+      "ADDON_SINGLE_POST_ACTIVATION_PENDING_TITLE": "Payment Received — Activation Pending",
+      "ADDON_SINGLE_POST_ACTIVATION_PENDING_DESC": "Your payment was completed, but we couldn’t confirm your extra post slot yet. Please do not submit payment again — refresh billing to check your updated quota.",
+      "ADDON_SINGLE_POST_ERROR_APPLY_PENDING": "Payment was received, but we couldn’t confirm your extra post slot yet. Please do not submit payment again — refresh billing to check your updated quota.",
+      "ADDON_SINGLE_POST_ERROR_INIT": "We couldn’t start the single-post add-on payment. Please try again."
     },
     "PROMOTIONS": {
       "TITLE": "Promote a Post",

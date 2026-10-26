@@ -1500,7 +1500,20 @@ export const esTranslations: Record<string, any> = {
       "SUCCESS_DOWNGRADE_SCHEDULED": "La reducción a {{plan}} está programada para el final de tu ciclo de facturación.",
       "SUCCESS_DOWNGRADE_CANCELED": "La reducción programada ha sido cancelada. Tu plan actual se mantiene activo.",
       "SUCCESS_CANCELED": "Suscripción cancelada. Mantendrás el acceso hasta el {{date}}.",
-      "SUCCESS_REACTIVATED": "¡Bienvenido de vuelta! La renovación de tu suscripción ha sido reactivada."
+      "SUCCESS_REACTIVATED": "¡Bienvenido de vuelta! La renovación de tu suscripción ha sido reactivada.",
+
+      "ADDON_SINGLE_POST_EYEBROW": "Complemento de pago único",
+      "ADDON_SINGLE_POST_TITLE": "Añade 1 publicación activa más",
+      "ADDON_SINGLE_POST_DESC": "¿Necesitas más publicaciones? Añade una publicación activa más (evento o actividad) a tu plan actual. Esta es una compra única para 1 publicación activa adicional — no es un cambio de suscripción recurrente.",
+      "ADDON_SINGLE_POST_ONE_TIME_NOTE": "Compra única · Añade +1 espacio de publicación activa",
+      "ADDON_SINGLE_POST_BUY_BTN": "Comprar Post Único",
+      "ADDON_SINGLE_POST_PAY_BTN": "Pagar {{amount}}",
+      "ADDON_SINGLE_POST_SUCCESS": "Se ha añadido 1 espacio de publicación activa adicional a tu plan.",
+      "ADDON_SINGLE_POST_DRAFT_READY": "Tu espacio de publicación adicional ya está activo. Vuelve a tu borrador guardado cuando estés listo para revisarlo y publicarlo.",
+      "ADDON_SINGLE_POST_ACTIVATION_PENDING_TITLE": "Pago recibido — Activación pendiente",
+      "ADDON_SINGLE_POST_ACTIVATION_PENDING_DESC": "Tu pago se completó, pero aún no pudimos confirmar tu espacio de publicación adicional. No envíes el pago de nuevo — actualiza la facturación para verificar tu límite actualizado.",
+      "ADDON_SINGLE_POST_ERROR_APPLY_PENDING": "Se recibió el pago, pero aún no pudimos confirmar tu espacio de publicación adicional. No envíes el pago de nuevo — actualiza la facturación para verificar tu límite actualizado.",
+      "ADDON_SINGLE_POST_ERROR_INIT": "No pudimos iniciar el pago del post adicional. Por favor inténtalo de nuevo."
     },
     "PROMOTIONS": {
       "TITLE": "Promocionar una publicación",

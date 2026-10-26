@@ -186,6 +186,22 @@ describe('BillingComponent', () => {
       }),
       getBillingHistory: vi.fn().mockResolvedValue(mockHistory),
       getExtraPosts: vi.fn().mockResolvedValue(0),
+      getAddonPrices: vi.fn().mockResolvedValue([
+        {
+          id: 'price_1TBzCXGWvZAV5mbnFwGJZ73E',
+          name: 'Single post add on',
+          description: 'Add a single post to your subscription, valid for 30 days',
+          amount: 2000,
+          currency: 'usd',
+          productName: 'Single post add on',
+        },
+      ]),
+      createAddonPayment: vi.fn().mockResolvedValue({
+        clientSecret: 'pi_addon_secret_123',
+        paymentIntentId: 'pi_addon_123',
+        free: false,
+      }),
+      applyAddon: vi.fn().mockResolvedValue(undefined),
       validatePromoCode: vi.fn().mockResolvedValue({ valid: true, name: 'WELCOME20', percentOff: 20 }),
       createSubscription: vi.fn().mockResolvedValue({
         clientSecret: 'pi_test_secret',
@@ -2410,4 +2426,304 @@ describe('BillingComponent', () => {
     });
   });
 
+  describe('Single-Post Add-On Purchase via Directus Flows', () => {
+    it('1. loads add-on prices via getAddonPrices() and identifies the single-post price', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(stripeServiceSpy.getAddonPrices).toHaveBeenCalled();
+      expect(component.singlePostPrice()).toEqual({
+        id: 'price_1TBzCXGWvZAV5mbnFwGJZ73E',
+        name: 'Single post add on',
+        description: 'Add a single post to your subscription, valid for 30 days',
+        amount: 2000,
+        currency: 'usd',
+        productName: 'Single post add on',
+      });
+    });
+
+    it('2. hides the single-post add-on when getAddonPrices() fails or returns no matching price', async () => {
+      stripeServiceSpy.getAddonPrices.mockRejectedValueOnce(new Error('Flow failed'));
+      await component.loadAddonPrices();
+      fixture.detectChanges();
+
+      expect(component.singlePostPrice()).toBeNull();
+      expect(component.isSinglePostAddonEligible()).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="single-post-addon-section"]')).toBeNull();
+    });
+
+    it('3. displays the single-post add-on for active and trialing subscriptions', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const section = fixture.nativeElement.querySelector('[data-testid="single-post-addon-section"]');
+      expect(section).not.toBeNull();
+      expect(
+        fixture.nativeElement
+          .querySelector('[data-testid="single-post-addon-price"] .addon-price-amount')
+          ?.textContent?.trim(),
+      ).toBe('$20');
+
+      // Trialing subscription should also be eligible
+      component.subscription.set({ ...mockSubscription, status: 'trialing' });
+      fixture.detectChanges();
+      expect(component.isSinglePostAddonEligible()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="single-post-addon-section"]')).not.toBeNull();
+    });
+
+    it('4. hides the single-post add-on when the user has no active subscription or when subscription is canceled', async () => {
+      component.subscription.set(null);
+      fixture.detectChanges();
+      expect(component.isSinglePostAddonEligible()).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="single-post-addon-section"]')).toBeNull();
+
+      component.subscription.set({ ...mockSubscription, status: 'canceled' });
+      fixture.detectChanges();
+      expect(component.isSinglePostAddonEligible()).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="single-post-addon-section"]')).toBeNull();
+    });
+
+    it('5. displays both subscription upgrade options and the single-post add-on when redirected for reason=quota', async () => {
+      billingParams['reason'] = 'quota';
+      billingParams['returnEventId'] = 'draft-42';
+
+      await component.loadSubscription(mockUser.email);
+      fixture.detectChanges();
+
+      // Plan section should be automatically opened so upgrade plans are visible alongside the single-post add-on
+      expect(component.showChangePlanSection()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="single-post-addon-section"]')).not.toBeNull();
+    });
+
+    it('6. calls createAddonPayment(singlePostPrice.id, "single_post", providerId) when purchasing', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      await component.proceedToAddonPayment();
+
+      expect(stripeServiceSpy.createAddonPayment).toHaveBeenCalledWith(
+        'price_1TBzCXGWvZAV5mbnFwGJZ73E',
+        'single_post',
+        'prov-101',
+      );
+    });
+
+    it('7. handles { free: true } by calling applyAddon("single_post") immediately without PaymentIntent confirmation', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      stripeServiceSpy.createAddonPayment.mockResolvedValueOnce({
+        clientSecret: null,
+        paymentIntentId: null,
+        free: true,
+      });
+      stripeServiceSpy.getExtraPosts.mockResolvedValueOnce(1);
+
+      await component.proceedToAddonPayment();
+
+      expect(stripeServiceSpy.confirmWithSavedMethod).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.confirmPayment).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.applyAddon).toHaveBeenCalledWith('single_post');
+      expect(component.postLimit()).toBe(5);
+      expect(component.addonPurchaseSuccess()).toBe(true);
+    });
+
+    it('8. confirms saved-card add-on payment via confirmWithSavedMethod and then calls applyAddon("single_post")', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      component.selectSavedMethod(mockSavedMethods[0]);
+      stripeServiceSpy.confirmWithSavedMethod.mockResolvedValueOnce({
+        paymentIntent: { id: 'pi_addon_123', status: 'succeeded' },
+      });
+      stripeServiceSpy.getExtraPosts.mockResolvedValueOnce(1);
+
+      await component.proceedToAddonPayment();
+
+      expect(stripeServiceSpy.confirmWithSavedMethod).toHaveBeenCalledWith(
+        'pi_addon_secret_123',
+        'pm_1',
+      );
+      expect(stripeServiceSpy.applyAddon).toHaveBeenCalledWith('single_post');
+      expect(component.postLimit()).toBe(5);
+      expect(component.addonPurchaseSuccess()).toBe(true);
+    });
+
+    it('9. mounts Stripe Payment Element and confirms new-card add-on payment before calling applyAddon("single_post")', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      await component.proceedToAddonPayment();
+      expect(component.addonPaymentActive()).toBe(true);
+      expect(component.addonClientSecret()).toBe('pi_addon_secret_123');
+
+      await (component as any).mountAddonPaymentElement('pi_addon_secret_123');
+      expect(stripeServiceSpy.mountPaymentElement).toHaveBeenCalledWith(
+        'pi_addon_secret_123',
+        'portal-addon-payment-element',
+      );
+      expect(component.addonStripeReady()).toBe(true);
+
+      stripeServiceSpy.confirmPayment.mockResolvedValueOnce({
+        paymentIntent: { id: 'pi_addon_123', status: 'succeeded' },
+      });
+      stripeServiceSpy.getExtraPosts.mockResolvedValueOnce(1);
+
+      await component.confirmAddonPayment();
+
+      expect(stripeServiceSpy.confirmPayment).toHaveBeenCalled();
+      expect(stripeServiceSpy.applyAddon).toHaveBeenCalledWith('single_post');
+      expect(component.addonPaymentActive()).toBe(false);
+      expect(component.postLimit()).toBe(5);
+      expect(component.addonPurchaseSuccess()).toBe(true);
+    });
+
+    it('10. does NOT call applyAddon("single_post") when Stripe payment confirmation fails', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      component.selectSavedMethod(mockSavedMethods[0]);
+      stripeServiceSpy.confirmWithSavedMethod.mockResolvedValueOnce({
+        error: { message: 'Your card was declined.' },
+      });
+
+      await component.proceedToAddonPayment();
+
+      expect(stripeServiceSpy.applyAddon).not.toHaveBeenCalled();
+      expect(component.addonError()).toBeTruthy();
+      expect(component.addonPurchaseSuccess()).toBe(false);
+    });
+
+    it('11. refreshes extra_posts and billing history after successful add-on application', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      stripeServiceSpy.getExtraPosts.mockClear();
+      stripeServiceSpy.getBillingHistory.mockClear();
+      stripeServiceSpy.createAddonPayment.mockResolvedValueOnce({
+        clientSecret: null,
+        paymentIntentId: null,
+        free: true,
+      });
+      stripeServiceSpy.getExtraPosts.mockResolvedValueOnce(2);
+
+      await component.proceedToAddonPayment();
+
+      expect(stripeServiceSpy.getExtraPosts).toHaveBeenCalled();
+      expect(stripeServiceSpy.getBillingHistory).toHaveBeenCalled();
+      // Basic plan base limit (4) + extra_posts (2) = 6
+      expect(component.postLimit()).toBe(6);
+    });
+
+    it('12. updates quota display and enables Return to Draft when returnEventId is present without auto-publishing', async () => {
+      billingParams['reason'] = 'quota';
+      billingParams['returnEventId'] = 'draft-99';
+      businessServiceSpy.getEventsForProvider.mockResolvedValue([
+        { id: 'ev-1', status: 'published' },
+        { id: 'ev-2', status: 'published' },
+        { id: 'ev-3', status: 'published' },
+        { id: 'ev-4', status: 'published' },
+      ]);
+
+      await component.loadSubscription(mockUser.email);
+      fixture.detectChanges();
+      expect(component.postsUsed()).toBe(4);
+      expect(component.postLimit()).toBe(4);
+
+      stripeServiceSpy.createAddonPayment.mockResolvedValueOnce({
+        clientSecret: null,
+        paymentIntentId: null,
+        free: true,
+      });
+      stripeServiceSpy.getExtraPosts.mockResolvedValueOnce(1);
+
+      const router = TestBed.inject(Router);
+      const navSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+      await component.proceedToAddonPayment();
+      fixture.detectChanges();
+
+      // Quota updated to 4 / 5, draft is NOT auto-published or auto-navigated away without user click
+      expect(component.postLimit()).toBe(5);
+      expect(navSpy).not.toHaveBeenCalled();
+
+      const returnBtn = fixture.nativeElement.querySelector(
+        '[data-testid="addon-return-to-draft-btn"]',
+      ) as HTMLButtonElement | null;
+      expect(returnBtn).not.toBeNull();
+      returnBtn!.click();
+      expect(navSpy).toHaveBeenCalledWith(['/app/listings/edit', 'draft-99']);
+    });
+
+    it('13. prevents duplicate clicks / duplicate in-flight submissions during add-on processing', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      let resolvePayment!: (val: any) => void;
+      stripeServiceSpy.createAddonPayment.mockReturnValueOnce(
+        new Promise((r) => {
+          resolvePayment = r;
+        }),
+      );
+
+      const p1 = component.proceedToAddonPayment();
+      const p2 = component.proceedToAddonPayment();
+
+      expect(stripeServiceSpy.createAddonPayment).toHaveBeenCalledTimes(1);
+
+      resolvePayment({
+        clientSecret: 'pi_addon_secret_123',
+        paymentIntentId: 'pi_addon_123',
+        free: false,
+      });
+      await Promise.all([p1, p2]);
+    });
+
+    it('14. prevents re-charging when payment succeeded in Stripe but applyAddon("single_post") fails', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      component.selectSavedMethod(mockSavedMethods[0]);
+      stripeServiceSpy.confirmWithSavedMethod.mockResolvedValueOnce({
+        paymentIntent: { id: 'pi_addon_123', status: 'succeeded' },
+      });
+      stripeServiceSpy.applyAddon.mockRejectedValueOnce(new Error('Directus flow timeout'));
+
+      await component.proceedToAddonPayment();
+      fixture.detectChanges();
+
+      expect(component.addonActivationPending()).toBe(true);
+      expect(component.addonError()).toContain('Payment was received');
+
+      // Attempting to click purchase again must NOT create another PaymentIntent
+      stripeServiceSpy.createAddonPayment.mockClear();
+      await component.proceedToAddonPayment();
+      expect(stripeServiceSpy.createAddonPayment).not.toHaveBeenCalled();
+    });
+
+    it('15. translates Single-Post Add-On labels in both English and Spanish', async () => {
+      await fixture.whenStable();
+      const i18n = TestBed.inject(I18nService);
+
+      i18n.setLang('en');
+      fixture.detectChanges();
+      const sectionEn = fixture.nativeElement.querySelector(
+        '[data-testid="single-post-addon-section"]',
+      ) as HTMLElement;
+      expect(sectionEn.textContent).toContain('Add 1 More Post');
+      expect(sectionEn.textContent).toContain('One-Time Add-On');
+
+      i18n.setLang('es');
+      fixture.detectChanges();
+      const sectionEs = fixture.nativeElement.querySelector(
+        '[data-testid="single-post-addon-section"]',
+      ) as HTMLElement;
+      expect(sectionEs.textContent).toContain('Añade 1 publicación activa más');
+      expect(sectionEs.textContent).toContain('Complemento de pago único');
+
+      i18n.setLang('en');
+    });
+  });
+
 });
+
