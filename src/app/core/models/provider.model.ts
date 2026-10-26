@@ -65,7 +65,13 @@ export interface Provider {
   bookmarkCount?: number;
 }
 
-export const BUSINESS_TYPES = [
+export interface BusinessTypeOption {
+  value: string;
+  label: string;
+  icon?: string;
+}
+
+export const BUSINESS_TYPES: BusinessTypeOption[] = [
   { value: 'restaurant_and_bar', label: 'Restaurant & Bar' },
   { value: 'restaurant',         label: 'Restaurant' },
   { value: 'bar',                label: 'Bar' },
@@ -81,3 +87,4 @@ export const BUSINESS_TYPES = [
   { value: 'services',           label: 'Other Services' },
   { value: 'other',              label: 'Other' },
 ];
+

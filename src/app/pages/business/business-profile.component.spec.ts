@@ -13,6 +13,33 @@ describe('BusinessProfileComponent', () => {
   let businessServiceSpy: any;
   let i18nService: I18nService;
 
+  const mockPublishedAreas = [
+    {
+      id: 'area-lt',
+      name: 'Las Terrenas',
+      slug: 'las-terrenas',
+      emoji: '🌴',
+      latitude: 19.3175,
+      longitude: -69.5422,
+    },
+    {
+      id: 'area-cab',
+      name: 'Cabarete',
+      slug: 'cabarete',
+      emoji: '🪁',
+      latitude: 19.7498,
+      longitude: -70.4083,
+    },
+    {
+      id: 'area-pc',
+      name: 'Punta Cana',
+      slug: 'punta-cana',
+      emoji: '🏖️',
+      latitude: 18.5622,
+      longitude: -68.4044,
+    },
+  ];
+
   const mockProvider: Provider = {
     id: 'prov-101',
     name: 'Las Terrenas Kitesurf Oasis',
@@ -61,6 +88,7 @@ describe('BusinessProfileComponent', () => {
     businessServiceSpy = {
       getProviderById: vi.fn().mockResolvedValue(mockProvider),
       updateProvider: vi.fn().mockResolvedValue(mockProvider),
+      getAreas: vi.fn().mockResolvedValue(mockPublishedAreas),
       getAssetUrl: vi.fn((fileIdOrObj: any) => {
         const id = typeof fileIdOrObj === 'object' ? fileIdOrObj?.id : fileIdOrObj;
         return id ? `https://api.vamo-app.com/assets/${id}` : '';
@@ -307,14 +335,15 @@ describe('BusinessProfileComponent', () => {
       i18nService.setLang('en');
     });
 
-    it('displays canonical English category value and options in both EN and ES while remaining disabled', async () => {
+    it('displays canonical English category value and options in both EN and ES with Business Category enabled', async () => {
       await fixture.whenStable();
       fixture.detectChanges();
       const compiled = fixture.nativeElement as HTMLElement;
 
       const select = compiled.querySelector('#field-type') as HTMLSelectElement;
       expect(select).toBeTruthy();
-      expect(select.disabled).toBe(true);
+      expect(select.disabled).toBe(false);
+      expect(compiled.textContent).not.toContain('Business category is set during registration and cannot be changed.');
 
       // Verify the selected value displays canonical English label
       expect(component.getBusinessTypeLabel(component.form().business_type)).toBe('Sports & Outdoor');
@@ -442,13 +471,13 @@ describe('BusinessProfileComponent', () => {
       i18nService.setLang('en');
     });
 
-    it('never includes business_type, images, translations, or translation_status in updateProvider payload', async () => {
+    it('includes editable business_type while never including images, translations, or translation_status in updateProvider payload', async () => {
       await fixture.whenStable();
 
+      component.onBusinessTypeChange('restaurant');
       component.form.update((f) => ({
         ...f,
         name: 'Parity Verified Name',
-        business_type: 'restaurant',
       }));
       component.markDirty();
 
@@ -456,14 +485,16 @@ describe('BusinessProfileComponent', () => {
 
       expect(businessServiceSpy.updateProvider).toHaveBeenCalledWith(
         'prov-101',
-        expect.not.objectContaining({
-          business_type: expect.anything(),
-          images: expect.anything(),
-          translations: expect.anything(),
-          translation_status: expect.anything(),
+        expect.objectContaining({
+          name: 'Parity Verified Name',
+          business_type: 'restaurant',
         }),
         expect.anything()
       );
+      const sentPayload = businessServiceSpy.updateProvider.mock.calls[0][1];
+      expect(sentPayload.images).toBeUndefined();
+      expect(sentPayload.translations).toBeUndefined();
+      expect(sentPayload.translation_status).toBeUndefined();
     });
   });
 
@@ -976,6 +1007,148 @@ describe('BusinessProfileComponent', () => {
         type: 'Point',
         coordinates: [-70.69, 19.45],
       });
+    });
+  });
+
+  describe('Editable Business Category & Published Areas City Selector', () => {
+    it('shares the exact 14 VAMO business category options in order and allows changing and saving business_type', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const select = fixture.nativeElement.querySelector('select#field-type') as HTMLSelectElement;
+      expect(select).toBeTruthy();
+      expect(select.disabled).toBe(false);
+
+      const optionValues = Array.from(select.options)
+        .slice(1)
+        .map((o) => o.value);
+      expect(optionValues).toEqual([
+        'restaurant_and_bar',
+        'restaurant',
+        'bar',
+        'disco_club',
+        'bakery',
+        'wellness',
+        'car_rental',
+        'excursions',
+        'sports',
+        'shopping',
+        'hair-dresser',
+        'arts_and_culture',
+        'services',
+        'other',
+      ]);
+
+      businessServiceSpy.updateProvider.mockResolvedValueOnce({
+        ...mockProvider,
+        business_type: 'wellness',
+      });
+
+      component.onBusinessTypeChange('wellness');
+      fixture.detectChanges();
+      expect(component.isDirty()).toBe(true);
+      expect(component.form().business_type).toBe('wellness');
+
+      await component.saveProfile();
+      fixture.detectChanges();
+
+      expect(businessServiceSpy.updateProvider).toHaveBeenCalledWith(
+        'prov-101',
+        expect.objectContaining({
+          business_type: 'wellness',
+          name: mockProvider.name,
+          address: mockProvider.address,
+        }),
+        expect.anything()
+      );
+      expect(component.provider()?.business_type).toBe('wellness');
+      expect(component.form().business_type).toBe('wellness');
+      expect(component.saveSuccess()).toBe(true);
+    });
+
+    it('retains the previously saved provider business_type and shows an error when saving a new business_type fails', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      businessServiceSpy.updateProvider.mockRejectedValueOnce(new Error('Network error'));
+
+      component.onBusinessTypeChange('bakery');
+      await component.saveProfile();
+
+      expect(component.saveSuccess()).toBe(false);
+      expect(component.saveError()).toBeTruthy();
+      // Previously saved provider record is not corrupted
+      expect(component.provider()?.business_type).toBe('sports');
+      // Unsaved form selection remains for retry, and resetForm restores saved category
+      expect(component.form().business_type).toBe('bakery');
+      component.resetForm();
+      expect(component.form().business_type).toBe('sports');
+    });
+
+    it('replaces free-text City input, datalist, and Popular Hubs buttons with a controlled published-areas select', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const citySelect = compiled.querySelector('select#field-city') as HTMLSelectElement;
+      expect(citySelect).toBeTruthy();
+      expect(compiled.querySelector('input#field-city')).toBeNull();
+      expect(compiled.querySelector('datalist#city-suggestions')).toBeNull();
+      expect(compiled.querySelector('.quick-city-chips')).toBeNull();
+
+      const areaOptions = Array.from(citySelect.options)
+        .slice(1)
+        .map((o) => o.value);
+      expect(areaOptions).toEqual(['Las Terrenas', 'Cabarete', 'Punta Cana']);
+
+      // Selecting a published area updates form().city
+      component.setCity('Cabarete');
+      expect(component.form().city).toBe('Cabarete');
+
+      // Arbitrary non-published string cannot be selected or submitted
+      component.setCity('Invented Unpublished Town');
+      expect(component.form().city).toBe('Cabarete');
+    });
+
+    it('safely displays a legacy/unpublished saved city as a disabled option without silently overwriting it on load', async () => {
+      businessServiceSpy.getProviderById.mockResolvedValueOnce({
+        ...mockProvider,
+        city: 'Legacy Unpublished Hub',
+      });
+
+      await component.loadProfile();
+      fixture.detectChanges();
+
+      expect(component.form().city).toBe('Legacy Unpublished Hub');
+      const citySelect = fixture.nativeElement.querySelector('select#field-city') as HTMLSelectElement;
+      const legacyOpt = Array.from(citySelect.options).find((o) => o.value === 'Legacy Unpublished Hub');
+      expect(legacyOpt).toBeTruthy();
+      expect(legacyOpt?.disabled).toBe(true);
+    });
+
+    it('shows a clear status notice with retry button when published areas fail to load instead of falling back to free-text input', async () => {
+      businessServiceSpy.getAreas.mockRejectedValueOnce(new Error('Areas fetch error'));
+      await component.loadPublishedAreas();
+      fixture.detectChanges();
+
+      expect(component.areasError()).toBe(true);
+      expect(component.publishedAreas()).toEqual([]);
+      expect(fixture.nativeElement.querySelector('input#field-city')).toBeNull();
+
+      const notice = fixture.nativeElement.querySelector('.city-areas-notice') as HTMLElement;
+      expect(notice).toBeTruthy();
+      expect(notice.textContent).toContain('Could not load published areas. Please retry.');
+
+      // Clicking retry reloads published areas
+      businessServiceSpy.getAreas.mockResolvedValueOnce(mockPublishedAreas);
+      const retryBtn = notice.querySelector('button') as HTMLButtonElement;
+      retryBtn.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.areasError()).toBe(false);
+      expect(component.publishedAreas().length).toBe(3);
+      expect(fixture.nativeElement.querySelector('.city-areas-notice')).toBeNull();
     });
   });
 
