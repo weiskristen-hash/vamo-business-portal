@@ -1,7 +1,9 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { enTranslations } from './translations/en';
 import { esTranslations } from './translations/es';
+import { BUSINESS_TYPES, BusinessTypeOption } from '../models/provider.model';
 
+export { BUSINESS_TYPES };
 export type SupportedLang = 'en' | 'es';
 
 export const SUPPORTED_LANGS: SupportedLang[] = ['en', 'es'];
@@ -18,26 +20,7 @@ const LANG_TO_LOCALE: Record<SupportedLang, string> = {
 // Dynamic content translation, Directus translation records, and translation_status
 // will be handled in a dedicated Language & Translation Parity project.
 
-// Exact canonical business types from Isla-Labs-DR/vamo-app (onboarding.service.ts).
-// Canonical VAMO renders type.label directly for all languages without inventing translations.
-export const BUSINESS_TYPES = [
-  { value: 'restaurant_and_bar', label: 'Restaurant & Bar' },
-  { value: 'restaurant',         label: 'Restaurant' },
-  { value: 'bar',                label: 'Bar' },
-  { value: 'disco_club',         label: 'Disco / Club' },
-  { value: 'bakery',             label: 'Bakery / Café' },
-  { value: 'wellness',           label: 'Wellness & Spa' },
-  { value: 'car_rental',         label: 'Car Rental' },
-  { value: 'excursions',         label: 'Excursions & Tours' },
-  { value: 'sports',             label: 'Sports & Outdoor' },
-  { value: 'shopping',           label: 'Shopping' },
-  { value: 'hair-dresser',       label: 'Hair & Beauty' },
-  { value: 'arts_and_culture',   label: 'Art & Culture' },
-  { value: 'services',           label: 'Other Services' },
-  { value: 'other',              label: 'Other' },
-];
-
-export const BUSINESS_TYPE_OPTIONS: Record<SupportedLang, { value: string; label: string }[]> = {
+export const BUSINESS_TYPE_OPTIONS: Record<SupportedLang, BusinessTypeOption[]> = {
   en: BUSINESS_TYPES,
   es: BUSINESS_TYPES,
 };

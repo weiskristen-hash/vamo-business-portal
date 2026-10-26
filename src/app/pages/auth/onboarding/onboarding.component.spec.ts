@@ -668,5 +668,97 @@ describe('OnboardingComponent (Canonical Source Parity)', () => {
     });
   });
 
+  describe('Business Category & Published Areas Alignment', () => {
+    afterEach(() => {
+      component.i18n.setLang('en');
+    });
+
+    it('displays "Business Category" label, placeholder, and validation message in EN and ES with the exact 14 VAMO app options in order', () => {
+      component.currentStep.set('business-details');
+      component.i18n.setLang('en');
+      fixture.detectChanges();
+
+      const label = fixture.nativeElement.querySelector('label[for="businessType"]') as HTMLElement;
+      expect(label).toBeTruthy();
+      expect(label.textContent?.trim()).toBe('Business Category *');
+
+      const select = fixture.nativeElement.querySelector('select#businessType') as HTMLSelectElement;
+      expect(select).toBeTruthy();
+      const options = Array.from(select.querySelectorAll('option')) as HTMLOptionElement[];
+      expect(options[0].textContent?.trim()).toBe('Select business category');
+
+      const optionValues = options.slice(1).map((o) => o.value);
+      const optionLabels = options.slice(1).map((o) => o.textContent?.trim());
+      expect(optionValues).toEqual([
+        'restaurant_and_bar',
+        'restaurant',
+        'bar',
+        'disco_club',
+        'bakery',
+        'wellness',
+        'car_rental',
+        'excursions',
+        'sports',
+        'shopping',
+        'hair-dresser',
+        'arts_and_culture',
+        'services',
+        'other',
+      ]);
+      expect(optionLabels).toEqual([
+        'Restaurant & Bar',
+        'Restaurant',
+        'Bar',
+        'Disco / Club',
+        'Bakery / Café',
+        'Wellness & Spa',
+        'Car Rental',
+        'Excursions & Tours',
+        'Sports & Outdoor',
+        'Shopping',
+        'Hair & Beauty',
+        'Art & Culture',
+        'Other Services',
+        'Other',
+      ]);
+
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      const errorEl = select.parentElement?.querySelector('.field-error') as HTMLElement;
+      expect(errorEl?.textContent?.trim()).toBe('Please select a business category');
+
+      // Switch to Spanish
+      component.i18n.setLang('es');
+      fixture.detectChanges();
+      expect(label.textContent?.trim()).toBe('Categoría del negocio *');
+      expect(options[0].textContent?.trim()).toBe('Selecciona la categoría de negocio');
+      expect(errorEl?.textContent?.trim()).toBe('Por favor selecciona la categoría de negocio');
+    });
+
+    it('shows published-areas unavailable notice and retries loading when getAreas() returns empty or fails', async () => {
+      businessServiceSpy.getAreas.mockRejectedValueOnce(new Error('Directus unavailable'));
+      await component.loadAreas();
+      component.currentStep.set('area');
+      fixture.detectChanges();
+
+      expect(component.areasError()).toBe(true);
+      expect(component.areas()).toEqual([]);
+      const notice = fixture.nativeElement.querySelector('.ob-areas-unavailable') as HTMLElement;
+      expect(notice).toBeTruthy();
+      expect(notice.textContent).toContain('Published areas could not be loaded right now. Please try again.');
+
+      // Clicking retry reloads published areas
+      businessServiceSpy.getAreas.mockResolvedValueOnce(mockAreas);
+      const retryBtn = notice.querySelector('button') as HTMLButtonElement;
+      retryBtn.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.areasError()).toBe(false);
+      expect(component.areas().length).toBe(2);
+      expect(fixture.nativeElement.querySelector('.ob-areas-unavailable')).toBeNull();
+    });
+  });
+
 });
 

@@ -2282,5 +2282,149 @@ describe('ListingEditorComponent', () => {
     });
   });
 
+  describe('Category Example Tooltips & Personalized Services Label', () => {
+    beforeEach(async () => {
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+    });
+
+    afterEach(() => {
+      i18nService.setLang('en');
+    });
+
+    it('displays the updated Category subheadline and "Personalized Services" label while keeping internal value "personalized"', () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+
+      const subheadline = fixture.nativeElement.querySelector('.category-subheadline') as HTMLElement;
+      expect(subheadline).toBeTruthy();
+      expect(subheadline.textContent?.trim()).toBe(
+        'Select the category that best matches your event or activity. Hover over a category to see examples.'
+      );
+
+      const labelsEn = Array.from(fixture.nativeElement.querySelectorAll('.category-grid .cat-label')).map(
+        (el: any) => el.textContent.trim()
+      );
+      expect(labelsEn).toContain('Personalized Services');
+      expect(labelsEn).not.toContain('Personalized');
+
+      // Clicking Personalized Services sets internal value 'personalized'
+      const personalizedIndex = component.categories.findIndex((c) => c.value === 'personalized');
+      const cardButtons = Array.from(
+        fixture.nativeElement.querySelectorAll('.category-grid .category-card-btn')
+      ) as HTMLButtonElement[];
+      cardButtons[personalizedIndex].click();
+      fixture.detectChanges();
+      expect(component.draft.category).toBe('personalized');
+
+      // Spanish translation
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      expect(subheadline.textContent?.trim()).toBe(
+        'Selecciona la categoría que mejor describa tu evento o actividad. Pasa el cursor sobre una categoría para ver ejemplos.'
+      );
+      const labelsEs = Array.from(fixture.nativeElement.querySelectorAll('.category-grid .cat-label')).map(
+        (el: any) => el.textContent.trim()
+      );
+      expect(labelsEs).toContain('Servicios personalizados');
+    });
+
+    it('renders accessible role="tooltip" popovers linked via aria-describedby for all 9 categories with exact examples in EN and ES', () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+
+      const expectedExamplesEn: Record<string, string> = {
+        live: 'Live bands, DJs, karaoke, dance nights',
+        food: 'Brunch, happy hours, tastings, dining & drink specials',
+        excursions: 'Boat trips, guided tours, ATV rentals, equipment rentals',
+        wellness: 'Massages, yoga, spa treatments, wellness workshops',
+        arts: 'Art classes, exhibitions, cultural tours, craft workshops',
+        sports: 'Padel, fitness classes, hikes, tournaments',
+        personalized: 'Photography sessions, wedding/event planning, private chefs, custom experiences',
+        celebrations: 'Holiday events, festivals, themed parties, community celebrations',
+        other: "Events, activities, or services that don't fit another category",
+      };
+
+      const cardButtons = Array.from(
+        fixture.nativeElement.querySelectorAll('.category-grid .category-card-btn')
+      ) as HTMLButtonElement[];
+      expect(cardButtons.length).toBe(9);
+
+      component.categories.forEach((cat, idx) => {
+        const btn = cardButtons[idx];
+        const tooltipId = `cat-tooltip-${cat.value}`;
+        expect(btn.getAttribute('aria-describedby')).toBe(tooltipId);
+
+        const tooltip = fixture.nativeElement.querySelector(`#${tooltipId}`) as HTMLElement;
+        expect(tooltip).toBeTruthy();
+        expect(tooltip.getAttribute('role')).toBe('tooltip');
+        const examplesEl = tooltip.querySelector('.category-tooltip-examples') as HTMLElement;
+        expect(examplesEl.textContent?.trim()).toBe(expectedExamplesEn[cat.value]);
+      });
+
+      // Switch to Spanish and verify translated examples
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      const personalizedTooltip = fixture.nativeElement.querySelector(
+        '#cat-tooltip-personalized .category-tooltip-examples'
+      ) as HTMLElement;
+      expect(personalizedTooltip.textContent?.trim()).toBe(
+        'Sesiones de fotografía, planificación de bodas y eventos, chefs privados, experiencias a medida'
+      );
+    });
+
+    it('opens and closes category tooltips on hover, keyboard focus, Escape key, touch info trigger, and outside click without blocking category selection', () => {
+      fixture.detectChanges();
+
+      const wraps = Array.from(
+        fixture.nativeElement.querySelectorAll('.category-grid .category-card-wrap')
+      ) as HTMLElement[];
+      const firstWrap = wraps[0]; // 'live'
+      const firstBtn = firstWrap.querySelector('.category-card-btn') as HTMLButtonElement;
+      const firstTooltip = firstWrap.querySelector('.category-tooltip') as HTMLElement;
+      const firstInfoTrigger = firstWrap.querySelector('.cat-info-trigger') as HTMLElement;
+
+      expect(component.activeCategoryTooltip).toBeNull();
+      expect(firstTooltip.classList.contains('visible')).toBe(false);
+
+      // 1. Desktop hover
+      firstWrap.dispatchEvent(new Event('mouseenter'));
+      fixture.detectChanges();
+      expect(component.activeCategoryTooltip).toBe('live');
+      expect(firstTooltip.classList.contains('visible')).toBe(true);
+      expect(firstTooltip.getAttribute('aria-hidden')).toBe('false');
+
+      firstWrap.dispatchEvent(new Event('mouseleave'));
+      fixture.detectChanges();
+      expect(component.activeCategoryTooltip).toBeNull();
+      expect(firstTooltip.classList.contains('visible')).toBe(false);
+
+      // 2. Keyboard focus & Escape dismissal
+      firstBtn.dispatchEvent(new Event('focus'));
+      fixture.detectChanges();
+      expect(component.activeCategoryTooltip).toBe('live');
+      expect(firstTooltip.classList.contains('visible')).toBe(true);
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      fixture.detectChanges();
+      expect(component.activeCategoryTooltip).toBeNull();
+      expect(firstTooltip.classList.contains('visible')).toBe(false);
+
+      // 3. Touch/mobile info trigger toggles tooltip without changing selected category
+      component.draft.category = 'food';
+      firstInfoTrigger.click();
+      fixture.detectChanges();
+      expect(component.activeCategoryTooltip).toBe('live');
+      expect(component.draft.category).toBe('food');
+
+      // Outside click dismisses tooltip
+      document.body.click();
+      fixture.detectChanges();
+      expect(component.activeCategoryTooltip).toBeNull();
+    });
+  });
+
 });
 

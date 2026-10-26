@@ -8,6 +8,7 @@ import { CustomerErrorService } from '../../core/services/customer-error.service
 import { I18nService, BUSINESS_TYPES } from '../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { Provider, OpeningHour } from '../../core/models/provider.model';
+import { Area } from '../../core/models/event.model';
 import { PhoneInputComponent } from '../../shared/components/phone-input/phone-input.component';
 import { isValidPhone, getWhatsAppUrl } from '../../core/utils/phone';
 import {
@@ -149,24 +150,33 @@ export interface OfferingOption {
                   </p>
                 </div>
 
-                <!-- Business Type (Non-editable after onboarding) -->
+                <!-- Business Category -->
                 <div class="form-group span-2">
                   <label class="form-label" for="field-type">
-                    {{ 'PORTAL.PROFILE.CATEGORY_LABEL' | translate }}
+                    {{ 'PORTAL.PROFILE.CATEGORY_LABEL' | translate }} <span class="required-star">*</span>
                   </label>
                   <select
                     id="field-type"
                     class="form-control"
+                    [class.is-invalid]="touched.businessType && !form().business_type"
                     [ngModel]="form().business_type"
-                    disabled
+                    (ngModelChange)="onBusinessTypeChange($event)"
+                    (blur)="touched.businessType = true"
                   >
                     <option value="" disabled>{{ 'PORTAL.PROFILE.CATEGORY_SELECT_PLACEHOLDER' | translate }}</option>
+                    <option
+                      *ngIf="form().business_type && !isCanonicalBusinessType(form().business_type)"
+                      [value]="form().business_type"
+                      disabled
+                    >
+                      {{ form().business_type }}
+                    </option>
                     <option *ngFor="let bt of businessTypes" [value]="bt.value">
                       {{ bt.label }}
                     </option>
                   </select>
-                  <p class="form-hint">
-                    {{ 'PORTAL.PROFILE.CATEGORY_LOCKED_HINT' | translate }}
+                  <p *ngIf="touched.businessType && !form().business_type" class="form-error">
+                    {{ 'PORTAL.PROFILE.CATEGORY_REQUIRED' | translate }}
                   </p>
                 </div>
 
@@ -409,50 +419,44 @@ export interface OfferingOption {
                   </p>
                 </div>
 
-                <!-- City / Area -->
-                <div class="form-group">
+                <!-- City / Destination (Published Areas Only) -->
+                <div class="form-group span-2">
                   <label class="form-label" for="field-city">
                     {{ 'PORTAL.PROFILE.CITY_LABEL' | translate }}
                   </label>
-                  <input
+                  <select
                     id="field-city"
-                    type="text"
                     class="form-control"
-                    [(ngModel)]="form().city"
-                    (input)="onCityInput()"
-                    [placeholder]="'PORTAL.PROFILE.CITY_PLACEHOLDER' | translate"
-                    list="city-suggestions"
-                  />
-                  <datalist id="city-suggestions">
-                    <option value="Las Terrenas"></option>
-                    <option value="Samaná"></option>
-                    <option value="Cabarete"></option>
-                    <option value="Sosúa"></option>
-                    <option value="Puerto Plata"></option>
-                    <option value="Punta Cana"></option>
-                    <option value="Bávaro"></option>
-                    <option value="Bayahibe"></option>
-                    <option value="La Romana"></option>
-                    <option value="Santo Domingo"></option>
-                    <option value="Santiago"></option>
-                    <option value="Jarabacoa"></option>
-                    <option value="Constanza"></option>
-                    <option value="Las Galeras"></option>
-                  </datalist>
-                </div>
-
-                <!-- Quick Destination Chips -->
-                <div class="form-group">
-                  <label class="form-label">{{ 'PORTAL.PROFILE.POPULAR_HUBS' | translate }}</label>
-                  <div class="quick-city-chips">
-                    <button
-                      *ngFor="let c of ['Las Terrenas', 'Cabarete', 'Punta Cana', 'Samaná', 'Santo Domingo']"
-                      type="button"
-                      class="city-chip"
-                      [class.city-chip-active]="form().city === c"
-                      (click)="setCity(c)"
+                    [ngModel]="form().city"
+                    (ngModelChange)="setCity($event)"
+                    [disabled]="areasLoading() || (publishedAreas().length === 0 && !form().city)"
+                  >
+                    <option value="">
+                      {{ (areasLoading() ? 'PORTAL.PROFILE.CITY_LOADING' : 'PORTAL.PROFILE.CITY_SELECT_PLACEHOLDER') | translate }}
+                    </option>
+                    <option
+                      *ngIf="form().city && !isPublishedAreaName(form().city)"
+                      [value]="form().city"
+                      disabled
                     >
-                      {{ c }}
+                      {{ form().city }} ({{ 'PORTAL.PROFILE.CITY_LEGACY_UNPUBLISHED' | translate }})
+                    </option>
+                    <option *ngFor="let area of publishedAreas()" [value]="area.name">
+                      {{ area.name }}
+                    </option>
+                  </select>
+                  <div
+                    *ngIf="!areasLoading() && (areasError() || publishedAreas().length === 0)"
+                    class="city-areas-notice"
+                    role="status"
+                  >
+                    <span>{{ (areasError() ? 'PORTAL.PROFILE.CITY_LOAD_ERROR' : 'PORTAL.PROFILE.CITY_EMPTY') | translate }}</span>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm"
+                      (click)="loadPublishedAreas()"
+                    >
+                      {{ 'PORTAL.COMMON.RETRY' | translate }}
                     </button>
                   </div>
                 </div>
@@ -1413,6 +1417,20 @@ export interface OfferingOption {
       color: #ffffff;
     }
 
+    .city-areas-notice {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 6px;
+      padding: 8px 12px;
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      border-radius: var(--vamo-radius-sm);
+      font-size: 0.82rem;
+      color: #b45309;
+    }
+
     .coords-header {
       display: flex;
       justify-content: space-between;
@@ -2072,6 +2090,9 @@ export class BusinessProfileComponent implements OnInit, AfterViewInit, OnDestro
   isDirty = signal(false);
 
   provider = signal<Provider | null>(null);
+  publishedAreas = signal<Area[]>([]);
+  areasLoading = signal(false);
+  areasError = signal(false);
 
   private map: any = null;
   private marker: any = null;
@@ -2266,7 +2287,27 @@ export class BusinessProfileComponent implements OnInit, AfterViewInit, OnDestro
   });
 
   async ngOnInit(): Promise<void> {
-    await this.loadProfile();
+    await Promise.all([this.loadProfile(), this.loadPublishedAreas()]);
+  }
+
+  async loadPublishedAreas(): Promise<void> {
+    if (typeof (this.businessService as any).getAreas !== 'function') {
+      this.publishedAreas.set([]);
+      this.areasLoading.set(false);
+      this.areasError.set(false);
+      return;
+    }
+    this.areasLoading.set(true);
+    this.areasError.set(false);
+    try {
+      const areas = await this.businessService.getAreas();
+      this.publishedAreas.set(Array.isArray(areas) ? areas : []);
+    } catch {
+      this.publishedAreas.set([]);
+      this.areasError.set(true);
+    } finally {
+      this.areasLoading.set(false);
+    }
   }
 
   async ngAfterViewInit(): Promise<void> {
@@ -2415,6 +2456,26 @@ export class BusinessProfileComponent implements OnInit, AfterViewInit, OnDestro
     this.saveError.set(null);
   }
 
+  isCanonicalBusinessType(typeValue: string | null | undefined): boolean {
+    if (!typeValue) return false;
+    return this.businessTypes.some((bt) => bt.value === typeValue);
+  }
+
+  onBusinessTypeChange(newType: string): void {
+    this.touched.businessType = true;
+    this.form.update((f) => ({
+      ...f,
+      business_type: newType,
+    }));
+    this.markDirty();
+  }
+
+  isPublishedAreaName(cityName: string | null | undefined): boolean {
+    if (!cityName) return false;
+    const normalized = cityName.trim();
+    return this.publishedAreas().some((area) => area.name === normalized);
+  }
+
   onPhoneChange(newPhone: string): void {
     this.form.update((f) => ({
       ...f,
@@ -2474,8 +2535,19 @@ export class BusinessProfileComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   getDefaultMapCenter(city: string = this.form().city): { lat: number; lng: number } {
-    const normalized = (city || '')
-      .trim()
+    const trimmed = (city || '').trim();
+    if (trimmed) {
+      const matchedArea = this.publishedAreas().find(
+        (area) =>
+          area.name === trimmed &&
+          this.isValidCoordinatePair(Number(area.latitude), Number(area.longitude)),
+      );
+      if (matchedArea) {
+        return { lat: Number(matchedArea.latitude), lng: Number(matchedArea.longitude) };
+      }
+    }
+
+    const normalized = trimmed
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
@@ -2503,10 +2575,19 @@ export class BusinessProfileComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   setCity(city: string): void {
-    this.form.update((f) => ({ ...f, city }));
+    const normalizedCity = (city ?? '').trim();
+    if (
+      normalizedCity !== '' &&
+      this.publishedAreas().length > 0 &&
+      !this.isPublishedAreaName(normalizedCity) &&
+      normalizedCity !== (this.provider()?.city || '').trim()
+    ) {
+      return;
+    }
+    this.form.update((f) => ({ ...f, city: normalizedCity }));
     this.markDirty();
     if (!this.hasValidCoords() && this.map) {
-      const center = this.getDefaultMapCenter(city);
+      const center = this.getDefaultMapCenter(normalizedCity);
       this.map.setView([center.lat, center.lng], 12);
     }
   }
@@ -3112,14 +3193,22 @@ export class BusinessProfileComponent implements OnInit, AfterViewInit, OnDestro
       const finalWa = this.waNumberSameAsPhone
         ? finalPhone
         : (f.wa_number?.trim() || undefined);
+      const safeCity =
+        f.city &&
+        this.publishedAreas().length > 0 &&
+        !this.isPublishedAreaName(f.city) &&
+        f.city !== (this.provider()?.city || '')
+          ? (this.provider()?.city || '')
+          : f.city;
 
       const updated = await this.businessService.updateProvider(
         f.id,
         {
           name: f.name,
+          business_type: f.business_type,
           description: f.description,
           address: f.address,
-          city: f.city,
+          city: safeCity,
           phone: finalPhone,
           wa_number: finalWa,
           email: f.email.trim(),

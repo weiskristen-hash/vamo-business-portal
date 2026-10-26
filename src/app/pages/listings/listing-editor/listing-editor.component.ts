@@ -1,4 +1,4 @@
-import { Component, OnInit, AfterViewInit, OnDestroy, ViewChild, ElementRef, inject, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, AfterViewInit, OnDestroy, ViewChild, ElementRef, HostListener, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -154,25 +154,54 @@ export interface ExistingImage {
               <!-- Category -->
               <div class="form-group">
                 <label class="form-label required">{{ 'PORTAL.EVENT_EDITOR.CATEGORY_LABEL' | translate }}</label>
-                <p class="form-hint">{{ 'PORTAL.EVENT_EDITOR.CATEGORY_HINT' | translate }}</p>
+                <p class="form-hint category-subheadline">{{ 'PORTAL.EVENT_EDITOR.CATEGORY_HINT' | translate }}</p>
                 <div class="category-grid">
-                  <button
-                    type="button"
+                  <div
                     *ngFor="let cat of categories"
-                    class="category-card-btn"
-                    [class.selected]="draft.category === cat.value"
-                    [attr.aria-pressed]="draft.category === cat.value"
-                    [disabled]="isPastEvent"
-                    (click)="setCategory(cat.value)"
+                    class="category-card-wrap"
+                    [class.tooltip-open]="activeCategoryTooltip === cat.value"
+                    (mouseenter)="openCategoryTooltip(cat.value)"
+                    (mouseleave)="closeCategoryTooltip(cat.value)"
                   >
-                    <img
-                      [src]="cat.icon"
-                      alt=""
-                      aria-hidden="true"
-                      class="cat-icon-img"
-                    />
-                    <span class="cat-label">{{ 'CATEGORIES.' + cat.value.toUpperCase() | translate }}</span>
-                  </button>
+                    <button
+                      type="button"
+                      class="category-card-btn"
+                      [class.selected]="draft.category === cat.value"
+                      [attr.aria-pressed]="draft.category === cat.value"
+                      [attr.aria-describedby]="'cat-tooltip-' + cat.value"
+                      [disabled]="isPastEvent"
+                      (click)="setCategory(cat.value)"
+                      (focus)="openCategoryTooltip(cat.value)"
+                      (blur)="closeCategoryTooltip(cat.value)"
+                    >
+                      <img
+                        [src]="cat.icon"
+                        alt=""
+                        aria-hidden="true"
+                        class="cat-icon-img"
+                      />
+                      <span class="cat-label">{{ 'CATEGORIES.' + cat.value.toUpperCase() | translate }}</span>
+                    </button>
+                    <span
+                      class="cat-info-trigger"
+                      role="button"
+                      tabindex="-1"
+                      [attr.aria-label]="('PORTAL.EVENT_EDITOR.CATEGORY_INFO_ARIA' | translate) + ': ' + ('CATEGORIES.' + cat.value.toUpperCase() | translate)"
+                      [attr.aria-expanded]="activeCategoryTooltip === cat.value"
+                      [attr.aria-controls]="'cat-tooltip-' + cat.value"
+                      (click)="toggleCategoryTooltip(cat.value, $event)"
+                    >?</span>
+                    <div
+                      class="category-tooltip"
+                      [id]="'cat-tooltip-' + cat.value"
+                      role="tooltip"
+                      [class.visible]="activeCategoryTooltip === cat.value"
+                      [attr.aria-hidden]="activeCategoryTooltip !== cat.value"
+                    >
+                      <strong class="category-tooltip-title">{{ 'CATEGORIES.' + cat.value.toUpperCase() | translate }}</strong>
+                      <span class="category-tooltip-examples">{{ 'CATEGORIES_EXAMPLES.' + cat.value.toUpperCase() | translate }}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1450,7 +1479,15 @@ export interface ExistingImage {
       gap: 10px;
     }
 
+    .category-card-wrap {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
     .category-card-btn {
+      width: 100%;
+      height: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -1480,6 +1517,86 @@ export interface ExistingImage {
       border-color: var(--vamo-primary);
       background: var(--vamo-primary-light);
       box-shadow: 0 0 0 2px rgba(128, 112, 192, 0.2);
+    }
+
+    .cat-info-trigger {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--vamo-surface-subtle);
+      border: 1px solid var(--vamo-border);
+      color: var(--vamo-text-muted);
+      font-size: 0.68rem;
+      font-weight: 700;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      z-index: 2;
+      transition: all 0.15s ease;
+    }
+
+    .cat-info-trigger:hover {
+      background: var(--vamo-primary);
+      border-color: var(--vamo-primary);
+      color: #ffffff;
+    }
+
+    .category-tooltip {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: max-content;
+      max-width: min(260px, 85vw);
+      padding: 8px 11px;
+      border-radius: var(--vamo-radius-sm, 8px);
+      background: #0f172a;
+      color: #f8fafc;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.24);
+      font-size: 0.75rem;
+      line-height: 1.38;
+      text-align: left;
+      z-index: 30;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.15s ease, visibility 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .category-tooltip.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .category-card-wrap:nth-child(3n + 1) .category-tooltip {
+      left: 0;
+      transform: none;
+    }
+
+    .category-card-wrap:nth-child(3n) .category-tooltip {
+      left: auto;
+      right: 0;
+      transform: none;
+    }
+
+    .category-tooltip-title {
+      font-weight: 700;
+      color: #ffffff;
+      font-size: 0.76rem;
+    }
+
+    .category-tooltip-examples {
+      color: #cbd5e1;
+      font-weight: 400;
     }
 
     .cat-icon-img {
@@ -2751,9 +2868,46 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     this.saveDraftRecovery();
   }
 
+  activeCategoryTooltip: string | null = null;
+
   setCategory(catValue: string): void {
     this.draft.category = catValue;
     this.markDirty();
+  }
+
+  openCategoryTooltip(catValue: string): void {
+    this.activeCategoryTooltip = catValue;
+  }
+
+  closeCategoryTooltip(catValue?: string): void {
+    if (!catValue || this.activeCategoryTooltip === catValue) {
+      this.activeCategoryTooltip = null;
+    }
+  }
+
+  toggleCategoryTooltip(catValue: string, event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+      event.preventDefault();
+    }
+    this.activeCategoryTooltip = this.activeCategoryTooltip === catValue ? null : catValue;
+  }
+
+  @HostListener('document:keydown.escape')
+  onDocumentEscape(): void {
+    if (this.activeCategoryTooltip !== null) {
+      this.activeCategoryTooltip = null;
+    }
+  }
+
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: Event): void {
+    if (!this.activeCategoryTooltip) return;
+    const target = event?.target as HTMLElement | null;
+    if (target && typeof target.closest === 'function' && target.closest('.category-card-wrap')) {
+      return;
+    }
+    this.activeCategoryTooltip = null;
   }
 
   validateCurrentSchedule(isPublish = false): boolean {

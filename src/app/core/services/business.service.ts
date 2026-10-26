@@ -68,6 +68,7 @@ export class BusinessService {
    */
   readonly editableProviderFields = [
     'name',
+    'business_type',
     'description',
     'address',
     'city',
@@ -89,7 +90,6 @@ export class BusinessService {
   readonly protectedProviderFields = [
     'id',
     'status',
-    'business_type',
     'subscription_tier',
     'bookmarkCount',
     'translations',
@@ -114,6 +114,9 @@ export class BusinessService {
 
     if (data.name !== undefined) {
       payload['name'] = data.name;
+    }
+    if (data.business_type !== undefined) {
+      payload['business_type'] = data.business_type;
     }
     if (data.description !== undefined) {
       payload['description'] = data.description;
@@ -166,7 +169,6 @@ export class BusinessService {
     }
 
     // Defensive: immutable / protected fields must never be sent on provider update
-    delete payload['business_type'];
     delete payload['images'];
     delete payload['translations'];
     delete payload['translation_status'];
@@ -946,30 +948,20 @@ export class BusinessService {
   }
 
   /**
-   * Fetches published areas from Directus with reliable fallback.
+   * Fetches published areas from Directus matching canonical VAMO OnboardingService.getAreas().
    */
   async getAreas(): Promise<Area[]> {
     return this.authService.safeRequest(async () => {
-      try {
-        const areas = await directusClient.request<Area[]>(
-          readItems('areas', {
-            filter: { status: { _eq: 'published' } },
-            sort: ['sort', 'name'] as any,
-            fields: ['id', 'name', 'slug', 'emoji', 'latitude', 'longitude'] as any,
-          })
-        );
-        return areas || [];
-      } catch (err) {
-        console.warn('[BusinessService] getAreas fallback:', err);
-        return [
-          { id: '88adabdb-66ba-4168-92e7-155e27ef4fb1', name: 'Las Terrenas/Samana', slug: 'las_terrenas', emoji: '🏖️', latitude: 19.31, longitude: -69.5444 },
-          { id: '2ae214bc-f4de-40c6-b7b4-2524c5d79165', name: 'Punta Cana', slug: 'punta_cana', emoji: '🌴', latitude: 18.5622, longitude: -68.4044 },
-          { id: 'fe593396-d157-4d46-b7ab-9cb922f72387', name: 'Santo Domingo', slug: 'santo_domingo', emoji: '🏙️', latitude: 18.4861, longitude: -69.9312 },
-          { id: '6f4ed55f-f46c-44e2-b1f1-4e8a856a22f1', name: 'Puerto Plata', slug: 'puerto_plata', emoji: '⛵', latitude: 19.7938, longitude: -70.6918 },
-          { id: 'e711a086-dbb1-41b1-a503-5cb5fa02a865', name: 'Cabarete', slug: 'cabarete', emoji: '🏊', latitude: 19.7521, longitude: -70.4074 },
-          { id: '2ec5078a-f43d-4a1c-93d6-ab3eebf6eb95', name: 'Santiago', slug: 'santiago', emoji: '🌆', latitude: 19.4517, longitude: -70.697 },
-        ];
-      }
+      const areas = await directusClient.request<Area[]>(
+        readItems('areas', {
+          filter: { status: { _eq: 'published' } },
+          sort: ['sort', 'name'] as any,
+          fields: ['id', 'name', 'slug', 'emoji', 'latitude', 'longitude'] as any,
+        })
+      );
+      return (areas || []).filter(
+        (area: any) => !area?.status || area.status === 'published'
+      );
     });
   }
 

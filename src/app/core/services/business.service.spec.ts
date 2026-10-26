@@ -155,10 +155,10 @@ describe('BusinessService', () => {
       expect(fields.includes('images.directus_files_id.id')).toBe(true);
     });
 
-    it('should omit images and business_type from editableProviderFields allowlist matching canonical metadata update', () => {
+    it('should include business_type in editableProviderFields allowlist and omit images junction', () => {
       const editable = service.editableProviderFields as readonly string[];
       expect(editable.includes('images')).toBe(false);
-      expect(editable.includes('business_type')).toBe(false);
+      expect(editable.includes('business_type')).toBe(true);
       expect(editable.includes('name')).toBe(true);
       expect(editable.includes('logo')).toBe(true);
     });
@@ -167,7 +167,7 @@ describe('BusinessService', () => {
       const protectedFields = service.protectedProviderFields as readonly string[];
       expect(protectedFields.includes('id')).toBe(true);
       expect(protectedFields.includes('status')).toBe(true);
-      expect(protectedFields.includes('business_type')).toBe(true);
+      expect(protectedFields.includes('business_type')).toBe(false);
       expect(protectedFields.includes('subscription_tier')).toBe(true);
       expect(protectedFields.includes('bookmarkCount')).toBe(true);
       expect(protectedFields.includes('translations')).toBe(true);
@@ -179,7 +179,7 @@ describe('BusinessService', () => {
       expect(protectedFields.includes('date_updated')).toBe(true);
     });
 
-    it('should strip protected fields and build a safe provider payload', () => {
+    it('should strip protected fields and build a safe provider payload preserving business_type', () => {
       const maliciousOrBroadData: any = {
         id: 'hacked-id',
         status: 'published',
@@ -203,7 +203,6 @@ describe('BusinessService', () => {
       // Verify protected and immutable fields were stripped
       expect(safePayload['id']).toBeUndefined();
       expect(safePayload['status']).toBeUndefined();
-      expect(safePayload['business_type']).toBeUndefined();
       expect(safePayload['images']).toBeUndefined();
       expect(safePayload['subscription_tier']).toBeUndefined();
       expect(safePayload['user_created']).toBeUndefined();
@@ -212,9 +211,32 @@ describe('BusinessService', () => {
 
       // Verify editable fields were preserved according to canonical semantics
       expect(safePayload['name']).toBe('  Safe Beach Bar  ');
+      expect(safePayload['business_type']).toBe('bar');
       expect(safePayload['website']).toBeUndefined();
       expect(safePayload['city']).toBe('Las Terrenas');
       expect(safePayload['facebook']).toBe('https://facebook.com/bar');
+    });
+
+    it('should query Directus areas with status=published and filter out any non-published areas without hardcoded fallback', async () => {
+      const requestSpy = vi.spyOn(directusClient, 'request').mockResolvedValueOnce([
+        { id: 'area-lt', name: 'Las Terrenas', slug: 'las-terrenas', status: 'published', latitude: 19.31, longitude: -69.54 },
+        { id: 'area-draft', name: 'Draft Area', slug: 'draft-area', status: 'draft', latitude: 19.0, longitude: -70.0 },
+        { id: 'area-arch', name: 'Archived Area', slug: 'archived-area', status: 'archived', latitude: 18.5, longitude: -68.4 },
+      ] as any);
+
+      const areas = await service.getAreas();
+      expect(requestSpy).toHaveBeenCalledTimes(1);
+      expect(areas.map((a) => a.name)).toEqual(['Las Terrenas']);
+
+      requestSpy.mockResolvedValueOnce([
+        { id: 'area-draft', name: 'Draft Area', slug: 'draft-area', status: 'draft' },
+      ] as any);
+      const emptyAreas = await service.getAreas();
+      expect(emptyAreas).toEqual([]);
+
+      requestSpy.mockRejectedValueOnce(new Error('Network error'));
+      await expect(service.getAreas()).rejects.toThrow('Network error');
+      requestSpy.mockRestore();
     });
 
     it('should preserve full canonical payload without diff-stripping unchanged fields', () => {
