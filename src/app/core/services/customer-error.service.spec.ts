@@ -284,7 +284,7 @@ describe('CustomerErrorService', () => {
       expect(msg).not.toContain('session has expired');
     });
 
-    it('should classify rejected verification_url INVALID_PAYLOAD into register-config message without leaking URL or Directus internals in EN and ES', () => {
+    it('should classify rejected verification_url INVALID_PAYLOAD and FORBIDDEN registration rejection into register-config message without leaking URL or Directus internals in EN and ES', () => {
       const i18n = TestBed.inject(I18nService);
       const err = {
         status: 400,
@@ -298,6 +298,15 @@ describe('CustomerErrorService', () => {
           },
         ],
       };
+      const forbiddenRegErr = {
+        status: 403,
+        errors: [
+          {
+            message: 'Public registration is disabled.',
+            extensions: { code: 'FORBIDDEN' },
+          },
+        ],
+      };
 
       i18n.setLang('en');
       const enMsg = service.toCustomerMessage(err, 'register');
@@ -306,6 +315,9 @@ describe('CustomerErrorService', () => {
       );
       expect(enMsg).not.toContain('verify.html');
       expect(enMsg).not.toContain('Please check your registration details');
+      expect(service.toCustomerMessage(forbiddenRegErr, 'register')).toBe(
+        'Account registration is temporarily unavailable due to a configuration issue. Please try again later.'
+      );
 
       i18n.setLang('es');
       const esMsg = service.toCustomerMessage(err, 'register');
@@ -313,6 +325,9 @@ describe('CustomerErrorService', () => {
         'El registro de cuentas no está disponible temporalmente debido a un problema de configuración. Por favor inténtalo más tarde.'
       );
       expect(esMsg).not.toContain('verify.html');
+      expect(service.toCustomerMessage(forbiddenRegErr, 'register')).toBe(
+        'El registro de cuentas no está disponible temporalmente debido a un problema de configuración. Por favor inténtalo más tarde.'
+      );
       i18n.setLang('en');
     });
 

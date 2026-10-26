@@ -4,7 +4,7 @@ import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { AuthenticationStorage, createItem, passwordRequest, readMe, registerUser, updateMe } from '@directus/sdk';
 import { directusClient, createIsolatedDirectusClient } from '../directus/directus-client';
-import { runtimeConfig } from '../config/runtime-config';
+import { isDevelopmentDirectusUrl, runtimeConfig } from '../config/runtime-config';
 import { createBrowserAuthStorage, createMemoryAuthStorage, BUSINESS_AUTH_STORAGE_KEY } from '../directus/browser-auth.storage';
 import { VamoUser } from '../models/user.model';
 import { environment } from '../../../environments/environment';
@@ -482,11 +482,10 @@ export class AuthService implements OnDestroy {
       // Login failed -> email is not registered with this password, proceed to registerUser
     }
 
-    const verificationUrl = (
-      runtimeConfig.verificationUrl ||
-      (environment as any).defaultVerificationUrl ||
-      ''
-    ).trim();
+    const isStagingDirectus = isDevelopmentDirectusUrl(runtimeConfig.directusUrl);
+    const verificationUrl = isStagingDirectus
+      ? ''
+      : (runtimeConfig.verificationUrl ?? (environment as any).defaultVerificationUrl ?? '').trim();
 
     await tempClient.request(
       registerUser(payload.email, payload.password, {

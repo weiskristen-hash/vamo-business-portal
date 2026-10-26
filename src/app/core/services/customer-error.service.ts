@@ -357,11 +357,16 @@ export class CustomerErrorService {
       return 'register-login-unavailable';
     }
 
-    // Registration configuration error (e.g., Directus rejecting verification_url against allow-list)
+    // Registration configuration error (e.g., Directus rejecting verification_url or public registration disabled)
     if (
       code === 'REGISTRATION_CONFIG_ERROR' ||
       (isRegistrationContext &&
-        (lowerMsg.includes("can't be used to verify registered users") ||
+        (code === 'FORBIDDEN' ||
+          code === 'PERMISSION_DENIED' ||
+          status === 403 ||
+          lowerMsg.includes('public registration') ||
+          lowerMsg.includes('registration is disabled') ||
+          lowerMsg.includes("can't be used to verify registered users") ||
           lowerMsg.includes('cannot be used to verify registered users') ||
           lowerMsg.includes('verification_url')))
     ) {
