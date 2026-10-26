@@ -4,7 +4,7 @@ export const environment = {
   stagingDirectusUrl: 'https://quepasa-api.c1oud7.de',
   appName: 'VAMO Business Portal (Dev)',
   defaultResetRedirect: 'https://app.vamo-app.com/auth/reset-password',
-  defaultVerificationUrl: 'https://staging.vamo-app.com/auth/verify',
+  defaultVerificationUrl: '',
   googleLoginEnabled: true,
   googleClientId: '654016609429-5995je1smpgrlov4uv92pn637a7dlp0t.apps.googleusercontent.com',
   googleSignInFlow: 'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',

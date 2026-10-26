@@ -116,7 +116,7 @@ describe('AuthService', () => {
     expect(service.currentUser?.email).toBe('alex@vamo.com');
   });
 
-  it('should call registerUser with environment-appropriate verification_url for production and staging', async () => {
+  it('should omit verification_url on staging (Quepasa Directus) and preserve canonical verification_url on production', async () => {
     const { runtimeConfig, PROD_DIRECTUS_VERIFICATION_URL, DEV_DIRECTUS_VERIFICATION_URL } = await import(
       '../config/runtime-config'
     );
@@ -137,6 +137,8 @@ describe('AuthService', () => {
       // 1. Production Directus configuration
       runtimeConfig.setDirectusUrl('https://api.vamo-app.com');
       runtimeConfig.updateConfig({ verificationUrl: PROD_DIRECTUS_VERIFICATION_URL });
+
+      expect(runtimeConfig.directusUrl).toBe('https://api.vamo-app.com');
 
       await service.register({
         first_name: 'Carlos',
@@ -160,7 +162,10 @@ describe('AuthService', () => {
       capturedBody = null;
       runtimeConfig.setDirectusUrl('https://quepasa-api.c1oud7.de');
 
+      expect(runtimeConfig.directusUrl).toBe('https://quepasa-api.c1oud7.de');
+      expect(runtimeConfig.directusUrl).not.toBe('https://api.vamo-app.com');
       expect(runtimeConfig.verificationUrl).toBe(DEV_DIRECTUS_VERIFICATION_URL);
+      expect(runtimeConfig.verificationUrl).toBe('');
 
       await service.register({
         first_name: 'Lucia',
@@ -175,9 +180,10 @@ describe('AuthService', () => {
         password: 'password123',
         first_name: 'Lucia',
         last_name: 'Reyes',
-        verification_url: 'https://staging.vamo-app.com/auth/verify',
       });
-      expect(capturedBody.verification_url).not.toBe('https://vamo-app.com/verify.html');
+      expect('verification_url' in capturedBody).toBe(false);
+      expect(JSON.stringify(capturedBody)).not.toContain('staging.vamo-app.com');
+      expect(JSON.stringify(capturedBody)).not.toContain('vamo-app.com');
     } finally {
       runtimeConfig.reset();
     }

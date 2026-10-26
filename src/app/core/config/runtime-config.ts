@@ -31,7 +31,7 @@ export interface RuntimeConfig {
 
 export const DEV_DIRECTUS_HOST = 'quepasa-api.c1oud7.de';
 export const PROD_DIRECTUS_VERIFICATION_URL = 'https://vamo-app.com/verify.html';
-export const DEV_DIRECTUS_VERIFICATION_URL = 'https://staging.vamo-app.com/auth/verify';
+export const DEV_DIRECTUS_VERIFICATION_URL = '';
 
 export const DEV_DIRECTUS_CARD_FLOWS = {
   stripeGetPaymentMethodsFlow: '44946457-c8cd-42e2-98b2-a7a0672d59d3',
@@ -74,10 +74,11 @@ function buildInitialConfig(overrides: Record<string, any> = {}): RuntimeConfig 
   return {
     directusUrl: resolvedDirectusUrl,
     verificationUrl:
-      overrides['verificationUrl'] ??
-      (isDevHost
-        ? DEV_DIRECTUS_VERIFICATION_URL
-        : (environment as any).defaultVerificationUrl || PROD_DIRECTUS_VERIFICATION_URL),
+      overrides['verificationUrl'] !== undefined
+        ? String(overrides['verificationUrl'])
+        : isDevHost
+          ? DEV_DIRECTUS_VERIFICATION_URL
+          : ((environment as any).defaultVerificationUrl ?? PROD_DIRECTUS_VERIFICATION_URL),
     googleClientId:
       overrides['googleClientId'] ||
       (environment as any).googleClientId ||
@@ -157,9 +158,7 @@ export const runtimeConfig = {
       const normalized = stripTrailingSlash(url);
       currentConfig.directusUrl = normalized;
       if (isDevelopmentDirectusUrl(normalized)) {
-        if (!currentConfig.verificationUrl || currentConfig.verificationUrl === PROD_DIRECTUS_VERIFICATION_URL) {
-          currentConfig.verificationUrl = DEV_DIRECTUS_VERIFICATION_URL;
-        }
+        currentConfig.verificationUrl = DEV_DIRECTUS_VERIFICATION_URL;
         if (!currentConfig.stripeCreateSetupIntentFlow) {
           currentConfig.stripeCreateSetupIntentFlow = DEV_DIRECTUS_CARD_FLOWS.stripeCreateSetupIntentFlow;
         }
@@ -176,7 +175,7 @@ export const runtimeConfig = {
           currentConfig.stripeDetachPaymentMethodFlow = DEV_DIRECTUS_CARD_FLOWS.stripeDetachPaymentMethodFlow;
         }
       } else {
-        if (!currentConfig.verificationUrl || currentConfig.verificationUrl === DEV_DIRECTUS_VERIFICATION_URL) {
+        if (!currentConfig.verificationUrl) {
           currentConfig.verificationUrl =
             (environment as any).defaultVerificationUrl || PROD_DIRECTUS_VERIFICATION_URL;
         }
