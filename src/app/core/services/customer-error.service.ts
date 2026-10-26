@@ -6,6 +6,9 @@ export type ErrorActionCategory =
   | 'auth'
   | 'register'
   | 'register-auth'
+  | 'register-config'
+  | 'register-login-unavailable'
+  | 'register-verify-email'
   | 'register-validation'
   | 'duplicate-email'
   | 'save'
@@ -56,6 +59,9 @@ export class CustomerErrorService {
     /client_secret/i,
     /payment_intent/i,
     /setup_intent/i,
+    /verification_url/i,
+    /can't be used to verify registered users/i,
+    /cannot be used to verify registered users/i,
   ];
 
   /**
@@ -88,6 +94,12 @@ export class CustomerErrorService {
         return { key: 'PORTAL.ERRORS.DUPLICATE_EMAIL_MSG' };
       case 'register-auth':
         return { key: 'PORTAL.ERRORS.REGISTER_AUTH_MSG' };
+      case 'register-config':
+        return { key: 'PORTAL.ERRORS.REGISTER_CONFIG_MSG' };
+      case 'register-login-unavailable':
+        return { key: 'PORTAL.ERRORS.REGISTER_LOGIN_UNAVAILABLE_MSG' };
+      case 'register-verify-email':
+        return { key: 'PORTAL.ERRORS.REGISTER_VERIFY_EMAIL_MSG' };
       case 'register-validation':
         return { key: 'PORTAL.ERRORS.REGISTER_VALIDATION_MSG' };
       case 'register':
@@ -158,6 +170,28 @@ export class CustomerErrorService {
         return {
           headline: this.i18n.t('PORTAL.ERRORS.REGISTER_HEADLINE'),
           message: this.i18n.t('PORTAL.ERRORS.REGISTER_AUTH_MSG'),
+          actionText: this.i18n.t('ONBOARDING.ERROR_EMAIL_TAKEN_LOGIN'),
+        };
+
+      case 'register-config':
+        return {
+          headline: this.i18n.t('PORTAL.ERRORS.REGISTER_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.REGISTER_CONFIG_MSG'),
+          secondaryMessage: this.i18n.t('PORTAL.ERRORS.SUPPORT_SECONDARY', { email: VAMO_SUPPORT_EMAIL }),
+          actionText: this.i18n.t('PORTAL.ERRORS.TRY_AGAIN'),
+        };
+
+      case 'register-login-unavailable':
+        return {
+          headline: this.i18n.t('PORTAL.ERRORS.REGISTER_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.REGISTER_LOGIN_UNAVAILABLE_MSG'),
+          actionText: this.i18n.t('ONBOARDING.ERROR_EMAIL_TAKEN_LOGIN'),
+        };
+
+      case 'register-verify-email':
+        return {
+          headline: this.i18n.t('PORTAL.ERRORS.REGISTER_HEADLINE'),
+          message: this.i18n.t('PORTAL.ERRORS.REGISTER_VERIFY_EMAIL_MSG'),
           actionText: this.i18n.t('ONBOARDING.ERROR_EMAIL_TAKEN_LOGIN'),
         };
 
@@ -277,6 +311,7 @@ export class CustomerErrorService {
     const status = err?.status || err?.response?.status;
     const rawMsg = [
       ...errors.map((e: any) => (typeof e?.message === 'string' ? e.message : '')),
+      ...errors.map((e: any) => (typeof e?.extensions?.reason === 'string' ? e.extensions.reason : '')),
       typeof err?.message === 'string' ? err.message : '',
     ]
       .join(' ')
@@ -295,6 +330,44 @@ export class CustomerErrorService {
       return 'duplicate-email';
     }
 
+    const isRegistrationContext =
+      fallbackCategory === 'register' ||
+      fallbackCategory === 'register-auth' ||
+      fallbackCategory === 'register-config' ||
+      fallbackCategory === 'register-login-unavailable' ||
+      fallbackCategory === 'register-verify-email' ||
+      fallbackCategory === 'register-validation';
+
+    // Email verification required before sign-in
+    if (
+      code === 'UNVERIFIED_USER' ||
+      code === 'EMAIL_NOT_VERIFIED' ||
+      err?.requiresEmailVerification ||
+      (isRegistrationContext &&
+        (lowerMsg.includes('email not verified') ||
+          lowerMsg.includes('verify your email') ||
+          lowerMsg.includes('account is unverified') ||
+          lowerMsg.includes('user is unverified')))
+    ) {
+      return 'register-verify-email';
+    }
+
+    // Registration succeeded, but immediate automatic login failed for a non-credential reason
+    if (code === 'POST_REGISTRATION_LOGIN_FAILED' || err?.isPostRegistrationLoginFailure) {
+      return 'register-login-unavailable';
+    }
+
+    // Registration configuration error (e.g., Directus rejecting verification_url against allow-list)
+    if (
+      code === 'REGISTRATION_CONFIG_ERROR' ||
+      (isRegistrationContext &&
+        (lowerMsg.includes("can't be used to verify registered users") ||
+          lowerMsg.includes('cannot be used to verify registered users') ||
+          lowerMsg.includes('verification_url')))
+    ) {
+      return 'register-config';
+    }
+
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       return 'network';
     }
@@ -302,11 +375,6 @@ export class CustomerErrorService {
     if (err?.message === 'OFFLINE' || err?.isNetworkError) {
       return 'network';
     }
-
-    const isRegistrationContext =
-      fallbackCategory === 'register' ||
-      fallbackCategory === 'register-auth' ||
-      fallbackCategory === 'register-validation';
 
     // Genuine authenticated session expiry
     if (

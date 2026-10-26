@@ -3,6 +3,7 @@ export const environment = {
   directusUrl: 'https://api.vamo-app.com',
   appName: 'VAMO Business Portal',
   defaultResetRedirect: 'https://app.vamo-app.com/auth/reset-password',
+  defaultVerificationUrl: 'https://vamo-app.com/verify.html',
   googleLoginEnabled: true,
   googleClientId: '654016609429-5995je1smpgrlov4uv92pn637a7dlp0t.apps.googleusercontent.com',
   googleSignInFlow: 'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',
