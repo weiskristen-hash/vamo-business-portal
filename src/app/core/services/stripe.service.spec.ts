@@ -1837,4 +1837,112 @@ describe('StripeService', () => {
       expect(service.formatExactPrice(preview.amountDueToday, preview.currency)).toBe('$59.00');
     });
   });
+
+  describe('Single-Post Add-On Directus Flows', () => {
+    it('fetches add-on prices from STRIPE_GET_ADDON_PRICES_FLOW and maps single-post add-on', async () => {
+      const flowSpy = vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        data: [
+          {
+            id: 'price_1TBzCXGWvZAV5mbnFwGJZ73E',
+            active: true,
+            unit_amount: 2000,
+            currency: 'usd',
+            product: {
+              name: 'Single post add on',
+              description: 'Add a single post to your subscription, valid for 30 days',
+            },
+          },
+        ],
+      });
+
+      const prices = await service.getAddonPrices();
+      expect(flowSpy).toHaveBeenCalledWith('0734bb3c-123d-41a0-b33f-1c31bd5d149a', {});
+      expect(prices).toEqual([
+        {
+          id: 'price_1TBzCXGWvZAV5mbnFwGJZ73E',
+          name: 'Single post add on',
+          description: 'Add a single post to your subscription, valid for 30 days',
+          amount: 2000,
+          currency: 'usd',
+          interval: 'one_time',
+          productName: 'Single post add on',
+        },
+      ]);
+    });
+
+    it('creates a single_post add-on PaymentIntent via STRIPE_CREATE_ADDON_PAYMENT_FLOW and deduplicates in-flight calls', async () => {
+      let resolveFlow!: (value: any) => void;
+      const flowPromise = new Promise((r) => {
+        resolveFlow = r;
+      });
+      const flowSpy = vi.spyOn(service, 'flowPost').mockReturnValueOnce(flowPromise);
+
+      const p1 = service.createAddonPayment(
+        'price_1TBzCXGWvZAV5mbnFwGJZ73E',
+        'single_post',
+        'prov-1',
+      );
+      const p2 = service.createAddonPayment(
+        'price_1TBzCXGWvZAV5mbnFwGJZ73E',
+        'single_post',
+        'prov-1',
+      );
+
+      expect(flowSpy).toHaveBeenCalledTimes(1);
+      expect(flowSpy).toHaveBeenCalledWith('44b702ee-4d0f-4964-95bd-1cee6fe043cf', {
+        priceId: 'price_1TBzCXGWvZAV5mbnFwGJZ73E',
+        type: 'single_post',
+        providerId: 'prov-1',
+        eventId: null,
+        scheduledStart: null,
+        promotionCode: null,
+      });
+
+      resolveFlow({
+        extract_addon_secret: {
+          clientSecret: 'pi_single_post_secret_123',
+          paymentIntentId: 'pi_single_post',
+          free: false,
+        },
+      });
+
+      const [res1, res2] = await Promise.all([p1, p2]);
+      expect(res1).toEqual({
+        clientSecret: 'pi_single_post_secret_123',
+        paymentIntentId: 'pi_single_post',
+        free: false,
+      });
+      expect(res2).toEqual(res1);
+    });
+
+    it('applies single_post add-on via STRIPE_APPLY_ADDON_FLOW with exact VAMO payload and deduplicates in-flight calls', async () => {
+      let resolveFlow!: (value: any) => void;
+      const flowPromise = new Promise((r) => {
+        resolveFlow = r;
+      });
+      const flowSpy = vi.spyOn(service, 'flowPost').mockReturnValueOnce(flowPromise);
+
+      const p1 = service.applyAddon('single_post');
+      const p2 = service.applyAddon('single_post');
+
+      expect(flowSpy).toHaveBeenCalledTimes(1);
+      expect(flowSpy).toHaveBeenCalledWith('b3fc61a0-fba9-4acd-a918-5d4665c64154', {
+        type: 'single_post',
+        internalDataId: null,
+        eventId: null,
+        scheduledStart: null,
+      });
+
+      resolveFlow({ success: true });
+      await Promise.all([p1, p2]);
+    });
+
+    it('fetches extra_posts from PROVIDER_GET_QUOTA_FLOW', async () => {
+      const flowSpy = vi.spyOn(service, 'flowPost').mockResolvedValueOnce({ extra_posts: 2 });
+      const extra = await service.getExtraPosts();
+      expect(flowSpy).toHaveBeenCalledWith('d89e5fbc-f47d-4927-a1ba-838a7f2d35a5', {});
+      expect(extra).toBe(2);
+    });
+  });
 });
+
