@@ -331,5 +331,99 @@ describe('RegisterComponent (Canonical Source Parity)', () => {
     expect(component.errorMessage).toBe("We're having trouble connecting. Check your connection and try again.");
     expect(component.errorMessage).not.toContain('session has expired');
   });
+
+  it('16. should display safe configuration error message in EN and ES when Directus rejects verification_url with INVALID_PAYLOAD', async () => {
+    authServiceSpy.register.mockRejectedValue({
+      status: 400,
+      errors: [
+        {
+          message: 'Invalid payload. URL "https://vamo-app.com/verify.html" can\'t be used to verify registered users.',
+          extensions: {
+            reason: 'URL "https://vamo-app.com/verify.html" can\'t be used to verify registered users',
+            code: 'INVALID_PAYLOAD',
+          },
+        },
+      ],
+    });
+
+    component.firstName = 'Carlos';
+    component.lastName = 'Mendoza';
+    component.email = 'carlos@resort.com';
+    component.password = 'secret123';
+    component.confirmPassword = 'secret123';
+
+    await component.onSubmit();
+    fixture.detectChanges();
+
+    expect(component.errorMessage).toBe(
+      'Account registration is temporarily unavailable due to a configuration issue. Please try again later.'
+    );
+    expect(component.errorMessage).not.toContain('verify.html');
+    expect(component.showAuthRecoveryLinks).toBe(false);
+
+    const i18n = TestBed.inject(I18nService);
+    i18n.setLang('es');
+    fixture.detectChanges();
+    expect(component.errorMessage).toBe(
+      'El registro de cuentas no está disponible temporalmente debido a un problema de configuración. Por favor inténtalo más tarde.'
+    );
+    i18n.setLang('en');
+  });
+
+  it('17. should display post-registration sign-in recovery message in EN and ES when registration succeeds while login fails', async () => {
+    authServiceSpy.register.mockResolvedValue(undefined);
+    authServiceSpy.login.mockRejectedValue(new Error('Login timed out'));
+
+    component.firstName = 'Carlos';
+    component.lastName = 'Mendoza';
+    component.email = 'carlos@resort.com';
+    component.password = 'secret123';
+    component.confirmPassword = 'secret123';
+
+    await component.onSubmit();
+    fixture.detectChanges();
+
+    expect(component.errorMessage).toBe(
+      "Your account was created, but we couldn't sign you in automatically. Please sign in to continue."
+    );
+    expect(component.showAuthRecoveryLinks).toBe(true);
+
+    const i18n = TestBed.inject(I18nService);
+    i18n.setLang('es');
+    fixture.detectChanges();
+    expect(component.errorMessage).toBe(
+      'Tu cuenta fue creada, pero no pudimos iniciar sesión automáticamente. Por favor inicia sesión para continuar.'
+    );
+    i18n.setLang('en');
+  });
+
+  it('18. should display email verification required message in EN and ES when account requires verification before login', async () => {
+    authServiceSpy.register.mockResolvedValue(undefined);
+    authServiceSpy.login.mockRejectedValue({
+      errors: [{ extensions: { code: 'UNVERIFIED_USER' }, message: 'Please verify your email before logging in.' }],
+    });
+
+    component.firstName = 'Carlos';
+    component.lastName = 'Mendoza';
+    component.email = 'carlos@resort.com';
+    component.password = 'secret123';
+    component.confirmPassword = 'secret123';
+
+    await component.onSubmit();
+    fixture.detectChanges();
+
+    expect(component.errorMessage).toBe(
+      'Your account has been created. Please check your inbox and verify your email address before signing in.'
+    );
+    expect(component.showAuthRecoveryLinks).toBe(true);
+
+    const i18n = TestBed.inject(I18nService);
+    i18n.setLang('es');
+    fixture.detectChanges();
+    expect(component.errorMessage).toBe(
+      'Tu cuenta ha sido creada. Por favor revisa tu bandeja de entrada y verifica tu correo electrónico antes de iniciar sesión.'
+    );
+    i18n.setLang('en');
+  });
 });
 

@@ -306,15 +306,16 @@ export class OnboardingComponent implements OnInit {
       if (this.isEmailTakenError(err)) {
         this.emailTaken.set(true);
       } else {
-        const contextualErr =
-          registrationCompleted && this.isRegistrationAuthFailure(err)
-            ? this.withRegistrationAuthConflict(err)
-            : err;
+        const contextualErr = registrationCompleted ? this.classifyPostRegistrationError(err) : err;
         const errorInfo = this.customerErrorService.toCustomerErrorKey(contextualErr, 'register');
         this.errorKey.set(errorInfo.key);
         this.errorParams.set(errorInfo.params);
         this.errorMessage.set(this.customerErrorService.toCustomerMessage(contextualErr, 'register'));
-        this.showAuthRecoveryLinks.set(errorInfo.key === 'PORTAL.ERRORS.REGISTER_AUTH_MSG');
+        this.showAuthRecoveryLinks.set(
+          errorInfo.key === 'PORTAL.ERRORS.REGISTER_AUTH_MSG' ||
+            errorInfo.key === 'PORTAL.ERRORS.REGISTER_LOGIN_UNAVAILABLE_MSG' ||
+            errorInfo.key === 'PORTAL.ERRORS.REGISTER_VERIFY_EMAIL_MSG'
+        );
       }
     } finally {
       this.loading.set(false);
@@ -516,12 +517,40 @@ export class OnboardingComponent implements OnInit {
     );
   }
 
+  private isEmailVerificationRequiredError(err: any): boolean {
+    const code = err?.errors?.[0]?.extensions?.code ?? err?.code ?? '';
+    const msg = (err?.errors?.[0]?.message ?? err?.message ?? '').toLowerCase();
+    return (
+      code === 'UNVERIFIED_USER' ||
+      code === 'EMAIL_NOT_VERIFIED' ||
+      Boolean(err?.requiresEmailVerification) ||
+      msg.includes('email not verified') ||
+      msg.includes('verify your email') ||
+      msg.includes('account is unverified') ||
+      msg.includes('user is unverified')
+    );
+  }
+
+  private classifyPostRegistrationError(err: any): any {
+    if (this.isEmailVerificationRequiredError(err)) {
+      return this.withErrorFlag(err, 'requiresEmailVerification');
+    }
+    if (this.isRegistrationAuthFailure(err)) {
+      return this.withRegistrationAuthConflict(err);
+    }
+    return this.withErrorFlag(err, 'isPostRegistrationLoginFailure');
+  }
+
   private withRegistrationAuthConflict(err: any): any {
+    return this.withErrorFlag(err, 'isRegistrationAuthConflict');
+  }
+
+  private withErrorFlag(err: any, flag: string): any {
     if (!err || typeof err !== 'object') {
-      return { message: String(err ?? ''), isRegistrationAuthConflict: true };
+      return { message: String(err ?? ''), [flag]: true };
     }
     return Object.assign(Object.create(Object.getPrototypeOf(err)), err, {
-      isRegistrationAuthConflict: true,
+      [flag]: true,
     });
   }
 

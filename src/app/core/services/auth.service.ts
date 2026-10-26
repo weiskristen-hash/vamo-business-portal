@@ -482,9 +482,15 @@ export class AuthService implements OnDestroy {
       // Login failed -> email is not registered with this password, proceed to registerUser
     }
 
+    const verificationUrl = (
+      runtimeConfig.verificationUrl ||
+      (environment as any).defaultVerificationUrl ||
+      ''
+    ).trim();
+
     await tempClient.request(
       registerUser(payload.email, payload.password, {
-        verification_url: 'https://vamo-app.com/verify.html',
+        ...(verificationUrl ? { verification_url: verificationUrl } : {}),
         first_name: payload.first_name,
         last_name: payload.last_name,
       })

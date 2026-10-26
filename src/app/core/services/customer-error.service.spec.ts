@@ -284,6 +284,67 @@ describe('CustomerErrorService', () => {
       expect(msg).not.toContain('session has expired');
     });
 
+    it('should classify rejected verification_url INVALID_PAYLOAD into register-config message without leaking URL or Directus internals in EN and ES', () => {
+      const i18n = TestBed.inject(I18nService);
+      const err = {
+        status: 400,
+        errors: [
+          {
+            message: 'Invalid payload. URL "https://vamo-app.com/verify.html" can\'t be used to verify registered users.',
+            extensions: {
+              reason: 'URL "https://vamo-app.com/verify.html" can\'t be used to verify registered users',
+              code: 'INVALID_PAYLOAD',
+            },
+          },
+        ],
+      };
+
+      i18n.setLang('en');
+      const enMsg = service.toCustomerMessage(err, 'register');
+      expect(enMsg).toBe(
+        'Account registration is temporarily unavailable due to a configuration issue. Please try again later.'
+      );
+      expect(enMsg).not.toContain('verify.html');
+      expect(enMsg).not.toContain('Please check your registration details');
+
+      i18n.setLang('es');
+      const esMsg = service.toCustomerMessage(err, 'register');
+      expect(esMsg).toBe(
+        'El registro de cuentas no está disponible temporalmente debido a un problema de configuración. Por favor inténtalo más tarde.'
+      );
+      expect(esMsg).not.toContain('verify.html');
+      i18n.setLang('en');
+    });
+
+    it('should classify post-registration login failures and email-verification required errors into clear EN and ES messages', () => {
+      const i18n = TestBed.inject(I18nService);
+
+      const postRegLoginErr = {
+        message: 'Login timed out',
+        isPostRegistrationLoginFailure: true,
+      };
+      const verifyEmailErr = {
+        errors: [{ extensions: { code: 'UNVERIFIED_USER' }, message: 'Email not verified' }],
+      };
+
+      i18n.setLang('en');
+      expect(service.toCustomerMessage(postRegLoginErr, 'register')).toBe(
+        "Your account was created, but we couldn't sign you in automatically. Please sign in to continue."
+      );
+      expect(service.toCustomerMessage(verifyEmailErr, 'register')).toBe(
+        'Your account has been created. Please check your inbox and verify your email address before signing in.'
+      );
+
+      i18n.setLang('es');
+      expect(service.toCustomerMessage(postRegLoginErr, 'register')).toBe(
+        'Tu cuenta fue creada, pero no pudimos iniciar sesión automáticamente. Por favor inicia sesión para continuar.'
+      );
+      expect(service.toCustomerMessage(verifyEmailErr, 'register')).toBe(
+        'Tu cuenta ha sido creada. Por favor revisa tu bandeja de entrada y verifica tu correo electrónico antes de iniciar sesión.'
+      );
+      i18n.setLang('en');
+    });
+
     it('should map unexpected Directus registration failure to safe registration error in EN and ES', () => {
       const i18n = TestBed.inject(I18nService);
       const err = new Error('Unexpected 500 server error during registration');

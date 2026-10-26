@@ -596,6 +596,76 @@ describe('OnboardingComponent (Canonical Source Parity)', () => {
       expect(component.errorMessage()).toBe("We're having trouble connecting. Check your connection and try again.");
       expect(component.errorMessage()).not.toContain('session has expired');
     });
+
+    it('shows safe configuration error message in EN and ES when Directus rejects verification_url with INVALID_PAYLOAD', async () => {
+      authServiceSpy.register.mockRejectedValueOnce({
+        status: 400,
+        errors: [
+          {
+            message: 'Invalid payload. URL "https://vamo-app.com/verify.html" can\'t be used to verify registered users.',
+            extensions: {
+              reason: 'URL "https://vamo-app.com/verify.html" can\'t be used to verify registered users',
+              code: 'INVALID_PAYLOAD',
+            },
+          },
+        ],
+      });
+
+      await component.registerBusinessUser();
+      fixture.detectChanges();
+
+      expect(component.errorMessage()).toBe(
+        'Account registration is temporarily unavailable due to a configuration issue. Please try again later.'
+      );
+      expect(component.errorMessage()).not.toContain('verify.html');
+      expect(component.showAuthRecoveryLinks()).toBe(false);
+
+      component.i18n.setLang('es');
+      fixture.detectChanges();
+      expect(component.errorMessage()).toBe(
+        'El registro de cuentas no está disponible temporalmente debido a un problema de configuración. Por favor inténtalo más tarde.'
+      );
+    });
+
+    it('shows post-registration sign-in recovery message in EN and ES when registration succeeds but immediate login fails', async () => {
+      authServiceSpy.register.mockResolvedValueOnce(undefined);
+      authServiceSpy.login.mockRejectedValueOnce(new Error('Login request timed out'));
+
+      await component.registerBusinessUser();
+      fixture.detectChanges();
+
+      expect(component.errorMessage()).toBe(
+        "Your account was created, but we couldn't sign you in automatically. Please sign in to continue."
+      );
+      expect(component.showAuthRecoveryLinks()).toBe(true);
+
+      component.i18n.setLang('es');
+      fixture.detectChanges();
+      expect(component.errorMessage()).toBe(
+        'Tu cuenta fue creada, pero no pudimos iniciar sesión automáticamente. Por favor inicia sesión para continuar.'
+      );
+    });
+
+    it('shows email verification required message in EN and ES when post-registration login indicates unverified account', async () => {
+      authServiceSpy.register.mockResolvedValueOnce(undefined);
+      authServiceSpy.login.mockRejectedValueOnce({
+        errors: [{ extensions: { code: 'UNVERIFIED_USER' }, message: 'Please verify your email before logging in.' }],
+      });
+
+      await component.registerBusinessUser();
+      fixture.detectChanges();
+
+      expect(component.errorMessage()).toBe(
+        'Your account has been created. Please check your inbox and verify your email address before signing in.'
+      );
+      expect(component.showAuthRecoveryLinks()).toBe(true);
+
+      component.i18n.setLang('es');
+      fixture.detectChanges();
+      expect(component.errorMessage()).toBe(
+        'Tu cuenta ha sido creada. Por favor revisa tu bandeja de entrada y verifica tu correo electrónico antes de iniciar sesión.'
+      );
+    });
   });
 
 });

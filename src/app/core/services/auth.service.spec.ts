@@ -116,24 +116,94 @@ describe('AuthService', () => {
     expect(service.currentUser?.email).toBe('alex@vamo.com');
   });
 
-  it('should call registerUser with canonical verification_url on register when email is not taken', async () => {
+  it('should call registerUser with environment-appropriate verification_url for production and staging', async () => {
+    const { runtimeConfig, PROD_DIRECTUS_VERIFICATION_URL, DEV_DIRECTUS_VERIFICATION_URL } = await import(
+      '../config/runtime-config'
+    );
     const loginSpy = vi.fn().mockRejectedValue(new Error('Invalid credentials'));
-    const requestSpy = vi.fn().mockResolvedValue(undefined);
+    let capturedBody: any = null;
+    const requestSpy = vi.fn().mockImplementation((cmdFn: any) => {
+      const cmd = typeof cmdFn === 'function' ? cmdFn() : cmdFn;
+      capturedBody = typeof cmd?.body === 'string' ? JSON.parse(cmd.body) : cmd?.body;
+      return Promise.resolve(undefined);
+    });
     vi.spyOn(service as any, 'createIsolatedClient').mockReturnValue({
       login: loginSpy,
       logout: vi.fn().mockResolvedValue(undefined),
       request: requestSpy,
     });
 
-    await service.register({
-      first_name: 'Carlos',
-      last_name: 'Pérez',
-      email: 'carlos@vamo.com',
-      password: 'password123',
+    try {
+      // 1. Production Directus configuration
+      runtimeConfig.setDirectusUrl('https://api.vamo-app.com');
+      runtimeConfig.updateConfig({ verificationUrl: PROD_DIRECTUS_VERIFICATION_URL });
+
+      await service.register({
+        first_name: 'Carlos',
+        last_name: 'Pérez',
+        email: 'carlos@vamo.com',
+        password: 'password123',
+      });
+
+      expect(loginSpy).toHaveBeenCalledWith({ email: 'carlos@vamo.com', password: 'password123' });
+      expect(requestSpy).toHaveBeenCalledOnce();
+      expect(capturedBody).toEqual({
+        email: 'carlos@vamo.com',
+        password: 'password123',
+        first_name: 'Carlos',
+        last_name: 'Pérez',
+        verification_url: 'https://vamo-app.com/verify.html',
+      });
+
+      // 2. Staging / Quepasa Directus configuration
+      requestSpy.mockClear();
+      capturedBody = null;
+      runtimeConfig.setDirectusUrl('https://quepasa-api.c1oud7.de');
+
+      expect(runtimeConfig.verificationUrl).toBe(DEV_DIRECTUS_VERIFICATION_URL);
+
+      await service.register({
+        first_name: 'Lucia',
+        last_name: 'Reyes',
+        email: 'lucia@vamo.com',
+        password: 'password123',
+      });
+
+      expect(requestSpy).toHaveBeenCalledOnce();
+      expect(capturedBody).toEqual({
+        email: 'lucia@vamo.com',
+        password: 'password123',
+        first_name: 'Lucia',
+        last_name: 'Reyes',
+        verification_url: 'https://staging.vamo-app.com/auth/verify',
+      });
+      expect(capturedBody.verification_url).not.toBe('https://vamo-app.com/verify.html');
+    } finally {
+      runtimeConfig.reset();
+    }
+  });
+
+  it('should propagate Directus RECORD_NOT_UNIQUE error when registerUser rejects', async () => {
+    const loginSpy = vi.fn().mockRejectedValue(new Error('Invalid credentials'));
+    const requestSpy = vi.fn().mockRejectedValue({
+      errors: [{ extensions: { code: 'RECORD_NOT_UNIQUE' }, message: 'Field "email" has to be unique.' }],
+    });
+    vi.spyOn(service as any, 'createIsolatedClient').mockReturnValue({
+      login: loginSpy,
+      logout: vi.fn().mockResolvedValue(undefined),
+      request: requestSpy,
     });
 
-    expect(loginSpy).toHaveBeenCalledWith({ email: 'carlos@vamo.com', password: 'password123' });
-    expect(requestSpy).toHaveBeenCalled();
+    await expect(
+      service.register({
+        first_name: 'Duplicate',
+        last_name: 'Account',
+        email: 'dup@vamo.com',
+        password: 'password123',
+      })
+    ).rejects.toMatchObject({
+      errors: [{ extensions: { code: 'RECORD_NOT_UNIQUE' } }],
+    });
   });
 
   it('should reject with RECORD_NOT_UNIQUE if login pre-check succeeds during register', async () => {
