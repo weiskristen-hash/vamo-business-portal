@@ -206,6 +206,175 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
       </div>
     </section>
 
+    <!-- ── SINGLE POST ADD-ON SECTION (ONE-TIME PURCHASE) ────────────── -->
+    <section
+      *ngIf="isSinglePostAddonEligible() && singlePostPrice() as addonPrice"
+      class="single-post-addon-section"
+      [class.single-post-addon-section--quota]="returnReason === 'quota' || postsUsed() >= postLimit()"
+      data-testid="single-post-addon-section"
+      aria-labelledby="single-post-addon-heading"
+    >
+      <div class="card addon-card">
+        <div class="addon-card-main">
+          <div class="addon-info">
+            <span class="addon-badge" data-testid="single-post-addon-badge">{{ 'PORTAL.BILLING.ADDON_SINGLE_POST_ONE_TIME_NOTE' | translate }}</span>
+            <h3 id="single-post-addon-heading" class="card-title addon-title">
+              {{ 'PORTAL.BILLING.ADDON_SINGLE_POST_TITLE' | translate }}
+            </h3>
+            <p class="addon-desc">
+              {{ 'PORTAL.BILLING.ADDON_SINGLE_POST_DESC' | translate }}
+            </p>
+            <p *ngIf="addonPrice.description" class="addon-note" data-testid="single-post-addon-validity">
+              {{ addonPrice.description }}
+            </p>
+          </div>
+
+          <div class="addon-price-action">
+            <div class="addon-price" data-testid="single-post-addon-price">
+              <span class="addon-price-amount">{{ formatPrice(addonPrice.amount, addonPrice.currency) }}</span>
+              <span class="addon-price-type">{{ addonPrice.currency | uppercase }} &middot; {{ 'PORTAL.BILLING.ADDON_SINGLE_POST_ONE_TIME_NOTE' | translate }}</span>
+            </div>
+
+            <button
+              *ngIf="!addonPaymentActive()"
+              type="button"
+              class="btn btn-primary addon-buy-btn"
+              data-testid="buy-single-post-btn"
+              [disabled]="addonProcessing() || addonActivationPending()"
+              (click)="proceedToAddonPayment()"
+            >
+              <span *ngIf="addonProcessing()" class="spinner-sm" style="margin-right: 0.5rem;"></span>
+              {{
+                addonProcessing()
+                  ? ('PORTAL.BILLING.BTN_PROCESSING' | translate)
+                  : ('PORTAL.BILLING.ADDON_SINGLE_POST_BUY_BTN' | translate)
+              }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Add-On Error Alert -->
+        <div *ngIf="addonError()" class="alert alert-danger addon-alert addon-error-alert" role="alert">
+          <span class="alert-icon">⚠️</span>
+          <span class="alert-text">{{ addonError() }}</span>
+          <button
+            type="button"
+            class="alert-close"
+            (click)="clearAddonError()"
+            [attr.aria-label]="'PORTAL.BILLING.DISMISS' | translate"
+          >✕</button>
+        </div>
+
+        <!-- Add-On Activation Pending Alert (if payment succeeded but applyAddon failed) -->
+        <div *ngIf="addonActivationPending()" class="alert alert-warning addon-alert addon-activation-pending-alert" role="status">
+          <span class="alert-icon">⏳</span>
+          <div class="alert-text">
+            <strong>{{ 'PORTAL.BILLING.ADDON_SINGLE_POST_ACTIVATION_PENDING_TITLE' | translate }}</strong>
+            <p class="addon-alert-subtext">{{ 'PORTAL.BILLING.ADDON_SINGLE_POST_ACTIVATION_PENDING_DESC' | translate }}</p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            [disabled]="isLoading() || addonProcessing()"
+            (click)="refreshBilling()"
+          >
+            {{ 'PORTAL.BILLING.BTN_REFRESH_BILLING' | translate }}
+          </button>
+        </div>
+
+        <!-- Add-On Purchase Success Alert -->
+        <div *ngIf="addonPurchaseSuccess()" class="alert alert-success addon-success-banner addon-success-alert" role="status">
+          <span class="alert-icon">✓</span>
+          <div class="alert-text">
+            <span>{{ 'PORTAL.BILLING.ADDON_SINGLE_POST_SUCCESS' | translate }}</span>
+            <span *ngIf="returnEventId" class="addon-draft-ready-note">
+              {{ 'PORTAL.BILLING.ADDON_SINGLE_POST_DRAFT_READY' | translate }}
+            </span>
+          </div>
+          <button
+            *ngIf="returnEventId"
+            type="button"
+            class="btn btn-primary btn-sm addon-return-draft-btn"
+            data-testid="addon-return-to-draft-btn"
+            (click)="returnToDraft()"
+          >
+            {{ 'PORTAL.BILLING.RETURN_TO_DRAFT' | translate }}
+          </button>
+        </div>
+
+        <!-- Saved Payment Methods Selection for Single-Post Add-On -->
+        <div
+          *ngIf="!addonPaymentActive() && !addonActivationPending() && savedMethods().length > 0"
+          class="saved-methods-selection addon-saved-methods addon-saved-methods-selection"
+        >
+          <label class="section-label">{{ 'PORTAL.BILLING.SELECT_PAYMENT_METHOD' | translate }}</label>
+          <div class="saved-methods-radios">
+            <div
+              *ngFor="let pm of savedMethods()"
+              class="saved-card-radio-item addon-saved-card-item"
+              [class.saved-card-radio-item--selected]="selectedSavedMethod()?.id === pm.id"
+              (click)="selectSavedMethod(pm)"
+            >
+              <input
+                type="radio"
+                name="addonSavedMethodChoice"
+                [checked]="selectedSavedMethod()?.id === pm.id"
+                [attr.aria-label]="(pm.brand | uppercase) + ' ' + pm.last4"
+              />
+              <span class="card-brand">{{ pm.brand | uppercase }}</span>
+              <span class="card-last4">•••• {{ pm.last4 }}</span>
+              <span class="card-exp">{{ 'PORTAL.BILLING.EXP_DATE' | translate: { month: pm.expMonth, year: pm.expYear } }}</span>
+            </div>
+            <div
+              class="saved-card-radio-item addon-new-card-item"
+              [class.saved-card-radio-item--selected]="!selectedSavedMethod()"
+              (click)="selectedSavedMethod.set(null)"
+            >
+              <input
+                type="radio"
+                name="addonSavedMethodChoice"
+                [checked]="!selectedSavedMethod()"
+                [attr.aria-label]="'PORTAL.BILLING.USE_NEW_CARD' | translate"
+              />
+              <span>{{ 'PORTAL.BILLING.USE_NEW_CARD' | translate }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stripe Payment Element Mount Container for Single-Post Add-On -->
+        <div [hidden]="!addonPaymentActive()" class="payment-elements-container addon-inline-element addon-elements-container">
+          <div id="portal-addon-payment-element" class="stripe-mount-box"></div>
+        </div>
+
+        <!-- Add-On Payment Element Action Buttons -->
+        <div *ngIf="addonPaymentActive()" class="button-group addon-payment-actions">
+          <button
+            type="button"
+            class="btn btn-primary addon-confirm-pay-btn"
+            data-testid="confirm-addon-payment-btn"
+            [disabled]="!addonStripeReady() || addonProcessing()"
+            (click)="confirmAddonPayment()"
+          >
+            <span *ngIf="addonProcessing()" class="spinner-sm" style="margin-right: 0.5rem;"></span>
+            {{
+              addonProcessing()
+                ? ('PORTAL.BILLING.BTN_PROCESSING' | translate)
+                : ('PORTAL.BILLING.ADDON_SINGLE_POST_PAY_BTN' | translate: { amount: formatPrice(addonPrice.amount, addonPrice.currency) })
+            }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-secondary addon-cancel-pay-btn"
+            data-testid="cancel-addon-payment-btn"
+            [disabled]="addonProcessing()"
+            (click)="cancelAddonPayment()"
+          >
+            {{ 'PORTAL.COMMON.CANCEL' | translate }}
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- ── CHANGE PLAN SECTION OR NEW SUBSCRIPTION SELECTION ─────────── -->
     <section
       *ngIf="(subscription() === null && !subscriptionLoadError()) || showChangePlanSection()"
@@ -782,177 +951,6 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               type="button"
               class="btn btn-secondary"
               (click)="closeChangePlan()"
-            >
-              {{ 'PORTAL.COMMON.CANCEL' | translate }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── SINGLE POST ADD-ON SECTION (ONE-TIME PURCHASE) ────────────── -->
-    <section
-      *ngIf="isSinglePostAddonEligible() && singlePostPrice() as addonPrice"
-      class="single-post-addon-section card"
-      data-testid="single-post-addon-section"
-      aria-labelledby="single-post-addon-heading"
-    >
-      <div class="addon-card-header">
-        <div class="addon-header-info">
-          <span class="addon-eyebrow-badge">{{ 'PORTAL.BILLING.ADDON_SINGLE_POST_EYEBROW' | translate }}</span>
-          <h3 id="single-post-addon-heading" class="card-title addon-title">
-            {{ 'PORTAL.BILLING.ADDON_SINGLE_POST_TITLE' | translate }}
-          </h3>
-          <p class="addon-desc">
-            {{ 'PORTAL.BILLING.ADDON_SINGLE_POST_DESC' | translate }}
-          </p>
-        </div>
-
-        <div class="addon-price-box" data-testid="single-post-addon-price">
-          <div class="addon-price-row">
-            <span class="addon-price-amount">{{ formatPrice(addonPrice.amount, addonPrice.currency) }}</span>
-            <span class="addon-currency-code">{{ addonPrice.currency | uppercase }}</span>
-          </div>
-          <span class="addon-one-time-note">{{ 'PORTAL.BILLING.ADDON_SINGLE_POST_ONE_TIME_NOTE' | translate }}</span>
-        </div>
-      </div>
-
-      <div class="card-body addon-card-body">
-        <!-- Add-On Error Alert -->
-        <div *ngIf="addonError()" class="alert alert-danger addon-error-alert" role="alert">
-          <span class="alert-icon">⚠️</span>
-          <span class="alert-text">{{ addonError() }}</span>
-          <button
-            type="button"
-            class="alert-close"
-            (click)="clearAddonError()"
-            [attr.aria-label]="'PORTAL.BILLING.DISMISS' | translate"
-          >✕</button>
-        </div>
-
-        <!-- Add-On Activation Pending Alert (if payment succeeded but applyAddon failed) -->
-        <div *ngIf="addonActivationPending()" class="alert alert-warning addon-activation-pending-alert" role="status">
-          <span class="alert-icon">⏳</span>
-          <div class="alert-text">
-            <strong>{{ 'PORTAL.BILLING.ADDON_SINGLE_POST_ACTIVATION_PENDING_TITLE' | translate }}</strong>
-            <p class="addon-alert-subtext">{{ 'PORTAL.BILLING.ADDON_SINGLE_POST_ACTIVATION_PENDING_DESC' | translate }}</p>
-          </div>
-          <button
-            type="button"
-            class="btn btn-secondary btn-sm"
-            [disabled]="isLoading() || addonProcessing()"
-            (click)="refreshBilling()"
-          >
-            {{ 'PORTAL.BILLING.BTN_REFRESH_BILLING' | translate }}
-          </button>
-        </div>
-
-        <!-- Add-On Purchase Success Alert -->
-        <div *ngIf="addonPurchaseSuccess()" class="alert alert-success addon-success-alert" role="status">
-          <span class="alert-icon">✓</span>
-          <div class="alert-text">
-            <span>{{ 'PORTAL.BILLING.ADDON_SINGLE_POST_SUCCESS' | translate }}</span>
-            <span *ngIf="returnEventId" class="addon-draft-ready-note">
-              {{ 'PORTAL.BILLING.ADDON_SINGLE_POST_DRAFT_READY' | translate }}
-            </span>
-          </div>
-          <button
-            *ngIf="returnEventId"
-            type="button"
-            class="btn btn-primary btn-sm addon-return-draft-btn"
-            data-testid="addon-return-to-draft-btn"
-            (click)="returnToDraft()"
-          >
-            {{ 'PORTAL.BILLING.RETURN_TO_DRAFT' | translate }}
-          </button>
-        </div>
-
-        <!-- Saved Payment Methods Selection for Single-Post Add-On -->
-        <div
-          *ngIf="!addonPaymentActive() && !addonActivationPending() && savedMethods().length > 0"
-          class="saved-methods-selection addon-saved-methods-selection"
-        >
-          <label class="section-label">{{ 'PORTAL.BILLING.SELECT_PAYMENT_METHOD' | translate }}</label>
-          <div class="saved-methods-radios">
-            <div
-              *ngFor="let pm of savedMethods()"
-              class="saved-card-radio-item addon-saved-card-item"
-              [class.saved-card-radio-item--selected]="selectedSavedMethod()?.id === pm.id"
-              (click)="selectSavedMethod(pm)"
-            >
-              <input
-                type="radio"
-                name="addonSavedMethodChoice"
-                [checked]="selectedSavedMethod()?.id === pm.id"
-                [attr.aria-label]="(pm.brand | uppercase) + ' ' + pm.last4"
-              />
-              <span class="card-brand">{{ pm.brand | uppercase }}</span>
-              <span class="card-last4">•••• {{ pm.last4 }}</span>
-              <span class="card-exp">{{ 'PORTAL.BILLING.EXP_DATE' | translate: { month: pm.expMonth, year: pm.expYear } }}</span>
-            </div>
-            <div
-              class="saved-card-radio-item addon-new-card-item"
-              [class.saved-card-radio-item--selected]="!selectedSavedMethod()"
-              (click)="selectedSavedMethod.set(null)"
-            >
-              <input
-                type="radio"
-                name="addonSavedMethodChoice"
-                [checked]="!selectedSavedMethod()"
-                [attr.aria-label]="'PORTAL.BILLING.USE_NEW_CARD' | translate"
-              />
-              <span>{{ 'PORTAL.BILLING.USE_NEW_CARD' | translate }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Stripe Payment Element Mount Container for Single-Post Add-On -->
-        <div [hidden]="!addonPaymentActive()" class="payment-elements-container addon-elements-container">
-          <div id="addon-payment-element" class="stripe-mount-box"></div>
-        </div>
-
-        <!-- Add-On Action Buttons -->
-        <div class="addon-actions">
-          <div *ngIf="!addonPaymentActive()" class="button-group">
-            <button
-              type="button"
-              class="btn btn-primary addon-buy-btn"
-              data-testid="buy-single-post-btn"
-              [disabled]="addonProcessing() || addonActivationPending()"
-              (click)="proceedToAddonPayment()"
-            >
-              <span *ngIf="addonProcessing()" class="spinner-sm" style="margin-right: 0.5rem;"></span>
-              {{
-                addonProcessing()
-                  ? ('PORTAL.BILLING.BTN_PROCESSING' | translate)
-                  : selectedSavedMethod()
-                    ? ('PORTAL.BILLING.BTN_PAY_SAVED' | translate) + ' (' + formatPrice(addonPrice.amount, addonPrice.currency) + ')'
-                    : ('PORTAL.BILLING.ADDON_SINGLE_POST_BUY_BTN' | translate) + ' — ' + formatPrice(addonPrice.amount, addonPrice.currency)
-              }}
-            </button>
-          </div>
-
-          <div *ngIf="addonPaymentActive()" class="button-group">
-            <button
-              type="button"
-              class="btn btn-primary addon-confirm-pay-btn"
-              data-testid="confirm-addon-payment-btn"
-              [disabled]="!addonStripeReady() || addonProcessing()"
-              (click)="confirmAddonPayment()"
-            >
-              <span *ngIf="addonProcessing()" class="spinner-sm" style="margin-right: 0.5rem;"></span>
-              {{
-                addonProcessing()
-                  ? ('PORTAL.BILLING.BTN_PROCESSING' | translate)
-                  : ('PORTAL.BILLING.ADDON_SINGLE_POST_PAY_BTN' | translate: { amount: formatPrice(addonPrice.amount, addonPrice.currency) })
-              }}
-            </button>
-            <button
-              type="button"
-              class="btn btn-secondary addon-cancel-pay-btn"
-              data-testid="cancel-addon-payment-btn"
-              [disabled]="addonProcessing()"
-              (click)="cancelAddonPayment()"
             >
               {{ 'PORTAL.COMMON.CANCEL' | translate }}
             </button>
@@ -2365,6 +2363,11 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
   .addon-card {
     padding: 1.5rem;
+  }
+
+  &.single-post-addon-section--quota .addon-card {
+    border-color: var(--vamo-primary);
+    box-shadow: 0 0 0 2px rgba(128, 112, 192, 0.18);
   }
 
   .addon-card-main {

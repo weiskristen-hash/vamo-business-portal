@@ -180,25 +180,6 @@ export interface OfferingOption {
                   </p>
                 </div>
 
-                <!-- Category Offerings (Conditional) -->
-                <div *ngIf="currentOfferingChoices.length > 0" class="form-group span-2">
-                  <label class="form-label">
-                    {{ 'PORTAL.PROFILE.OFFERINGS_LABEL' | translate }}
-                  </label>
-                  <p class="form-hint">{{ 'PORTAL.PROFILE.OFFERINGS_HINT' | translate }}</p>
-                  <div class="chips-container">
-                    <button
-                      *ngFor="let choice of currentOfferingChoices"
-                      type="button"
-                      class="chip-btn"
-                      [class.chip-active]="isOfferingSelected(choice.value)"
-                      (click)="toggleOffering(choice.value)"
-                    >
-                      <span *ngIf="isOfferingSelected(choice.value)" class="chip-check">✓</span>
-                      <span>{{ choice.label }}</span>
-                    </button>
-                  </div>
-                </div>
 
                 <!-- Description -->
                 <div class="form-group span-2">

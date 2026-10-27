@@ -173,6 +173,7 @@ export interface ExistingImage {
                       (click)="setCategory(cat.value)"
                       (focus)="openCategoryTooltip(cat.value)"
                       (blur)="closeCategoryTooltip(cat.value)"
+                      (touchstart)="openCategoryTooltip(cat.value)"
                     >
                       <img
                         [src]="cat.icon"
@@ -182,15 +183,6 @@ export interface ExistingImage {
                       />
                       <span class="cat-label">{{ 'CATEGORIES.' + cat.value.toUpperCase() | translate }}</span>
                     </button>
-                    <span
-                      class="cat-info-trigger"
-                      role="button"
-                      tabindex="-1"
-                      [attr.aria-label]="('PORTAL.EVENT_EDITOR.CATEGORY_INFO_ARIA' | translate) + ': ' + ('CATEGORIES.' + cat.value.toUpperCase() | translate)"
-                      [attr.aria-expanded]="activeCategoryTooltip === cat.value"
-                      [attr.aria-controls]="'cat-tooltip-' + cat.value"
-                      (click)="toggleCategoryTooltip(cat.value, $event)"
-                    >?</span>
                     <div
                       class="category-tooltip"
                       [id]="'cat-tooltip-' + cat.value"
@@ -1519,34 +1511,6 @@ export interface ExistingImage {
       box-shadow: 0 0 0 2px rgba(128, 112, 192, 0.2);
     }
 
-    .cat-info-trigger {
-      position: absolute;
-      top: 6px;
-      right: 6px;
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      background: var(--vamo-surface-subtle);
-      border: 1px solid var(--vamo-border);
-      color: var(--vamo-text-muted);
-      font-size: 0.68rem;
-      font-weight: 700;
-      line-height: 1;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      user-select: none;
-      z-index: 2;
-      transition: all 0.15s ease;
-    }
-
-    .cat-info-trigger:hover {
-      background: var(--vamo-primary);
-      border-color: var(--vamo-primary);
-      color: #ffffff;
-    }
-
     .category-tooltip {
       position: absolute;
       bottom: calc(100% + 8px);
@@ -2872,6 +2836,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
   setCategory(catValue: string): void {
     this.draft.category = catValue;
+    this.activeCategoryTooltip = catValue;
     this.markDirty();
   }
 

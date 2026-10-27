@@ -1150,6 +1150,37 @@ describe('BusinessProfileComponent', () => {
       expect(component.publishedAreas().length).toBe(3);
       expect(fixture.nativeElement.querySelector('.city-areas-notice')).toBeNull();
     });
+    it('does not render the Category Offerings & Features UI section for any Business Category while preserving saved offerings data on save', async () => {
+      businessServiceSpy.getProviderById.mockResolvedValueOnce({
+        ...mockProvider,
+        business_type: 'restaurant_and_bar',
+        offerings: ['breakfast', 'cocktails'],
+      });
+
+      await component.loadProfile();
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      for (const bt of component.businessTypes) {
+        component.onBusinessTypeChange(bt.value);
+        fixture.detectChanges();
+        expect(compiled.querySelector('.chips-container')).toBeNull();
+        expect(compiled.querySelector('.chip-btn')).toBeNull();
+        expect(compiled.textContent).not.toContain('Category Offerings & Features');
+        expect(compiled.textContent).not.toContain('Ofertas y servicios de la categoría');
+      }
+
+      // Previously saved offerings on the provider record remain intact when saving profile changes
+      expect(component.form().offerings).toEqual(['breakfast', 'cocktails']);
+      await component.saveProfile();
+      expect(businessServiceSpy.updateProvider).toHaveBeenCalledWith(
+        'prov-101',
+        expect.objectContaining({
+          offerings: ['breakfast', 'cocktails'],
+        }),
+        expect.anything()
+      );
+    });
   });
 
 });
