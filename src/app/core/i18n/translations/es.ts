@@ -1541,7 +1541,18 @@ export const esTranslations: Record<string, any> = {
       "ADDON_SINGLE_POST_ACTIVATION_PENDING_TITLE": "Pago recibido — Activación pendiente",
       "ADDON_SINGLE_POST_ACTIVATION_PENDING_DESC": "Tu pago se completó, pero aún no pudimos confirmar tu espacio de publicación adicional. No envíes el pago de nuevo — actualiza la facturación para verificar tu límite actualizado.",
       "ADDON_SINGLE_POST_ERROR_APPLY_PENDING": "Se recibió el pago, pero aún no pudimos confirmar tu espacio de publicación adicional. No envíes el pago de nuevo — actualiza la facturación para verificar tu límite actualizado.",
-      "ADDON_SINGLE_POST_ERROR_INIT": "No pudimos iniciar el pago del post adicional. Por favor inténtalo de nuevo."
+      "ADDON_SINGLE_POST_ERROR_INIT": "No pudimos iniciar el pago del post adicional. Por favor inténtalo de nuevo.",
+      "ADDON_SINGLE_POST_ERROR_FORM_LOAD": "No pudimos cargar el formulario de pago seguro para esta compra de publicación adicional. No se ha realizado ningún cargo a tu tarjeta — por favor inténtalo de nuevo.",
+      "ADDON_SINGLE_POST_LOADING_FORM": "Preparando formulario de pago seguro…",
+      "ADDON_SINGLE_POST_RETRY_BTN": "Intentar de nuevo",
+      "ADDON_SAVE_CARD_FUTURE_LABEL": "Guardar esta tarjeta para futuras compras (complementos de pago único y promociones)",
+      "ADDON_CARD_RENEWAL_DISTINCTION_NOTE": "Esta compra única no cambiará la tarjeta de renovación de tu suscripción recurrente. Cualquier opción de autocompletado de Stripe Link en el formulario es independiente del guardado opcional de tarjeta en VAMO para futuras compras.",
+      "WARN_ADDON_CARD_REMOVAL_FAILED": "Tu espacio de publicación adicional está activo, pero no pudimos eliminar automáticamente la tarjeta utilizada en esta compra. Tu tarjeta de renovación de suscripción activa no se modificó. Puedes eliminar la tarjeta adicional en cualquier momento en Métodos de pago.",
+      "WARN_ADDON_CARD_REMOVAL_UNVERIFIED": "Tu espacio de publicación adicional está activo. Como no pudimos verificar todas las comprobaciones de seguridad de tarjetas guardadas, conservamos la tarjeta registrada para proteger tu método de renovación de suscripción activo. Puedes revisar o eliminar tarjetas que no sean de renovación en Métodos de pago.",
+      "SUBSCRIPTION_RENEWAL_CARD_REQUIRED_NOTE": "Se requiere un método de pago válido para las renovaciones recurrentes de la suscripción y debe permanecer almacenado en tu cuenta para cobrarse automáticamente en cada período de renovación hasta que se cancele.",
+      "SUBSCRIPTION_SAVE_CARD_FUTURE_LABEL": "Guardar también esta tarjeta como mi método de pago predeterminado para futuras compras únicas (como publicaciones adicionales y promociones)",
+      "SUBSCRIPTION_CARD_CONSENT_DISTINCTION_NOTE": "El método de pago de renovación de tu suscripción debe permanecer almacenado para la facturación recurrente incluso si dejas sin marcar el guardado opcional para futuras compras únicas. Cualquier opción de autocompletado de Stripe Link en el formulario es independiente de la autorización opcional de VAMO para futuras compras.",
+      "WARN_SUBSCRIPTION_CARD_NOT_VERIFIED": "Tu suscripción está activa, pero aún no pudimos verificar tu tarjeta de renovación guardada. Por favor revisa la sección de Métodos de pago a continuación."
     },
     "PROMOTIONS": {
       "TITLE": "Promocionar una publicación",

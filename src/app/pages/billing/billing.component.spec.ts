@@ -2739,6 +2739,413 @@ describe('BillingComponent', () => {
 
       i18n.setLang('en');
     });
+
+    it('16. formats Single-Post Add-On price as "$20 USD" with a space and without duplicating "One-time purchase"', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const priceEl = fixture.nativeElement.querySelector(
+        '[data-testid="single-post-addon-price"]',
+      ) as HTMLElement;
+      const badgeEl = fixture.nativeElement.querySelector(
+        '[data-testid="single-post-addon-badge"]',
+      ) as HTMLElement;
+
+      expect(priceEl).not.toBeNull();
+      expect(priceEl.textContent?.replace(/\s+/g, ' ').trim()).toBe('$20 USD');
+      expect(priceEl.textContent).not.toContain('$20USD');
+      expect(priceEl.textContent?.toLowerCase()).not.toContain('one-time purchase');
+      expect(badgeEl.textContent?.trim()).toBe('One-time purchase');
+    });
+
+    it('17. closes the add-on card container and shows a payment-form error (never the generic page-load message) when Payment Element mounting fails, and reuses the existing PaymentIntent on retry', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      stripeServiceSpy.mountPaymentElement.mockRejectedValueOnce(
+        new Error('Container #portal-addon-payment-element not found.'),
+      );
+
+      await component.proceedToAddonPayment();
+      await (component as any).mountAddonPaymentElement('pi_addon_secret_123');
+      fixture.detectChanges();
+
+      // Must immediately close addonPaymentActive so an empty card container is never displayed as a working checkout
+      expect(component.addonPaymentActive()).toBe(false);
+      expect(component.addonStripeReady()).toBe(false);
+      expect(component.addonError()).toContain(
+        'We couldn’t load the secure payment form for this single-post purchase.',
+      );
+      expect(component.addonError()).not.toContain(
+        "We couldn't load this information. Please refresh the page.",
+      );
+
+      // Safe retry must reuse the cached PaymentIntent clientSecret instead of calling createAddonPayment again
+      expect(stripeServiceSpy.createAddonPayment).toHaveBeenCalledTimes(1);
+      stripeServiceSpy.mountPaymentElement.mockResolvedValueOnce({
+        stripe: {} as any,
+        elements: {} as any,
+      });
+
+      const retryBtn = fixture.nativeElement.querySelector(
+        '[data-testid="retry-addon-payment-btn"]',
+      ) as HTMLButtonElement;
+      expect(retryBtn).not.toBeNull();
+      await component.proceedToAddonPayment();
+      expect(stripeServiceSpy.createAddonPayment).toHaveBeenCalledTimes(1);
+      expect(component.addonPaymentActive()).toBe(true);
+      expect(component.addonClientSecret()).toBe('pi_addon_secret_123');
+    });
+
+    it('18. defaults optional add-on card-saving consent to unchecked and detaches the newly attached card only when all safety conditions are verified', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      await component.proceedToAddonPayment();
+      await (component as any).mountAddonPaymentElement('pi_addon_secret_123');
+      fixture.detectChanges();
+
+      const consentCheckbox = fixture.nativeElement.querySelector(
+        '[data-testid="addon-save-card-future-checkbox"]',
+      ) as HTMLInputElement;
+      const distinctionNote = fixture.nativeElement.querySelector(
+        '[data-testid="addon-card-renewal-distinction-note"]',
+      ) as HTMLElement;
+      expect(consentCheckbox).not.toBeNull();
+      expect(component.saveAddonCardForFuturePurchases()).toBe(false);
+      expect(distinctionNote.textContent).toContain(
+        'won’t change your recurring subscription renewal card',
+      );
+      expect(distinctionNote.textContent).toContain('Stripe Link');
+
+      // Default unchecked state = customer opts OUT of saving the new card for future purchases
+      stripeServiceSpy.confirmPayment.mockResolvedValueOnce({
+        paymentIntent: { id: 'pi_addon_123', status: 'succeeded', payment_method: 'pm_new_addon_99' },
+      });
+      stripeServiceSpy.loadSavedPaymentMethods = vi
+        .fn()
+        .mockResolvedValueOnce({
+          paymentMethods: [
+            { ...mockSavedMethods[0], isRenewalCard: true, isDefault: true },
+            { id: 'pm_new_addon_99', brand: 'mastercard', last4: '5555', expMonth: 10, expYear: 2029, isRenewalCard: false, isDefault: false },
+          ],
+          defaultPaymentMethodId: 'pm_1',
+          subscriptionDefaultPaymentMethodId: 'pm_1',
+          customerDefaultPaymentMethodId: 'pm_1',
+          defaultVerified: true,
+          defaultPaymentMethodSource: 'subscription',
+        })
+        .mockResolvedValueOnce({
+          paymentMethods: [{ ...mockSavedMethods[0], isRenewalCard: true, isDefault: true }],
+          defaultPaymentMethodId: 'pm_1',
+          subscriptionDefaultPaymentMethodId: 'pm_1',
+          customerDefaultPaymentMethodId: 'pm_1',
+          defaultVerified: true,
+          defaultPaymentMethodSource: 'subscription',
+        });
+      stripeServiceSpy.detachPaymentMethod = vi.fn().mockResolvedValue(undefined);
+
+      await component.confirmAddonPayment();
+
+      expect(stripeServiceSpy.detachPaymentMethod).toHaveBeenCalledWith('pm_new_addon_99');
+      expect(component.addonPurchaseSuccess()).toBe(true);
+      expect(component.addonCardRemovalWarning()).toBeNull();
+    });
+
+    it('19. retains the newly attached card without calling detachPaymentMethod when the customer explicitly opts IN to saving the card', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      await component.proceedToAddonPayment();
+      await (component as any).mountAddonPaymentElement('pi_addon_secret_123');
+      component.saveAddonCardForFuturePurchases.set(true);
+      fixture.detectChanges();
+
+      stripeServiceSpy.confirmPayment.mockResolvedValueOnce({
+        paymentIntent: { id: 'pi_addon_123', status: 'succeeded', payment_method: 'pm_new_addon_optin' },
+      });
+      stripeServiceSpy.loadSavedPaymentMethods = vi.fn().mockResolvedValueOnce({
+        paymentMethods: [
+          { ...mockSavedMethods[0], isRenewalCard: true, isDefault: true },
+          { id: 'pm_new_addon_optin', brand: 'visa', last4: '1111', expMonth: 11, expYear: 2029 },
+        ],
+        defaultPaymentMethodId: 'pm_1',
+        subscriptionDefaultPaymentMethodId: 'pm_1',
+        customerDefaultPaymentMethodId: 'pm_1',
+        defaultVerified: true,
+        defaultPaymentMethodSource: 'subscription',
+      });
+      stripeServiceSpy.detachPaymentMethod = vi.fn();
+
+      await component.confirmAddonPayment();
+
+      expect(stripeServiceSpy.detachPaymentMethod).not.toHaveBeenCalled();
+      expect(component.addonPurchaseSuccess()).toBe(true);
+      expect(component.addonCardRemovalWarning()).toBeNull();
+    });
+
+    it('20. preserves the card and surfaces a warning when renewal-card verification is unavailable or defaultPaymentMethodId is missing on opt-out', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      await component.proceedToAddonPayment();
+      await (component as any).mountAddonPaymentElement('pi_addon_secret_123');
+      expect(component.saveAddonCardForFuturePurchases()).toBe(false);
+
+      stripeServiceSpy.confirmPayment.mockResolvedValueOnce({
+        paymentIntent: { id: 'pi_addon_123', status: 'succeeded', payment_method: 'pm_new_addon_unverified' },
+      });
+      // Backend returns defaultVerified: false and defaultPaymentMethodId: null
+      stripeServiceSpy.loadSavedPaymentMethods = vi.fn().mockResolvedValueOnce({
+        paymentMethods: [
+          ...mockSavedMethods,
+          { id: 'pm_new_addon_unverified', brand: 'visa', last4: '2222', expMonth: 12, expYear: 2029 },
+        ],
+        defaultPaymentMethodId: null,
+        defaultVerified: false,
+      });
+      stripeServiceSpy.detachPaymentMethod = vi.fn();
+
+      await component.confirmAddonPayment();
+      fixture.detectChanges();
+
+      // Must NOT infer safety from confirmedPmId !== null; must preserve card and warn
+      expect(stripeServiceSpy.detachPaymentMethod).not.toHaveBeenCalled();
+      expect(component.addonPurchaseSuccess()).toBe(true);
+      expect(component.addonError()).toBeNull();
+      expect(component.addonCardRemovalWarning()).toContain(
+        'kept the card on file to protect your active subscription renewal method',
+      );
+      const warnBanner = fixture.nativeElement.querySelector(
+        '[data-testid="addon-card-removal-warning"]',
+      ) as HTMLElement;
+      expect(warnBanner).not.toBeNull();
+    });
+
+    it('21. keeps purchase successful, never retries payment or grants a second post, and surfaces a warning when detachment fails after purchase', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      await component.proceedToAddonPayment();
+      await (component as any).mountAddonPaymentElement('pi_addon_secret_123');
+      expect(component.saveAddonCardForFuturePurchases()).toBe(false);
+
+      stripeServiceSpy.confirmPayment.mockResolvedValueOnce({
+        paymentIntent: { id: 'pi_addon_123', status: 'succeeded', payment_method: 'pm_new_addon_fail' },
+      });
+      stripeServiceSpy.loadSavedPaymentMethods = vi.fn().mockResolvedValueOnce({
+        paymentMethods: [
+          { ...mockSavedMethods[0], isRenewalCard: true, isDefault: true },
+          { id: 'pm_new_addon_fail', brand: 'visa', last4: '3333', expMonth: 8, expYear: 2029, isRenewalCard: false, isDefault: false },
+        ],
+        defaultPaymentMethodId: 'pm_1',
+        subscriptionDefaultPaymentMethodId: 'pm_1',
+        customerDefaultPaymentMethodId: 'pm_1',
+        defaultVerified: true,
+        defaultPaymentMethodSource: 'subscription',
+      });
+      stripeServiceSpy.detachPaymentMethod = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('Stripe detach failed'));
+
+      await component.confirmAddonPayment();
+      fixture.detectChanges();
+
+      expect(stripeServiceSpy.detachPaymentMethod).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.confirmPayment).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.applyAddon).toHaveBeenCalledTimes(1);
+      expect(component.addonPurchaseSuccess()).toBe(true);
+      expect(component.addonError()).toBeNull();
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="retry-addon-payment-btn"]'),
+      ).toBeNull();
+      expect(component.addonCardRemovalWarning()).toContain(
+        'Your extra post slot is active, but we couldn’t remove the card used for this purchase automatically.',
+      );
+    });
+
+    it('22. never detaches a previously saved card or infers a card ID from before/after card lists alone', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // Case A: confirmPayment does not return an explicit payment_method ID, even though a new card appears in savedMethods
+      await component.proceedToAddonPayment();
+      await (component as any).mountAddonPaymentElement('pi_addon_secret_123');
+      stripeServiceSpy.confirmPayment.mockResolvedValueOnce({
+        paymentIntent: { id: 'pi_addon_123', status: 'succeeded' },
+      });
+      stripeServiceSpy.loadSavedPaymentMethods = vi.fn().mockResolvedValueOnce({
+        paymentMethods: [
+          { ...mockSavedMethods[0], isRenewalCard: true, isDefault: true },
+          { id: 'pm_unconfirmed_list_diff', brand: 'visa', last4: '4444', expMonth: 9, expYear: 2029 },
+        ],
+        defaultPaymentMethodId: 'pm_1',
+        subscriptionDefaultPaymentMethodId: 'pm_1',
+        customerDefaultPaymentMethodId: 'pm_1',
+        defaultVerified: true,
+        defaultPaymentMethodSource: 'subscription',
+      });
+      stripeServiceSpy.detachPaymentMethod = vi.fn();
+
+      await component.confirmAddonPayment();
+      expect(stripeServiceSpy.detachPaymentMethod).not.toHaveBeenCalled();
+      expect(component.addonCardRemovalWarning()).toBeTruthy();
+
+      // Case B: confirmPayment returns a PaymentMethod ID that was already in previousCardIds ('pm_1')
+      component.savedMethods.set([
+        { id: 'pm_1', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2028 },
+        { id: 'pm_2', brand: 'mastercard', last4: '8888', expMonth: 12, expYear: 2029, isRenewalCard: true },
+      ]);
+      await component.proceedToAddonPayment();
+      await (component as any).mountAddonPaymentElement('pi_addon_secret_123');
+      stripeServiceSpy.confirmPayment.mockResolvedValueOnce({
+        paymentIntent: { id: 'pi_addon_124', status: 'succeeded', payment_method: 'pm_1' },
+      });
+      stripeServiceSpy.loadSavedPaymentMethods = vi.fn().mockResolvedValueOnce({
+        paymentMethods: [
+          { id: 'pm_1', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2028, isRenewalCard: false, isDefault: false },
+          { id: 'pm_2', brand: 'mastercard', last4: '8888', expMonth: 12, expYear: 2029, isRenewalCard: true, isDefault: true },
+        ],
+        defaultPaymentMethodId: 'pm_2',
+        subscriptionDefaultPaymentMethodId: 'pm_2',
+        customerDefaultPaymentMethodId: 'pm_2',
+        defaultVerified: true,
+        defaultPaymentMethodSource: 'subscription',
+      });
+
+      await component.confirmAddonPayment();
+      expect(stripeServiceSpy.detachPaymentMethod).not.toHaveBeenCalled();
+    });
+
+    it('23. never detaches the subscription default renewal card or customer default payment method', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      await component.proceedToAddonPayment();
+      await (component as any).mountAddonPaymentElement('pi_addon_secret_123');
+      stripeServiceSpy.confirmPayment.mockResolvedValueOnce({
+        paymentIntent: { id: 'pi_addon_125', status: 'succeeded', payment_method: 'pm_renewal_active' },
+      });
+      stripeServiceSpy.loadSavedPaymentMethods = vi.fn().mockResolvedValueOnce({
+        paymentMethods: [
+          { ...mockSavedMethods[0], isRenewalCard: false, isDefault: false },
+          { id: 'pm_renewal_active', brand: 'visa', last4: '7777', expMonth: 10, expYear: 2029, isRenewalCard: true, isDefault: true },
+        ],
+        defaultPaymentMethodId: 'pm_renewal_active',
+        subscriptionDefaultPaymentMethodId: 'pm_renewal_active',
+        customerDefaultPaymentMethodId: 'pm_renewal_active',
+        defaultVerified: true,
+        defaultPaymentMethodSource: 'subscription',
+      });
+      stripeServiceSpy.detachPaymentMethod = vi.fn();
+
+      await component.confirmAddonPayment();
+      expect(stripeServiceSpy.detachPaymentMethod).not.toHaveBeenCalled();
+      expect(component.addonPurchaseSuccess()).toBe(true);
+      expect(component.addonCardRemovalWarning()).toBeTruthy();
+    });
+  });
+
+  describe('New Subscription Card Consent & Persistence Verification', () => {
+    it('defaults optional subscription future-purchase consent to unchecked, explains renewal storage vs Stripe Link, and warns if backend card persistence is not verified', async () => {
+      await fixture.whenStable();
+      component.subscription.set(null);
+      component.savedMethods.set([]);
+      component.selectedSavedMethod.set(null);
+      component.selectPlan(mockPlans[1]); // Basic Plan
+      fixture.detectChanges();
+
+      const renewalDisclosure = fixture.nativeElement.querySelector(
+        '[data-testid="subscription-renewal-card-disclosure"]',
+      ) as HTMLElement;
+      const futureCheckbox = fixture.nativeElement.querySelector(
+        '[data-testid="subscription-save-card-future-checkbox"]',
+      ) as HTMLInputElement;
+      const distinctionNote = fixture.nativeElement.querySelector(
+        '[data-testid="subscription-card-consent-distinction-note"]',
+      ) as HTMLElement;
+
+      expect(renewalDisclosure).not.toBeNull();
+      expect(renewalDisclosure.textContent).toContain(
+        'required for recurring subscription renewals and must remain stored',
+      );
+      expect(futureCheckbox).not.toBeNull();
+      expect(component.saveSubscriptionCardForFuturePurchases()).toBe(false);
+      expect(distinctionNote).not.toBeNull();
+      expect(distinctionNote.textContent).toContain('Stripe Link');
+
+      // Simulate post-checkout finalizeSubscriptionSuccess where backend returns 0 saved cards
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(mockSubscription);
+      stripeServiceSpy.loadSavedPaymentMethods = vi.fn().mockResolvedValueOnce({
+        paymentMethods: [],
+        defaultPaymentMethodId: null,
+        defaultVerified: false,
+      });
+
+      await (component as any).finalizeSubscriptionSuccess(mockPlans[1]);
+      fixture.detectChanges();
+
+      // Must NOT assume the checkbox saved the card; must surface persistence verification warning
+      expect(component.subscriptionCardPersistenceWarning()).toContain(
+        'verify your saved renewal card',
+      );
+      const warnBanner = fixture.nativeElement.querySelector(
+        '[data-testid="subscription-card-persistence-warning"]',
+      ) as HTMLElement;
+      expect(warnBanner).not.toBeNull();
+    });
+
+    it('preserves the subscription renewal card, does not overwrite renewal default with an older card, and supports $0 promotional SetupIntent flow when optional future-purchase consent is unchecked', async () => {
+      await fixture.whenStable();
+      component.subscription.set(null);
+      component.selectedSavedMethod.set(null);
+      component.selectPlan(mockPlans[1]); // Basic Plan
+      expect(component.saveSubscriptionCardForFuturePurchases()).toBe(false);
+
+      // Simulate $0 promotional SetupIntent checkout flow with optional future-purchase consent left unchecked
+      component.paymentActive.set(true);
+      component.paymentRequiresSetup.set(true);
+      component.clientSecret.set('seti_promo3m_secret_abc');
+      component.pendingSetupIntentId.set('seti_promo3m');
+      (component as any).stripeInstance = {} as any;
+      (component as any).stripeElements = {} as any;
+
+      stripeServiceSpy.confirmSetup = vi.fn().mockResolvedValueOnce({
+        setupIntent: { id: 'seti_promo3m', status: 'succeeded' },
+      });
+      stripeServiceSpy.createSubscriptionFromSetup = vi.fn().mockResolvedValueOnce({
+        subscriptionId: 'sub_promo_3m',
+        status: 'active',
+      });
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce({
+        ...mockSubscription,
+        subscriptionId: 'sub_promo_3m',
+        status: 'active',
+      });
+      // Customer has an older card ('pm_old_card') plus the new subscription renewal card ('pm_sub_renewal')
+      stripeServiceSpy.loadSavedPaymentMethods = vi.fn().mockResolvedValueOnce({
+        paymentMethods: [
+          { id: 'pm_old_card', brand: 'mastercard', last4: '1111', expMonth: 5, expYear: 2028 },
+          { id: 'pm_sub_renewal', brand: 'visa', last4: '9999', expMonth: 12, expYear: 2029, isRenewalCard: true },
+        ],
+        defaultPaymentMethodId: 'pm_sub_renewal',
+        subscriptionDefaultPaymentMethodId: 'pm_sub_renewal',
+        customerDefaultPaymentMethodId: 'pm_old_card',
+        defaultVerified: true,
+        defaultPaymentMethodSource: 'subscription',
+      });
+      stripeServiceSpy.detachPaymentMethod = vi.fn();
+      stripeServiceSpy.setDefaultPaymentMethod = vi.fn();
+
+      await component.confirmPayment();
+
+      expect(stripeServiceSpy.confirmSetup).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.createSubscriptionFromSetup).toHaveBeenCalledWith('seti_promo3m');
+      // Must NEVER detach the renewal card or call setDefaultPaymentMethod when optional consent is unchecked
+      expect(stripeServiceSpy.detachPaymentMethod).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.setDefaultPaymentMethod).not.toHaveBeenCalled();
+      expect(component.subscription()?.subscriptionId).toBe('sub_promo_3m');
+    });
   });
 
   describe('Subscription Plan-Change Review & Payment Safeguards', () => {

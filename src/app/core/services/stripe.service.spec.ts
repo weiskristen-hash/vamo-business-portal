@@ -2150,6 +2150,94 @@ describe('StripeService', () => {
       expect(retryRes.priceId).toBe('price_advanced');
     });
   });
+
+  describe('Payment Element Lifecycle & SetupIntent Subscription Extraction', () => {
+    it('extracts setup_result_existing and setup_result_new from STRIPE_CREATE_SUBSCRIPTION_FLOW for $0 promotional SetupIntent checkouts', async () => {
+      runtimeConfig.updateConfig({ stripeCreateSubscriptionFlow: 'flow-create-sub' });
+      const flowSpy = vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        setup_result_existing: {
+          clientSecret: 'seti_123_secret_abc',
+          setupIntentId: 'seti_123',
+          subscriptionId: null,
+          requiresSetup: true,
+        },
+      });
+
+      const res = await service.createSubscription(
+        'sofia@restaurant.com',
+        'Sofia',
+        'price_basic_live',
+        'promo_free100',
+      );
+
+      expect(flowSpy).toHaveBeenCalledWith('flow-create-sub', {
+        email: 'sofia@restaurant.com',
+        name: 'Sofia',
+        priceId: 'price_basic_live',
+        promotionCode: 'promo_free100',
+      });
+      expect(res.requiresSetup).toBe(true);
+      expect(res.setupIntentId).toBe('seti_123');
+      expect(res.clientSecret).toBe('seti_123_secret_abc');
+    });
+
+    it('cleans up prior Payment Element, clears container DOM, and forwards loaderror events in mountPaymentElement', async () => {
+      const container = document.createElement('div');
+      container.id = 'portal-addon-payment-element';
+      container.innerHTML = '<span>stale content</span>';
+      document.body.appendChild(container);
+
+      const listeners: Record<string, (ev: any) => void> = {};
+      const firstElement = {
+        mount: vi.fn(),
+        destroy: vi.fn(),
+        on: vi.fn((event: string, cb: (ev: any) => void) => {
+          listeners[event] = cb;
+        }),
+      };
+      const secondElement = {
+        mount: vi.fn(),
+        destroy: vi.fn(),
+        on: vi.fn((event: string, cb: (ev: any) => void) => {
+          listeners[event] = cb;
+        }),
+      };
+
+      let callCount = 0;
+      const mockStripe: any = {
+        elements: vi.fn(() => ({
+          create: vi.fn(() => {
+            callCount++;
+            return callCount === 1 ? firstElement : secondElement;
+          }),
+        })),
+      };
+      vi.spyOn(service, 'getStripe').mockResolvedValue(mockStripe);
+
+      try {
+        await service.mountPaymentElement('pi_1_secret_a', 'portal-addon-payment-element');
+        expect(container.innerHTML).toBe('');
+        expect(firstElement.mount).toHaveBeenCalledWith(container);
+
+        const onLoadError = vi.fn();
+        await service.mountPaymentElement('pi_2_secret_b', 'portal-addon-payment-element', {
+          onLoadError,
+        });
+        // Prior element must be destroyed before mounting the new one
+        expect(firstElement.destroy).toHaveBeenCalledTimes(1);
+        expect(secondElement.mount).toHaveBeenCalledWith(container);
+
+        // Trigger async Stripe loaderror
+        listeners['loaderror']?.({ error: { code: 'invalid_client_secret', message: 'Invalid secret' } });
+        expect(onLoadError).toHaveBeenCalledWith({
+          code: 'invalid_client_secret',
+          message: 'Invalid secret',
+        });
+      } finally {
+        container.remove();
+      }
+    });
+  });
 });
 
 

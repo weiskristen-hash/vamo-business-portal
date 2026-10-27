@@ -62,6 +62,12 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
     <button type="button" class="alert-close" (click)="successMessage.set(null); activeSuccessPayload.set(null)" [attr.aria-label]="'PORTAL.BILLING.DISMISS' | translate">✕</button>
   </div>
 
+  <div *ngIf="subscriptionCardPersistenceWarning()" class="alert alert-warning" data-testid="subscription-card-persistence-warning" role="status">
+    <span class="alert-icon">⚠️</span>
+    <span class="alert-text">{{ subscriptionCardPersistenceWarning() }}</span>
+    <button type="button" class="alert-close" (click)="clearSubscriptionCardWarning()" [attr.aria-label]="'PORTAL.BILLING.DISMISS' | translate">✕</button>
+  </div>
+
   <!-- Subscription Read Failure Banner (separate from "no subscription") -->
   <div *ngIf="subscriptionLoadError() && !planChangeUnverified()" class="alert alert-warning subscription-read-error-banner" role="status">
     <span class="alert-icon">⚠️</span>
@@ -231,8 +237,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
           <div class="addon-price-action">
             <div class="addon-price" data-testid="single-post-addon-price">
-              <span class="addon-price-amount">{{ formatPrice(addonPrice.amount, addonPrice.currency) }}</span>
-              <span class="addon-price-type">{{ addonPrice.currency | uppercase }} &middot; {{ 'PORTAL.BILLING.ADDON_SINGLE_POST_ONE_TIME_NOTE' | translate }}</span>
+              <span class="addon-price-amount">{{ formatPrice(addonPrice.amount, addonPrice.currency) }}</span>{{ ' ' }}<span class="addon-price-currency">{{ (addonPrice.currency || 'usd') | uppercase }}</span>
             </div>
 
             <button
@@ -257,6 +262,16 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
         <div *ngIf="addonError()" class="alert alert-danger addon-alert addon-error-alert" role="alert">
           <span class="alert-icon">⚠️</span>
           <span class="alert-text">{{ addonError() }}</span>
+          <button
+            *ngIf="!addonPaymentConfirmed() && !addonActivationPending()"
+            type="button"
+            class="btn btn-secondary btn-sm addon-retry-btn"
+            data-testid="retry-addon-payment-btn"
+            [disabled]="addonProcessing()"
+            (click)="proceedToAddonPayment()"
+          >
+            {{ 'PORTAL.BILLING.ADDON_SINGLE_POST_RETRY_BTN' | translate }}
+          </button>
           <button
             type="button"
             class="alert-close"
@@ -302,6 +317,23 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
           </button>
         </div>
 
+        <!-- Add-On Card Removal Warning (when customer opted out of saving card, purchase succeeded, but card removal was blocked or failed) -->
+        <div
+          *ngIf="addonCardRemovalWarning()"
+          class="alert alert-warning addon-alert addon-card-removal-warning-alert"
+          data-testid="addon-card-removal-warning"
+          role="alert"
+        >
+          <span class="alert-icon">⚠️</span>
+          <span class="alert-text">{{ addonCardRemovalWarning() }}</span>
+          <button
+            type="button"
+            class="alert-close"
+            (click)="clearAddonCardRemovalWarning()"
+            [attr.aria-label]="'PORTAL.BILLING.DISMISS' | translate"
+          >✕</button>
+        </div>
+
         <!-- Saved Payment Methods Selection for Single-Post Add-On -->
         <div
           *ngIf="!addonPaymentActive() && !addonActivationPending() && savedMethods().length > 0"
@@ -343,7 +375,37 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
         <!-- Stripe Payment Element Mount Container for Single-Post Add-On -->
         <div [hidden]="!addonPaymentActive()" class="payment-elements-container addon-inline-element addon-elements-container">
-          <div id="portal-addon-payment-element" class="stripe-mount-box"></div>
+          <div
+            *ngIf="addonPaymentActive() && (addonElementMounting() || !addonStripeReady())"
+            class="addon-element-loading"
+            data-testid="addon-payment-loading"
+            role="status"
+          >
+            <div class="spinner-sm"></div>
+            <span>{{ 'PORTAL.BILLING.ADDON_SINGLE_POST_LOADING_FORM' | translate }}</span>
+          </div>
+          <div
+            id="portal-addon-payment-element"
+            class="stripe-mount-box"
+            [class.stripe-mount-box--loading]="!addonStripeReady()"
+          ></div>
+
+          <div *ngIf="addonPaymentActive() && !selectedSavedMethod()" class="addon-card-consent-box" data-testid="addon-card-consent-box">
+            <label class="card-consent-checkbox-label">
+              <input
+                type="checkbox"
+                class="card-consent-checkbox"
+                data-testid="addon-save-card-future-checkbox"
+                [ngModel]="saveAddonCardForFuturePurchases()"
+                (ngModelChange)="saveAddonCardForFuturePurchases.set(!!$event)"
+                [disabled]="addonProcessing()"
+              />
+              <span>{{ 'PORTAL.BILLING.ADDON_SAVE_CARD_FUTURE_LABEL' | translate }}</span>
+            </label>
+            <p class="card-consent-distinction-note" data-testid="addon-card-renewal-distinction-note">
+              {{ 'PORTAL.BILLING.ADDON_CARD_RENEWAL_DISTINCTION_NOTE' | translate }}
+            </p>
+          </div>
         </div>
 
         <!-- Add-On Payment Element Action Buttons -->
@@ -890,6 +952,31 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
         <!-- Stripe Elements Mount Container -->
         <div *ngIf="paymentActive()" class="payment-elements-container">
           <div id="portal-payment-element" class="stripe-mount-box"></div>
+        </div>
+
+        <!-- Recurring Subscription Renewal Requirement & Future Purchase Consent (New Card Checkout) -->
+        <div
+          *ngIf="subscription() === null && !selectedSavedMethod()"
+          class="subscription-card-consent-box"
+          data-testid="subscription-card-consent-box"
+        >
+          <p class="subscription-renewal-required-note" data-testid="subscription-renewal-card-disclosure">
+            {{ 'PORTAL.BILLING.SUBSCRIPTION_RENEWAL_CARD_REQUIRED_NOTE' | translate }}
+          </p>
+          <label class="card-consent-checkbox-label">
+            <input
+              type="checkbox"
+              class="card-consent-checkbox"
+              data-testid="subscription-save-card-future-checkbox"
+              [ngModel]="saveSubscriptionCardForFuturePurchases()"
+              (ngModelChange)="saveSubscriptionCardForFuturePurchases.set(!!$event)"
+              [disabled]="isProcessingPayment()"
+            />
+            <span>{{ 'PORTAL.BILLING.SUBSCRIPTION_SAVE_CARD_FUTURE_LABEL' | translate }}</span>
+          </label>
+          <p class="card-consent-distinction-note" data-testid="subscription-card-consent-distinction-note">
+            {{ 'PORTAL.BILLING.SUBSCRIPTION_CARD_CONSENT_DISTINCTION_NOTE' | translate }}
+          </p>
         </div>
 
         <!-- Checkout Action Buttons -->
@@ -2362,7 +2449,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   margin-bottom: 2rem;
 
   .addon-card {
-    padding: 1.5rem;
+    padding: 1.5rem 1.75rem;
   }
 
   &.single-post-addon-section--quota .addon-card {
@@ -2372,7 +2459,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
   .addon-card-main {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 1.5rem;
     flex-wrap: wrap;
@@ -2420,25 +2507,29 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
     display: flex;
     flex-direction: column;
     align-items: flex-end;
+    justify-content: center;
     gap: 0.75rem;
-    min-width: 180px;
+    min-width: 190px;
 
     .addon-price {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0.35rem;
       text-align: right;
+      white-space: nowrap;
 
       .addon-price-amount {
-        display: block;
-        font-size: 1.5rem;
+        font-size: 1.65rem;
         font-weight: 800;
         color: var(--vamo-text);
-        line-height: 1.15;
+        line-height: 1.1;
       }
 
-      .addon-price-type {
-        display: block;
-        font-size: 0.75rem;
+      .addon-price-currency {
+        font-size: 0.85rem;
+        font-weight: 700;
         color: var(--vamo-text-muted);
-        margin-top: 0.15rem;
+        letter-spacing: 0.03em;
       }
     }
   }
@@ -2451,8 +2542,33 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
   .addon-inline-element {
     margin-top: 1.25rem;
-    padding-top: 1.25rem;
+    padding: 1.25rem;
     border-top: 1px solid var(--vamo-border);
+  }
+
+  .addon-element-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0;
+    color: var(--vamo-text-muted);
+    font-size: 0.875rem;
+  }
+
+  .stripe-mount-box--loading {
+    min-height: 0;
+    height: 0;
+    overflow: hidden;
+    opacity: 0;
+  }
+
+  .addon-card-consent-box {
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--vamo-border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
   }
 
   .addon-payment-actions {
@@ -2464,6 +2580,51 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
     margin-top: 1rem;
     margin-bottom: 0;
   }
+}
+
+.subscription-card-consent-box {
+  max-width: 520px;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--vamo-border);
+  border-radius: 10px;
+  background: var(--vamo-surface-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+
+  .subscription-renewal-required-note {
+    margin: 0;
+    font-size: 0.825rem;
+    color: var(--vamo-text-muted);
+    line-height: 1.45;
+  }
+}
+
+.card-consent-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-size: 0.875rem;
+  color: var(--vamo-text);
+  cursor: pointer;
+  user-select: none;
+  line-height: 1.4;
+
+  input[type="checkbox"] {
+    margin-top: 0.2rem;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--vamo-primary);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+}
+
+.card-consent-distinction-note {
+  margin: 0 0 0 1.6rem;
+  font-size: 0.8rem;
+  color: var(--vamo-text-muted);
+  line-height: 1.4;
 }
 
 @media (max-width: 640px) {
@@ -2754,6 +2915,8 @@ export class BillingComponent implements OnInit, OnDestroy {
   savedMethodsLoading = signal(false);
   savedMethodsError = signal(false);
   defaultPaymentMethodId = signal<string | null>(null);
+  subscriptionDefaultPaymentMethodId = signal<string | null>(null);
+  customerDefaultPaymentMethodId = signal<string | null>(null);
   defaultPaymentMethodVerified = signal(false);
   defaultPaymentMethodSource = signal<DefaultPaymentMethodSource>(null);
   paymentMethodVerificationFailed = signal(false);
@@ -2809,6 +2972,9 @@ export class BillingComponent implements OnInit, OnDestroy {
   paymentActive = signal(false);
   paymentRequiresSetup = signal(false);
   isProcessingPayment = signal(false);
+  saveSubscriptionCardForFuturePurchases = signal(false);
+  subscriptionCardPersistenceWarning = signal<string | null>(null);
+  activeSubscriptionCardWarningPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
   activeSuccessPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
   activeErrorPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
 
@@ -2816,11 +2982,17 @@ export class BillingComponent implements OnInit, OnDestroy {
   addonPrices = signal<StripeAddonPlan[]>([]);
   singlePostPrice = signal<StripeAddonPlan | null>(null);
   addonClientSecret = signal<string | null>(null);
+  addonPaymentIntentId = signal<string | null>(null);
+  addonPendingPriceId = signal<string | null>(null);
   addonPaymentActive = signal(false);
+  addonElementMounting = signal(false);
   addonStripeReady = signal(false);
   addonProcessing = signal(false);
+  saveAddonCardForFuturePurchases = signal(false);
   addonError = signal<string | null>(null);
   activeAddonErrorPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
+  addonCardRemovalWarning = signal<string | null>(null);
+  activeAddonCardRemovalWarningPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
   addonPurchaseSuccess = signal(false);
   addonPaymentConfirmed = signal(false);
   addonActivationPending = signal(false);
@@ -2862,6 +3034,18 @@ export class BillingComponent implements OnInit, OnDestroy {
       const addonErrPayload = this.activeAddonErrorPayload();
       if (addonErrPayload) {
         this.addonError.set(this.i18n.t(addonErrPayload.key, addonErrPayload.params));
+      }
+      const subCardWarnPayload = this.activeSubscriptionCardWarningPayload();
+      if (subCardWarnPayload) {
+        this.subscriptionCardPersistenceWarning.set(
+          this.i18n.t(subCardWarnPayload.key, subCardWarnPayload.params),
+        );
+      }
+      const addonCardWarnPayload = this.activeAddonCardRemovalWarningPayload();
+      if (addonCardWarnPayload) {
+        this.addonCardRemovalWarning.set(
+          this.i18n.t(addonCardWarnPayload.key, addonCardWarnPayload.params),
+        );
       }
     });
     effect(() => {
@@ -2913,6 +3097,26 @@ export class BillingComponent implements OnInit, OnDestroy {
   clearAddonError(): void {
     this.activeAddonErrorPayload.set(null);
     this.addonError.set(null);
+  }
+
+  private setTranslatedSubscriptionCardWarning(key: string, params?: Record<string, any>): void {
+    this.activeSubscriptionCardWarningPayload.set({ key, params });
+    this.subscriptionCardPersistenceWarning.set(this.i18n.t(key, params));
+  }
+
+  clearSubscriptionCardWarning(): void {
+    this.activeSubscriptionCardWarningPayload.set(null);
+    this.subscriptionCardPersistenceWarning.set(null);
+  }
+
+  private setTranslatedAddonCardRemovalWarning(key: string, params?: Record<string, any>): void {
+    this.activeAddonCardRemovalWarningPayload.set({ key, params });
+    this.addonCardRemovalWarning.set(this.i18n.t(key, params));
+  }
+
+  clearAddonCardRemovalWarning(): void {
+    this.activeAddonCardRemovalWarningPayload.set(null);
+    this.addonCardRemovalWarning.set(null);
   }
 
   planTitleKey(name: string | null | undefined): string {
@@ -3062,13 +3266,19 @@ export class BillingComponent implements OnInit, OnDestroy {
         this.paymentMethodVerificationFailed.set(result.verificationFailed === true);
         if (result.defaultVerified) {
           this.defaultPaymentMethodId.set(result.defaultPaymentMethodId);
+          this.subscriptionDefaultPaymentMethodId.set(result.subscriptionDefaultPaymentMethodId ?? null);
+          this.customerDefaultPaymentMethodId.set(result.customerDefaultPaymentMethodId ?? null);
           this.defaultPaymentMethodVerified.set(true);
           this.defaultPaymentMethodSource.set(result.defaultPaymentMethodSource ?? null);
         } else if (result.verificationFailed === true) {
           this.defaultPaymentMethodId.set(null);
+          this.subscriptionDefaultPaymentMethodId.set(null);
+          this.customerDefaultPaymentMethodId.set(null);
           this.defaultPaymentMethodVerified.set(false);
           this.defaultPaymentMethodSource.set(null);
         } else {
+          this.subscriptionDefaultPaymentMethodId.set(null);
+          this.customerDefaultPaymentMethodId.set(null);
           const currentVerifiedId = this.defaultPaymentMethodVerified()
             ? this.defaultPaymentMethodId()
             : null;
@@ -3087,6 +3297,8 @@ export class BillingComponent implements OnInit, OnDestroy {
         const hasVerifiedFlag = methods.some((m) => typeof m.isRenewalCard === 'boolean');
         this.savedMethods.set(methods);
         this.paymentMethodVerificationFailed.set(false);
+        this.subscriptionDefaultPaymentMethodId.set(null);
+        this.customerDefaultPaymentMethodId.set(itemDefault?.id ?? null);
         if (hasVerifiedFlag) {
           this.defaultPaymentMethodId.set(itemDefault?.id ?? null);
           this.defaultPaymentMethodVerified.set(true);
@@ -3102,6 +3314,8 @@ export class BillingComponent implements OnInit, OnDestroy {
       this.paymentMethodVerificationFailed.set(true);
       this.savedMethods.set([]);
       this.defaultPaymentMethodId.set(null);
+      this.subscriptionDefaultPaymentMethodId.set(null);
+      this.customerDefaultPaymentMethodId.set(null);
       this.defaultPaymentMethodVerified.set(false);
       this.defaultPaymentMethodSource.set(null);
     } finally {
@@ -4079,6 +4293,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.setupConfirmed.set(false);
     this.paymentRequiresSetup.set(false);
     this.stripeReady.set(false);
+    this.saveSubscriptionCardForFuturePurchases.set(false);
     this.stripeInstance = null;
     this.stripeElements = null;
     this.stripeService.cleanup();
@@ -4091,6 +4306,11 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.setupConfirmed.set(false);
     this.paymentRequiresSetup.set(false);
     this.stripeReady.set(false);
+
+    this.clearSubscriptionCardWarning();
+    const usedSavedCard = this.selectedSavedMethod();
+    const wantFutureCardConsent = this.saveSubscriptionCardForFuturePurchases();
+    this.saveSubscriptionCardForFuturePurchases.set(false);
 
     // Reload authoritative state before updating tier or navigating back to draft
     const user = this.authService.currentUser;
@@ -4105,6 +4325,34 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (!isSubscriptionActive) {
       this.setTranslatedError('PORTAL.BILLING.ERROR_PAYMENT_PENDING');
       return;
+    }
+
+    // Verify payment-method persistence and default renewal assignment via Directus/Stripe contract.
+    // Never assume displaying or checking the consent checkbox saved the card on the backend,
+    // and never detach or overwrite a subscription renewal card when optional future-purchase
+    // consent is unchecked.
+    const activeSubId = this.subscription()?.subscriptionId ?? null;
+    if (user?.email) {
+      const currentMethods = this.savedMethods();
+      const verifiedSubDefaultId = this.subscriptionDefaultPaymentMethodId();
+      if (currentMethods.length === 0 || this.paymentMethodVerificationFailed()) {
+        this.setTranslatedSubscriptionCardWarning('PORTAL.BILLING.WARN_SUBSCRIPTION_CARD_NOT_VERIFIED');
+      } else if (
+        !usedSavedCard &&
+        wantFutureCardConsent &&
+        typeof this.stripeService.setDefaultPaymentMethod === 'function' &&
+        this.defaultPaymentMethodVerified() &&
+        typeof verifiedSubDefaultId === 'string' &&
+        verifiedSubDefaultId.startsWith('pm_') &&
+        this.customerDefaultPaymentMethodId() !== verifiedSubDefaultId
+      ) {
+        try {
+          await this.stripeService.setDefaultPaymentMethod(verifiedSubDefaultId, activeSubId);
+          await this.loadSavedMethods();
+        } catch {
+          // Preserve subscription activation if customer-level default sync is unsupported or fails
+        }
+      }
     }
 
     await this.stripeService.setProviderTier(plan.tier).catch(() => {});
@@ -5066,34 +5314,52 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.addonSubmissionInFlight = true;
     this.addonProcessing.set(true);
     this.clearAddonError();
+    this.clearAddonCardRemovalWarning();
     this.addonPurchaseSuccess.set(false);
 
     try {
-      const providerId = this.authService.currentUser?.provider_link?.id;
-      const res = await this.stripeService.createAddonPayment(addon.id, 'single_post', providerId);
+      let clientSecret =
+        this.addonPendingPriceId() === addon.id && !this.addonPaymentConfirmed()
+          ? this.addonClientSecret()
+          : null;
 
-      // Path 1: Free add-on activation ({ free: true })
-      if (res?.free === true) {
-        this.addonPaymentConfirmed.set(true);
-        await this.applyAndFinalizeSinglePostAddon();
-        return;
-      }
+      if (!clientSecret) {
+        const providerId = this.authService.currentUser?.provider_link?.id;
+        const res = await this.stripeService.createAddonPayment(addon.id, 'single_post', providerId);
 
-      if (!res?.clientSecret) {
-        this.setTranslatedAddonError('PORTAL.BILLING.ADDON_SINGLE_POST_ERROR_INIT');
-        return;
+        // Path 1: Free add-on activation ({ free: true })
+        if (res?.free === true) {
+          this.addonPaymentConfirmed.set(true);
+          await this.applyAndFinalizeSinglePostAddon();
+          return;
+        }
+
+        if (!res?.clientSecret || typeof res.clientSecret !== 'string' || !res.clientSecret.trim()) {
+          this.setTranslatedAddonError('PORTAL.BILLING.ADDON_SINGLE_POST_ERROR_INIT');
+          return;
+        }
+
+        clientSecret = res.clientSecret.trim();
+        this.addonClientSecret.set(clientSecret);
+        this.addonPaymentIntentId.set(res.paymentIntentId ?? null);
+        this.addonPendingPriceId.set(addon.id);
       }
 
       // Path 2: Saved card payment confirmation
       const saved = this.selectedSavedMethod();
       if (saved) {
         const confirmRes: any = await this.stripeService.confirmWithSavedMethod(
-          res.clientSecret,
+          clientSecret,
           saved.id,
         );
         const confirmErr = confirmRes?.error;
         const piStatus = confirmRes?.paymentIntent?.status;
         if (confirmErr || (piStatus && piStatus !== 'succeeded')) {
+          if (this.isUnrecoverableAddonSecretError(confirmErr)) {
+            this.addonClientSecret.set(null);
+            this.addonPaymentIntentId.set(null);
+            this.addonPendingPriceId.set(null);
+          }
           this.activeAddonErrorPayload.set(null);
           this.addonError.set(
             this.errorService.toCustomerMessage(
@@ -5109,9 +5375,13 @@ export class BillingComponent implements OnInit, OnDestroy {
       }
 
       // Path 3: Inline Stripe Payment Element confirmation
-      this.addonClientSecret.set(res.clientSecret);
+      this.addonElementMounting.set(true);
+      this.addonStripeReady.set(false);
       this.addonPaymentActive.set(true);
     } catch (err: any) {
+      this.addonPaymentActive.set(false);
+      this.addonElementMounting.set(false);
+      this.addonStripeReady.set(false);
       this.activeAddonErrorPayload.set(null);
       this.addonError.set(this.errorService.toCustomerMessage(err, 'save'));
     } finally {
@@ -5120,23 +5390,74 @@ export class BillingComponent implements OnInit, OnDestroy {
     }
   }
 
+  private isUnrecoverableAddonSecretError(err: any): boolean {
+    const code = String(err?.code || err?.decline_code || '').toLowerCase();
+    const msg = String(err?.message || '').toLowerCase();
+    return (
+      code === 'invalid_client_secret' ||
+      code === 'resource_missing' ||
+      code === 'payment_intent_unexpected_state' ||
+      msg.includes('client_secret') ||
+      msg.includes('no such payment_intent') ||
+      msg.includes('canceled')
+    );
+  }
+
+  private handleAddonElementLoadError(err: any): void {
+    this.addonPaymentActive.set(false);
+    this.addonStripeReady.set(false);
+    this.addonElementMounting.set(false);
+    this.addonStripeInstance = null;
+    this.addonStripeElements = null;
+    this.stripeService.cleanup();
+
+    if (this.isUnrecoverableAddonSecretError(err)) {
+      this.addonClientSecret.set(null);
+      this.addonPaymentIntentId.set(null);
+      this.addonPendingPriceId.set(null);
+    }
+
+    const rawMessage = String(err?.message || '');
+    const isGenericContainerOrInitFailure =
+      !rawMessage ||
+      rawMessage.includes('Container #') ||
+      rawMessage.includes('failed to initialize') ||
+      rawMessage.includes('Payment form failed to load');
+
+    if (isGenericContainerOrInitFailure) {
+      this.setTranslatedAddonError('PORTAL.BILLING.ADDON_SINGLE_POST_ERROR_FORM_LOAD');
+    } else {
+      this.activeAddonErrorPayload.set(null);
+      this.addonError.set(this.errorService.toCustomerMessage(err, 'save'));
+    }
+  }
+
   private async mountAddonPaymentElement(clientSecret: string): Promise<void> {
     if (!this.addonPaymentActive()) return;
+    this.addonElementMounting.set(true);
     try {
-      const { stripe, elements } = await this.stripeService.mountPaymentElement(
+      const mounted: any = await this.stripeService.mountPaymentElement(
         clientSecret,
         'portal-addon-payment-element',
       );
       if (!this.addonPaymentActive()) {
+        this.addonElementMounting.set(false);
         this.stripeService.cleanup();
         return;
       }
-      this.addonStripeInstance = stripe;
-      this.addonStripeElements = elements;
+      if (mounted?.paymentElement && typeof mounted.paymentElement.on === 'function') {
+        mounted.paymentElement.on('loaderror', (ev: any) => {
+          this.handleAddonElementLoadError(
+            ev?.error ?? ev ?? new Error('Payment form failed to load.'),
+          );
+        });
+      }
+      this.addonStripeInstance = mounted.stripe;
+      this.addonStripeElements = mounted.elements;
+      this.addonElementMounting.set(false);
       this.addonStripeReady.set(true);
     } catch (err: any) {
-      this.activeAddonErrorPayload.set(null);
-      this.addonError.set(this.errorService.toCustomerMessage(err, 'load'));
+      this.handleAddonElementLoadError(err);
     }
   }
 
@@ -5154,6 +5475,15 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.addonSubmissionInFlight = true;
     this.addonProcessing.set(true);
     this.clearAddonError();
+    this.clearAddonCardRemovalWarning();
+
+    const previousCardsVerified =
+      !this.savedMethodsLoading() &&
+      !this.savedMethodsError() &&
+      !this.paymentMethodVerificationFailed();
+    const previousCardIds = new Set(this.savedMethods().map((m) => m.id));
+    const usedNewCard = !this.selectedSavedMethod();
+    const saveCardForFuture = this.saveAddonCardForFuturePurchases();
 
     try {
       const confirmRes: any = await this.stripeService.confirmPayment(
@@ -5163,6 +5493,11 @@ export class BillingComponent implements OnInit, OnDestroy {
       const confirmErr = confirmRes?.error;
       const piStatus = confirmRes?.paymentIntent?.status;
       if (confirmErr || (piStatus && piStatus !== 'succeeded')) {
+        if (this.isUnrecoverableAddonSecretError(confirmErr)) {
+          this.addonClientSecret.set(null);
+          this.addonPaymentIntentId.set(null);
+          this.addonPendingPriceId.set(null);
+        }
         this.activeAddonErrorPayload.set(null);
         this.addonError.set(
           this.errorService.toCustomerMessage(
@@ -5173,16 +5508,33 @@ export class BillingComponent implements OnInit, OnDestroy {
         return;
       }
 
+      const rawPm = confirmRes?.paymentIntent?.payment_method;
+      const confirmedPmId =
+        typeof rawPm === 'string' && rawPm.trim().startsWith('pm_')
+          ? rawPm.trim()
+          : typeof rawPm?.id === 'string' && rawPm.id.trim().startsWith('pm_')
+            ? rawPm.id.trim()
+            : null;
+
       // Payment succeeded — close inline element before applying entitlement so customer cannot re-submit
       this.addonPaymentConfirmed.set(true);
       this.addonPaymentActive.set(false);
       this.addonClientSecret.set(null);
+      this.addonPaymentIntentId.set(null);
+      this.addonPendingPriceId.set(null);
+      this.addonElementMounting.set(false);
       this.addonStripeReady.set(false);
       this.addonStripeInstance = null;
       this.addonStripeElements = null;
       this.stripeService.cleanup();
 
-      await this.applyAndFinalizeSinglePostAddon();
+      await this.applyAndFinalizeSinglePostAddon({
+        confirmedPmId,
+        previousCardIds,
+        previousCardsVerified,
+        usedNewCard,
+        saveCardForFuture,
+      });
     } catch (err: any) {
       this.activeAddonErrorPayload.set(null);
       this.addonError.set(this.errorService.toCustomerMessage(err, 'save'));
@@ -5194,15 +5546,22 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   cancelAddonPayment(): void {
     this.addonPaymentActive.set(false);
-    this.addonClientSecret.set(null);
+    this.addonElementMounting.set(false);
     this.addonStripeReady.set(false);
+    this.saveAddonCardForFuturePurchases.set(false);
     this.addonStripeInstance = null;
     this.addonStripeElements = null;
     this.clearAddonError();
     this.stripeService.cleanup();
   }
 
-  private async applyAndFinalizeSinglePostAddon(): Promise<void> {
+  private async applyAndFinalizeSinglePostAddon(cardConsentContext?: {
+    confirmedPmId: string | null;
+    previousCardIds: Set<string>;
+    previousCardsVerified: boolean;
+    usedNewCard: boolean;
+    saveCardForFuture: boolean;
+  }): Promise<void> {
     try {
       await this.stripeService.applyAddon('single_post');
     } catch {
@@ -5223,19 +5582,124 @@ export class BillingComponent implements OnInit, OnDestroy {
       return;
     }
 
-    await this.finalizeAddonSuccess();
+    await this.finalizeAddonSuccess(cardConsentContext);
   }
 
-  private async finalizeAddonSuccess(): Promise<void> {
+  private canSafelyDetachAddonCard(cardConsentContext: {
+    confirmedPmId: string | null;
+    previousCardIds: Set<string>;
+    previousCardsVerified: boolean;
+    usedNewCard: boolean;
+    saveCardForFuture: boolean;
+  }): cardConsentContext is {
+    confirmedPmId: string;
+    previousCardIds: Set<string>;
+    previousCardsVerified: boolean;
+    usedNewCard: true;
+    saveCardForFuture: false;
+  } {
+    // 1. Customer explicitly opted out during a new-card add-on checkout
+    if (!cardConsentContext.usedNewCard || cardConsentContext.saveCardForFuture !== false) {
+      return false;
+    }
+
+    // 2. Exact PaymentMethod ID was confirmed directly from the add-on PaymentIntent confirmation
+    // (never inferred from a before/after saved-card list comparison)
+    const confirmedPmId = cardConsentContext.confirmedPmId;
+    if (typeof confirmedPmId !== 'string' || !confirmedPmId.trim().startsWith('pm_')) {
+      return false;
+    }
+
+    // 3. Pre-checkout card list was verified and the confirmed PaymentMethod ID was newly attached
+    if (!cardConsentContext.previousCardsVerified) {
+      return false;
+    }
+    if (cardConsentContext.previousCardIds.has(confirmedPmId)) {
+      return false;
+    }
+
+    // 4. Required post-checkout verification data is available from the backend
+    if (
+      this.savedMethodsLoading() ||
+      this.savedMethodsError() ||
+      this.paymentMethodVerificationFailed() ||
+      !this.defaultPaymentMethodVerified()
+    ) {
+      return false;
+    }
+    const verifiedDefaultId = this.defaultPaymentMethodId();
+    if (typeof verifiedDefaultId !== 'string' || !verifiedDefaultId.trim().startsWith('pm_')) {
+      return false;
+    }
+    if (this.subscriptionLoadError() || !this.subscription()) {
+      return false;
+    }
+
+    const currentMethods = this.savedMethods();
+    // Ensure all previously saved card IDs are still present so fingerprint deduplication
+    // in Directus did not collapse an existing saved card into the newly attached PaymentMethod
+    for (const prevId of cardConsentContext.previousCardIds) {
+      if (!currentMethods.some((m) => m.id === prevId)) {
+        return false;
+      }
+    }
+
+    // 5. Confirmed PaymentMethod is not the active subscription's default renewal card
+    // or customer default payment method
+    const subDefaultId = this.subscriptionDefaultPaymentMethodId();
+    const custDefaultId = this.customerDefaultPaymentMethodId();
+    if (
+      confirmedPmId === verifiedDefaultId ||
+      (subDefaultId && confirmedPmId === subDefaultId) ||
+      (custDefaultId && confirmedPmId === custDefaultId)
+    ) {
+      return false;
+    }
+    const targetEntry = currentMethods.find((m) => m.id === confirmedPmId);
+    if (!targetEntry || targetEntry.isRenewalCard === true || (targetEntry as any).isDefault === true) {
+      return false;
+    }
+
+    // 6. Active subscription still has a separate verified, non-expired renewal card on file
+    const hasSeparateVerifiedRenewalCard = currentMethods.some(
+      (m) =>
+        m.id === verifiedDefaultId &&
+        m.id !== confirmedPmId &&
+        !this.isPaymentMethodExpired(m),
+    );
+    if (!hasSeparateVerifiedRenewalCard) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private async finalizeAddonSuccess(cardConsentContext?: {
+    confirmedPmId: string | null;
+    previousCardIds: Set<string>;
+    previousCardsVerified: boolean;
+    usedNewCard: boolean;
+    saveCardForFuture: boolean;
+  }): Promise<void> {
     this.addonPaymentActive.set(false);
     this.addonClientSecret.set(null);
+    this.addonPaymentIntentId.set(null);
+    this.addonPendingPriceId.set(null);
+    this.addonElementMounting.set(false);
     this.addonStripeReady.set(false);
     this.addonStripeInstance = null;
     this.addonStripeElements = null;
     this.addonPaymentConfirmed.set(false);
     this.addonActivationPending.set(false);
+    this.saveAddonCardForFuturePurchases.set(false);
     this.clearAddonError();
+    this.clearAddonCardRemovalWarning();
     this.selectedSavedMethod.set(null);
+
+    // Record payment & add-on activation success first so optional card cleanup
+    // can never roll back, retry, or invalidate a completed purchase.
+    this.addonPurchaseSuccess.set(true);
+    this.setTranslatedSuccess('PORTAL.BILLING.ADDON_SINGLE_POST_SUCCESS');
 
     const user = this.authService.currentUser;
     const sub = this.subscription();
@@ -5245,12 +5709,46 @@ export class BillingComponent implements OnInit, OnDestroy {
         this.loadBillingHistory(),
         this.loadSavedMethods(),
       ]);
+
+      // If customer explicitly opted out of saving a new card during one-time add-on checkout,
+      // only detach the card when ALL safety conditions are verified.
+      if (cardConsentContext?.usedNewCard && cardConsentContext.saveCardForFuture === false) {
+        if (
+          typeof this.stripeService.detachPaymentMethod === 'function' &&
+          this.canSafelyDetachAddonCard(cardConsentContext)
+        ) {
+          const confirmedPmId = cardConsentContext.confirmedPmId;
+          try {
+            await this.stripeService.detachPaymentMethod(confirmedPmId);
+            await this.loadSavedMethods();
+            if (
+              this.savedMethodsError() ||
+              this.savedMethods().some((m) => m.id === confirmedPmId)
+            ) {
+              this.setTranslatedAddonCardRemovalWarning(
+                'PORTAL.BILLING.WARN_ADDON_CARD_REMOVAL_FAILED',
+              );
+            }
+          } catch {
+            this.setTranslatedAddonCardRemovalWarning(
+              'PORTAL.BILLING.WARN_ADDON_CARD_REMOVAL_FAILED',
+            );
+          }
+        } else {
+          // Safe detachment cannot be proven — preserve the card and warn the customer
+          this.setTranslatedAddonCardRemovalWarning(
+            'PORTAL.BILLING.WARN_ADDON_CARD_REMOVAL_UNVERIFIED',
+          );
+        }
+      }
     } else if (sub) {
       await this.loadPostUsage(sub);
+      if (cardConsentContext?.usedNewCard && cardConsentContext.saveCardForFuture === false) {
+        this.setTranslatedAddonCardRemovalWarning(
+          'PORTAL.BILLING.WARN_ADDON_CARD_REMOVAL_UNVERIFIED',
+        );
+      }
     }
-
-    this.addonPurchaseSuccess.set(true);
-    this.setTranslatedSuccess('PORTAL.BILLING.ADDON_SINGLE_POST_SUCCESS');
   }
 
   // ─── Cancellation & Reactivation ─────────────────────────────────
