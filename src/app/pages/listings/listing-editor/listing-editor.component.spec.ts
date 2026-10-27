@@ -2339,9 +2339,9 @@ describe('ListingEditorComponent', () => {
         live: 'Live bands, DJs, karaoke, dance nights',
         food: 'Brunch, happy hours, tastings, dining & drink specials',
         excursions: 'Boat trips, guided tours, ATV rentals, equipment rentals',
-        wellness: 'Massages, yoga, spa treatments, wellness workshops',
+        wellness: 'Massages, spa treatments, beauty services, wellness workshops',
         arts: 'Art classes, exhibitions, cultural tours, craft workshops',
-        sports: 'Padel, fitness classes, hikes, tournaments',
+        sports: 'Padel, yoga, fitness classes, hikes, tournaments',
         personalized: 'Photography sessions, wedding/event planning, private chefs, custom experiences',
         celebrations: 'Holiday events, festivals, themed parties, community celebrations',
         other: "Events, activities, or services that don't fit another category",
@@ -2375,16 +2375,23 @@ describe('ListingEditorComponent', () => {
       );
     });
 
-    it('opens and closes category tooltips on hover, keyboard focus, Escape key, touch info trigger, and outside click without blocking category selection', () => {
+    it('removes visible question-mark icons and opens/closes category tooltips on hover, keyboard focus, Escape key, touch, and outside click without blocking category selection', () => {
       fixture.detectChanges();
+
+      // Verify no question-mark trigger icons exist on any of the 9 category cards
+      expect(fixture.nativeElement.querySelectorAll('.cat-info-trigger').length).toBe(0);
 
       const wraps = Array.from(
         fixture.nativeElement.querySelectorAll('.category-grid .category-card-wrap')
       ) as HTMLElement[];
+      expect(wraps.length).toBe(9);
+      wraps.forEach((w) => {
+        expect(w.querySelector('.category-card-btn')?.textContent).not.toContain('?');
+      });
+
       const firstWrap = wraps[0]; // 'live'
       const firstBtn = firstWrap.querySelector('.category-card-btn') as HTMLButtonElement;
       const firstTooltip = firstWrap.querySelector('.category-tooltip') as HTMLElement;
-      const firstInfoTrigger = firstWrap.querySelector('.cat-info-trigger') as HTMLElement;
 
       expect(component.activeCategoryTooltip).toBeNull();
       expect(firstTooltip.classList.contains('visible')).toBe(false);
@@ -2412,19 +2419,60 @@ describe('ListingEditorComponent', () => {
       expect(component.activeCategoryTooltip).toBeNull();
       expect(firstTooltip.classList.contains('visible')).toBe(false);
 
-      // 3. Touch/mobile info trigger toggles tooltip without changing selected category
-      component.draft.category = 'food';
-      firstInfoTrigger.click();
+      // 3. Touch interaction opens examples without question-mark icons and selecting category remains responsive
+      const sportsWrap = wraps[5]; // 'sports'
+      const sportsBtn = sportsWrap.querySelector('.category-card-btn') as HTMLButtonElement;
+      const sportsTooltip = sportsWrap.querySelector('.category-tooltip') as HTMLElement;
+
+      sportsBtn.dispatchEvent(new Event('touchstart'));
       fixture.detectChanges();
-      expect(component.activeCategoryTooltip).toBe('live');
-      expect(component.draft.category).toBe('food');
+      expect(component.activeCategoryTooltip).toBe('sports');
+      expect(sportsTooltip.classList.contains('visible')).toBe(true);
+      expect(sportsTooltip.textContent).toContain('Padel, yoga, fitness classes, hikes, tournaments');
+
+      sportsBtn.click();
+      fixture.detectChanges();
+      expect(component.draft.category).toBe('sports');
+      expect(component.activeCategoryTooltip).toBe('sports');
 
       // Outside click dismisses tooltip
       document.body.click();
       fixture.detectChanges();
       expect(component.activeCategoryTooltip).toBeNull();
     });
+
+    it('places Yoga under Sports & Outdoor instead of Wellness & Beauty in both English and Spanish', () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+
+      const wellnessEn = fixture.nativeElement.querySelector(
+        '#cat-tooltip-wellness .category-tooltip-examples'
+      ) as HTMLElement;
+      const sportsEn = fixture.nativeElement.querySelector(
+        '#cat-tooltip-sports .category-tooltip-examples'
+      ) as HTMLElement;
+
+      expect(wellnessEn.textContent?.trim()).toBe(
+        'Massages, spa treatments, beauty services, wellness workshops'
+      );
+      expect(wellnessEn.textContent?.toLowerCase()).not.toContain('yoga');
+      expect(sportsEn.textContent?.trim()).toBe(
+        'Padel, yoga, fitness classes, hikes, tournaments'
+      );
+      expect(sportsEn.textContent?.toLowerCase()).toContain('yoga');
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+
+      expect(wellnessEn.textContent?.trim()).toBe(
+        'Masajes, tratamientos de spa, servicios de belleza, talleres de bienestar'
+      );
+      expect(wellnessEn.textContent?.toLowerCase()).not.toContain('yoga');
+      expect(sportsEn.textContent?.trim()).toBe(
+        'Pádel, yoga, clases de fitness, senderismo, torneos'
+      );
+      expect(sportsEn.textContent?.toLowerCase()).toContain('yoga');
+    });
   });
 
 });
-

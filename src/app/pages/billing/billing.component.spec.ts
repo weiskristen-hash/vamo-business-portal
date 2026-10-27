@@ -2483,16 +2483,22 @@ describe('BillingComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="single-post-addon-section"]')).toBeNull();
     });
 
-    it('5. displays both subscription upgrade options and the single-post add-on when redirected for reason=quota', async () => {
+    it('5. positions the redesigned Add 1 More Post card above Select a New Plan and visually emphasizes it on quota redirect', async () => {
       billingParams['reason'] = 'quota';
       billingParams['returnEventId'] = 'draft-42';
+
 
       await component.loadSubscription(mockUser.email);
       fixture.detectChanges();
 
       // Plan section should be automatically opened so upgrade plans are visible alongside the single-post add-on
       expect(component.showChangePlanSection()).toBe(true);
-      expect(fixture.nativeElement.querySelector('[data-testid="single-post-addon-section"]')).not.toBeNull();
+      const addonSection = fixture.nativeElement.querySelector('[data-testid="single-post-addon-section"]') as HTMLElement;
+      const plansSection = fixture.nativeElement.querySelector('.plans-selection-section') as HTMLElement;
+      expect(addonSection).not.toBeNull();
+      expect(plansSection).not.toBeNull();
+      expect(addonSection.classList.contains('single-post-addon-section--quota')).toBe(true);
+      expect((addonSection.compareDocumentPosition(plansSection) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true);
     });
 
     it('6. calls createAddonPayment(singlePostPrice.id, "single_post", providerId) when purchasing', async () => {
@@ -2701,7 +2707,7 @@ describe('BillingComponent', () => {
       expect(stripeServiceSpy.createAddonPayment).not.toHaveBeenCalled();
     });
 
-    it('15. translates Single-Post Add-On labels in both English and Spanish', async () => {
+    it('15. renders redesigned Single-Post Add-On card details and translates labels in both English and Spanish', async () => {
       await fixture.whenStable();
       const i18n = TestBed.inject(I18nService);
 
@@ -2710,8 +2716,17 @@ describe('BillingComponent', () => {
       const sectionEn = fixture.nativeElement.querySelector(
         '[data-testid="single-post-addon-section"]',
       ) as HTMLElement;
+      const buyBtnEn = fixture.nativeElement.querySelector(
+        '[data-testid="buy-single-post-btn"]',
+      ) as HTMLButtonElement;
+      const validityEl = fixture.nativeElement.querySelector(
+        '[data-testid="single-post-addon-validity"]',
+      ) as HTMLElement;
       expect(sectionEn.textContent).toContain('Add 1 More Post');
-      expect(sectionEn.textContent).toContain('One-Time Add-On');
+      expect(sectionEn.textContent).toContain('One-time purchase');
+      expect(sectionEn.textContent).toContain('Publish one additional post without upgrading your monthly subscription.');
+      expect(validityEl.textContent?.trim()).toBe('Add a single post to your subscription, valid for 30 days');
+      expect(buyBtnEn.textContent?.trim()).toBe('Add 1 More Post');
 
       i18n.setLang('es');
       fixture.detectChanges();
@@ -2719,7 +2734,8 @@ describe('BillingComponent', () => {
         '[data-testid="single-post-addon-section"]',
       ) as HTMLElement;
       expect(sectionEs.textContent).toContain('Añade 1 publicación activa más');
-      expect(sectionEs.textContent).toContain('Complemento de pago único');
+      expect(sectionEs.textContent).toContain('Compra única');
+      expect(sectionEs.textContent).toContain('Publica una publicación adicional sin cambiar tu suscripción mensual.');
 
       i18n.setLang('en');
     });
