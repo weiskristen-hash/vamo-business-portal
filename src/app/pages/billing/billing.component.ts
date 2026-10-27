@@ -317,6 +317,23 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
           </button>
         </div>
 
+        <!-- Add-On Card Removal Warning (when customer opted out of saving card, purchase succeeded, but card removal was blocked or failed) -->
+        <div
+          *ngIf="addonCardRemovalWarning()"
+          class="alert alert-warning addon-alert addon-card-removal-warning-alert"
+          data-testid="addon-card-removal-warning"
+          role="alert"
+        >
+          <span class="alert-icon">⚠️</span>
+          <span class="alert-text">{{ addonCardRemovalWarning() }}</span>
+          <button
+            type="button"
+            class="alert-close"
+            (click)="clearAddonCardRemovalWarning()"
+            [attr.aria-label]="'PORTAL.BILLING.DISMISS' | translate"
+          >✕</button>
+        </div>
+
         <!-- Saved Payment Methods Selection for Single-Post Add-On -->
         <div
           *ngIf="!addonPaymentActive() && !addonActivationPending() && savedMethods().length > 0"
@@ -957,6 +974,9 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             />
             <span>{{ 'PORTAL.BILLING.SUBSCRIPTION_SAVE_CARD_FUTURE_LABEL' | translate }}</span>
           </label>
+          <p class="card-consent-distinction-note" data-testid="subscription-card-consent-distinction-note">
+            {{ 'PORTAL.BILLING.SUBSCRIPTION_CARD_CONSENT_DISTINCTION_NOTE' | translate }}
+          </p>
         </div>
 
         <!-- Checkout Action Buttons -->
@@ -2895,6 +2915,8 @@ export class BillingComponent implements OnInit, OnDestroy {
   savedMethodsLoading = signal(false);
   savedMethodsError = signal(false);
   defaultPaymentMethodId = signal<string | null>(null);
+  subscriptionDefaultPaymentMethodId = signal<string | null>(null);
+  customerDefaultPaymentMethodId = signal<string | null>(null);
   defaultPaymentMethodVerified = signal(false);
   defaultPaymentMethodSource = signal<DefaultPaymentMethodSource>(null);
   paymentMethodVerificationFailed = signal(false);
@@ -2950,7 +2972,7 @@ export class BillingComponent implements OnInit, OnDestroy {
   paymentActive = signal(false);
   paymentRequiresSetup = signal(false);
   isProcessingPayment = signal(false);
-  saveSubscriptionCardForFuturePurchases = signal(true);
+  saveSubscriptionCardForFuturePurchases = signal(false);
   subscriptionCardPersistenceWarning = signal<string | null>(null);
   activeSubscriptionCardWarningPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
   activeSuccessPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
@@ -2966,9 +2988,11 @@ export class BillingComponent implements OnInit, OnDestroy {
   addonElementMounting = signal(false);
   addonStripeReady = signal(false);
   addonProcessing = signal(false);
-  saveAddonCardForFuturePurchases = signal(true);
+  saveAddonCardForFuturePurchases = signal(false);
   addonError = signal<string | null>(null);
   activeAddonErrorPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
+  addonCardRemovalWarning = signal<string | null>(null);
+  activeAddonCardRemovalWarningPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
   addonPurchaseSuccess = signal(false);
   addonPaymentConfirmed = signal(false);
   addonActivationPending = signal(false);
@@ -3015,6 +3039,12 @@ export class BillingComponent implements OnInit, OnDestroy {
       if (subCardWarnPayload) {
         this.subscriptionCardPersistenceWarning.set(
           this.i18n.t(subCardWarnPayload.key, subCardWarnPayload.params),
+        );
+      }
+      const addonCardWarnPayload = this.activeAddonCardRemovalWarningPayload();
+      if (addonCardWarnPayload) {
+        this.addonCardRemovalWarning.set(
+          this.i18n.t(addonCardWarnPayload.key, addonCardWarnPayload.params),
         );
       }
     });
@@ -3077,6 +3107,16 @@ export class BillingComponent implements OnInit, OnDestroy {
   clearSubscriptionCardWarning(): void {
     this.activeSubscriptionCardWarningPayload.set(null);
     this.subscriptionCardPersistenceWarning.set(null);
+  }
+
+  private setTranslatedAddonCardRemovalWarning(key: string, params?: Record<string, any>): void {
+    this.activeAddonCardRemovalWarningPayload.set({ key, params });
+    this.addonCardRemovalWarning.set(this.i18n.t(key, params));
+  }
+
+  clearAddonCardRemovalWarning(): void {
+    this.activeAddonCardRemovalWarningPayload.set(null);
+    this.addonCardRemovalWarning.set(null);
   }
 
   planTitleKey(name: string | null | undefined): string {
@@ -3226,13 +3266,19 @@ export class BillingComponent implements OnInit, OnDestroy {
         this.paymentMethodVerificationFailed.set(result.verificationFailed === true);
         if (result.defaultVerified) {
           this.defaultPaymentMethodId.set(result.defaultPaymentMethodId);
+          this.subscriptionDefaultPaymentMethodId.set(result.subscriptionDefaultPaymentMethodId ?? null);
+          this.customerDefaultPaymentMethodId.set(result.customerDefaultPaymentMethodId ?? null);
           this.defaultPaymentMethodVerified.set(true);
           this.defaultPaymentMethodSource.set(result.defaultPaymentMethodSource ?? null);
         } else if (result.verificationFailed === true) {
           this.defaultPaymentMethodId.set(null);
+          this.subscriptionDefaultPaymentMethodId.set(null);
+          this.customerDefaultPaymentMethodId.set(null);
           this.defaultPaymentMethodVerified.set(false);
           this.defaultPaymentMethodSource.set(null);
         } else {
+          this.subscriptionDefaultPaymentMethodId.set(null);
+          this.customerDefaultPaymentMethodId.set(null);
           const currentVerifiedId = this.defaultPaymentMethodVerified()
             ? this.defaultPaymentMethodId()
             : null;
@@ -3251,6 +3297,8 @@ export class BillingComponent implements OnInit, OnDestroy {
         const hasVerifiedFlag = methods.some((m) => typeof m.isRenewalCard === 'boolean');
         this.savedMethods.set(methods);
         this.paymentMethodVerificationFailed.set(false);
+        this.subscriptionDefaultPaymentMethodId.set(null);
+        this.customerDefaultPaymentMethodId.set(itemDefault?.id ?? null);
         if (hasVerifiedFlag) {
           this.defaultPaymentMethodId.set(itemDefault?.id ?? null);
           this.defaultPaymentMethodVerified.set(true);
@@ -3266,6 +3314,8 @@ export class BillingComponent implements OnInit, OnDestroy {
       this.paymentMethodVerificationFailed.set(true);
       this.savedMethods.set([]);
       this.defaultPaymentMethodId.set(null);
+      this.subscriptionDefaultPaymentMethodId.set(null);
+      this.customerDefaultPaymentMethodId.set(null);
       this.defaultPaymentMethodVerified.set(false);
       this.defaultPaymentMethodSource.set(null);
     } finally {
@@ -4243,6 +4293,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.setupConfirmed.set(false);
     this.paymentRequiresSetup.set(false);
     this.stripeReady.set(false);
+    this.saveSubscriptionCardForFuturePurchases.set(false);
     this.stripeInstance = null;
     this.stripeElements = null;
     this.stripeService.cleanup();
@@ -4259,6 +4310,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.clearSubscriptionCardWarning();
     const usedSavedCard = this.selectedSavedMethod();
     const wantFutureCardConsent = this.saveSubscriptionCardForFuturePurchases();
+    this.saveSubscriptionCardForFuturePurchases.set(false);
 
     // Reload authoritative state before updating tier or navigating back to draft
     const user = this.authService.currentUser;
@@ -4276,28 +4328,29 @@ export class BillingComponent implements OnInit, OnDestroy {
     }
 
     // Verify payment-method persistence and default renewal assignment via Directus/Stripe contract.
-    // Never assume displaying or checking the consent checkbox saved the card on the backend.
+    // Never assume displaying or checking the consent checkbox saved the card on the backend,
+    // and never detach or overwrite a subscription renewal card when optional future-purchase
+    // consent is unchecked.
     const activeSubId = this.subscription()?.subscriptionId ?? null;
     if (user?.email) {
       const currentMethods = this.savedMethods();
+      const verifiedSubDefaultId = this.subscriptionDefaultPaymentMethodId();
       if (currentMethods.length === 0 || this.paymentMethodVerificationFailed()) {
         this.setTranslatedSubscriptionCardWarning('PORTAL.BILLING.WARN_SUBSCRIPTION_CARD_NOT_VERIFIED');
       } else if (
         !usedSavedCard &&
         wantFutureCardConsent &&
         typeof this.stripeService.setDefaultPaymentMethod === 'function' &&
-        (!this.defaultPaymentMethodVerified() ||
-          !this.defaultPaymentMethodId() ||
-          this.defaultPaymentMethodSource() !== 'customer')
+        this.defaultPaymentMethodVerified() &&
+        typeof verifiedSubDefaultId === 'string' &&
+        verifiedSubDefaultId.startsWith('pm_') &&
+        this.customerDefaultPaymentMethodId() !== verifiedSubDefaultId
       ) {
-        const targetCardId = this.defaultPaymentMethodId() ?? currentMethods[0]?.id ?? null;
-        if (targetCardId) {
-          try {
-            await this.stripeService.setDefaultPaymentMethod(targetCardId, activeSubId);
-            await this.loadSavedMethods();
-          } catch {
-            // Preserve subscription activation if customer-level default sync is unsupported or fails
-          }
+        try {
+          await this.stripeService.setDefaultPaymentMethod(verifiedSubDefaultId, activeSubId);
+          await this.loadSavedMethods();
+        } catch {
+          // Preserve subscription activation if customer-level default sync is unsupported or fails
         }
       }
     }
@@ -5261,6 +5314,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.addonSubmissionInFlight = true;
     this.addonProcessing.set(true);
     this.clearAddonError();
+    this.clearAddonCardRemovalWarning();
     this.addonPurchaseSuccess.set(false);
 
     try {
@@ -5421,8 +5475,14 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.addonSubmissionInFlight = true;
     this.addonProcessing.set(true);
     this.clearAddonError();
+    this.clearAddonCardRemovalWarning();
 
+    const previousCardsVerified =
+      !this.savedMethodsLoading() &&
+      !this.savedMethodsError() &&
+      !this.paymentMethodVerificationFailed();
     const previousCardIds = new Set(this.savedMethods().map((m) => m.id));
+    const usedNewCard = !this.selectedSavedMethod();
     const saveCardForFuture = this.saveAddonCardForFuturePurchases();
 
     try {
@@ -5471,6 +5531,8 @@ export class BillingComponent implements OnInit, OnDestroy {
       await this.applyAndFinalizeSinglePostAddon({
         confirmedPmId,
         previousCardIds,
+        previousCardsVerified,
+        usedNewCard,
         saveCardForFuture,
       });
     } catch (err: any) {
@@ -5486,6 +5548,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.addonPaymentActive.set(false);
     this.addonElementMounting.set(false);
     this.addonStripeReady.set(false);
+    this.saveAddonCardForFuturePurchases.set(false);
     this.addonStripeInstance = null;
     this.addonStripeElements = null;
     this.clearAddonError();
@@ -5495,6 +5558,8 @@ export class BillingComponent implements OnInit, OnDestroy {
   private async applyAndFinalizeSinglePostAddon(cardConsentContext?: {
     confirmedPmId: string | null;
     previousCardIds: Set<string>;
+    previousCardsVerified: boolean;
+    usedNewCard: boolean;
     saveCardForFuture: boolean;
   }): Promise<void> {
     try {
@@ -5520,9 +5585,100 @@ export class BillingComponent implements OnInit, OnDestroy {
     await this.finalizeAddonSuccess(cardConsentContext);
   }
 
+  private canSafelyDetachAddonCard(cardConsentContext: {
+    confirmedPmId: string | null;
+    previousCardIds: Set<string>;
+    previousCardsVerified: boolean;
+    usedNewCard: boolean;
+    saveCardForFuture: boolean;
+  }): cardConsentContext is {
+    confirmedPmId: string;
+    previousCardIds: Set<string>;
+    previousCardsVerified: boolean;
+    usedNewCard: true;
+    saveCardForFuture: false;
+  } {
+    // 1. Customer explicitly opted out during a new-card add-on checkout
+    if (!cardConsentContext.usedNewCard || cardConsentContext.saveCardForFuture !== false) {
+      return false;
+    }
+
+    // 2. Exact PaymentMethod ID was confirmed directly from the add-on PaymentIntent confirmation
+    // (never inferred from a before/after saved-card list comparison)
+    const confirmedPmId = cardConsentContext.confirmedPmId;
+    if (typeof confirmedPmId !== 'string' || !confirmedPmId.trim().startsWith('pm_')) {
+      return false;
+    }
+
+    // 3. Pre-checkout card list was verified and the confirmed PaymentMethod ID was newly attached
+    if (!cardConsentContext.previousCardsVerified) {
+      return false;
+    }
+    if (cardConsentContext.previousCardIds.has(confirmedPmId)) {
+      return false;
+    }
+
+    // 4. Required post-checkout verification data is available from the backend
+    if (
+      this.savedMethodsLoading() ||
+      this.savedMethodsError() ||
+      this.paymentMethodVerificationFailed() ||
+      !this.defaultPaymentMethodVerified()
+    ) {
+      return false;
+    }
+    const verifiedDefaultId = this.defaultPaymentMethodId();
+    if (typeof verifiedDefaultId !== 'string' || !verifiedDefaultId.trim().startsWith('pm_')) {
+      return false;
+    }
+    if (this.subscriptionLoadError() || !this.subscription()) {
+      return false;
+    }
+
+    const currentMethods = this.savedMethods();
+    // Ensure all previously saved card IDs are still present so fingerprint deduplication
+    // in Directus did not collapse an existing saved card into the newly attached PaymentMethod
+    for (const prevId of cardConsentContext.previousCardIds) {
+      if (!currentMethods.some((m) => m.id === prevId)) {
+        return false;
+      }
+    }
+
+    // 5. Confirmed PaymentMethod is not the active subscription's default renewal card
+    // or customer default payment method
+    const subDefaultId = this.subscriptionDefaultPaymentMethodId();
+    const custDefaultId = this.customerDefaultPaymentMethodId();
+    if (
+      confirmedPmId === verifiedDefaultId ||
+      (subDefaultId && confirmedPmId === subDefaultId) ||
+      (custDefaultId && confirmedPmId === custDefaultId)
+    ) {
+      return false;
+    }
+    const targetEntry = currentMethods.find((m) => m.id === confirmedPmId);
+    if (!targetEntry || targetEntry.isRenewalCard === true || (targetEntry as any).isDefault === true) {
+      return false;
+    }
+
+    // 6. Active subscription still has a separate verified, non-expired renewal card on file
+    const hasSeparateVerifiedRenewalCard = currentMethods.some(
+      (m) =>
+        m.id === verifiedDefaultId &&
+        m.id !== confirmedPmId &&
+        !this.isPaymentMethodExpired(m),
+    );
+    if (!hasSeparateVerifiedRenewalCard) {
+      return false;
+    }
+
+    return true;
+  }
+
   private async finalizeAddonSuccess(cardConsentContext?: {
     confirmedPmId: string | null;
     previousCardIds: Set<string>;
+    previousCardsVerified: boolean;
+    usedNewCard: boolean;
     saveCardForFuture: boolean;
   }): Promise<void> {
     this.addonPaymentActive.set(false);
@@ -5535,8 +5691,15 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.addonStripeElements = null;
     this.addonPaymentConfirmed.set(false);
     this.addonActivationPending.set(false);
+    this.saveAddonCardForFuturePurchases.set(false);
     this.clearAddonError();
+    this.clearAddonCardRemovalWarning();
     this.selectedSavedMethod.set(null);
+
+    // Record payment & add-on activation success first so optional card cleanup
+    // can never roll back, retry, or invalidate a completed purchase.
+    this.addonPurchaseSuccess.set(true);
+    this.setTranslatedSuccess('PORTAL.BILLING.ADDON_SINGLE_POST_SUCCESS');
 
     const user = this.authService.currentUser;
     const sub = this.subscription();
@@ -5547,33 +5710,45 @@ export class BillingComponent implements OnInit, OnDestroy {
         this.loadSavedMethods(),
       ]);
 
-      // If customer opted out of saving a new card during one-time add-on purchase,
-      // detach the newly attached non-renewal card (since STRIPE_CREATE_ADDON_PAYMENT_FLOW
-      // currently hardcodes setup_future_usage=on_session on the PaymentIntent).
-      if (
-        cardConsentContext &&
-        cardConsentContext.saveCardForFuture === false &&
-        typeof this.stripeService.detachPaymentMethod === 'function'
-      ) {
-        const newlyAttachedCardId =
-          cardConsentContext.confirmedPmId ??
-          this.savedMethods().find((m) => !cardConsentContext.previousCardIds.has(m.id))?.id ??
-          null;
-        if (newlyAttachedCardId && newlyAttachedCardId !== this.defaultPaymentMethodId()) {
+      // If customer explicitly opted out of saving a new card during one-time add-on checkout,
+      // only detach the card when ALL safety conditions are verified.
+      if (cardConsentContext?.usedNewCard && cardConsentContext.saveCardForFuture === false) {
+        if (
+          typeof this.stripeService.detachPaymentMethod === 'function' &&
+          this.canSafelyDetachAddonCard(cardConsentContext)
+        ) {
+          const confirmedPmId = cardConsentContext.confirmedPmId;
           try {
-            await this.stripeService.detachPaymentMethod(newlyAttachedCardId);
+            await this.stripeService.detachPaymentMethod(confirmedPmId);
             await this.loadSavedMethods();
+            if (
+              this.savedMethodsError() ||
+              this.savedMethods().some((m) => m.id === confirmedPmId)
+            ) {
+              this.setTranslatedAddonCardRemovalWarning(
+                'PORTAL.BILLING.WARN_ADDON_CARD_REMOVAL_FAILED',
+              );
+            }
           } catch {
-            // Ignore detach error if card was not saved or cannot be detached
+            this.setTranslatedAddonCardRemovalWarning(
+              'PORTAL.BILLING.WARN_ADDON_CARD_REMOVAL_FAILED',
+            );
           }
+        } else {
+          // Safe detachment cannot be proven — preserve the card and warn the customer
+          this.setTranslatedAddonCardRemovalWarning(
+            'PORTAL.BILLING.WARN_ADDON_CARD_REMOVAL_UNVERIFIED',
+          );
         }
       }
     } else if (sub) {
       await this.loadPostUsage(sub);
+      if (cardConsentContext?.usedNewCard && cardConsentContext.saveCardForFuture === false) {
+        this.setTranslatedAddonCardRemovalWarning(
+          'PORTAL.BILLING.WARN_ADDON_CARD_REMOVAL_UNVERIFIED',
+        );
+      }
     }
-
-    this.addonPurchaseSuccess.set(true);
-    this.setTranslatedSuccess('PORTAL.BILLING.ADDON_SINGLE_POST_SUCCESS');
   }
 
   // ─── Cancellation & Reactivation ─────────────────────────────────

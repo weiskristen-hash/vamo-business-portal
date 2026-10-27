@@ -1546,9 +1546,12 @@ export const enTranslations: Record<string, any> = {
       "ADDON_SINGLE_POST_LOADING_FORM": "Preparing secure payment form…",
       "ADDON_SINGLE_POST_RETRY_BTN": "Try Again",
       "ADDON_SAVE_CARD_FUTURE_LABEL": "Save this card for future purchases (one-time add-ons and promotions)",
-      "ADDON_CARD_RENEWAL_DISTINCTION_NOTE": "This one-time purchase won’t change your recurring subscription renewal card.",
-      "SUBSCRIPTION_RENEWAL_CARD_REQUIRED_NOTE": "A valid payment method is required for recurring subscription renewals and will be billed automatically each renewal period until canceled.",
+      "ADDON_CARD_RENEWAL_DISTINCTION_NOTE": "This one-time purchase won’t change your recurring subscription renewal card. Any Stripe Link autofill option shown in the card form is separate from VAMO’s optional future-purchase card saving.",
+      "WARN_ADDON_CARD_REMOVAL_FAILED": "Your extra post slot is active, but we couldn’t remove the card used for this purchase automatically. Your active subscription renewal card was not changed. You can remove the extra card anytime in Payment methods below.",
+      "WARN_ADDON_CARD_REMOVAL_UNVERIFIED": "Your extra post slot is active. Because we couldn’t verify all saved-card safety checks, we kept the card on file to protect your active subscription renewal method. You can review or remove non-renewal cards in Payment methods below.",
+      "SUBSCRIPTION_RENEWAL_CARD_REQUIRED_NOTE": "A valid payment method is required for recurring subscription renewals and must remain stored on your account to be billed automatically each renewal period until canceled.",
       "SUBSCRIPTION_SAVE_CARD_FUTURE_LABEL": "Also save this card as my default payment method for future one-time purchases (such as Single Post add-ons and promotions)",
+      "SUBSCRIPTION_CARD_CONSENT_DISTINCTION_NOTE": "Your subscription renewal payment method must remain stored for recurring billing even if you leave optional future one-time purchase saving unchecked. Any Stripe Link autofill option in the payment form is separate from VAMO’s optional future-purchase authorization.",
       "WARN_SUBSCRIPTION_CARD_NOT_VERIFIED": "Your subscription is active, but we couldn’t verify your saved renewal card yet. Please check your Payment methods section below."
     },
     "PROMOTIONS": {
