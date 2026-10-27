@@ -1944,5 +1944,212 @@ describe('StripeService', () => {
       expect(extra).toBe(2);
     });
   });
+
+  describe('Subscription Plan-Change Safeguards', () => {
+    it('1. previewSubscriptionPlanChange returns a verified $0.00 scheduled preview for downgrades', async () => {
+      const preview = await service.previewSubscriptionPlanChange({
+        subscriptionId: 'sub_123',
+        subscriptionItemId: 'si_456',
+        currentPriceId: 'price_basic',
+        currentPlanName: 'Basic Plan',
+        currentPlanAmount: 4900,
+        currentPlanCurrency: 'usd',
+        currentPlanInterval: 'month',
+        newPriceId: 'price_starter',
+        newPlanName: 'Starter Plan',
+        newPlanAmount: 2900,
+        newPlanCurrency: 'usd',
+        newPlanInterval: 'month',
+        isUpgrade: false,
+        currentPeriodStart: 1700000000,
+        currentPeriodEnd: 1702500000,
+      });
+
+      expect(preview.verified).toBe(true);
+      expect(preview.verificationStatus).toBe('verified');
+      expect(preview.isUpgrade).toBe(false);
+      expect(preview.timing).toBe('scheduled');
+      expect(preview.effectiveDate).toBe(1702500000);
+      expect(preview.amountDueToday).toBe(0);
+      expect(preview.renewalAmount).toBe(2900);
+    });
+
+    it('2. previewSubscriptionPlanChange returns unverified amountDueToday=null for upgrades when no preview flow is configured, never inventing a dollar amount', async () => {
+      const flowSpy = vi.spyOn(service, 'flowPost');
+      const preview = await service.previewSubscriptionPlanChange({
+        subscriptionId: 'sub_123',
+        subscriptionItemId: 'si_456',
+        currentPriceId: 'price_basic',
+        currentPlanName: 'Basic Plan',
+        currentPlanAmount: 4900,
+        currentPlanCurrency: 'usd',
+        currentPlanInterval: 'month',
+        newPriceId: 'price_advanced',
+        newPlanName: 'Advanced Plan',
+        newPlanAmount: 8900,
+        newPlanCurrency: 'usd',
+        newPlanInterval: 'month',
+        isUpgrade: true,
+        currentPeriodStart: 1700000000,
+        currentPeriodEnd: 1702500000,
+      });
+
+      expect(flowSpy).not.toHaveBeenCalled();
+      expect(preview.verified).toBe(false);
+      expect(preview.verificationStatus).toBe('unavailable');
+      expect(preview.isUpgrade).toBe(true);
+      expect(preview.timing).toBe('immediate');
+      expect(preview.amountDueToday).toBeNull();
+      expect(preview.errorCode).toBe('UPGRADE_PRORATION_PREVIEW_UNAVAILABLE');
+    });
+
+    it('3. previewSubscriptionPlanChange rejects promotion codes when plan-change promo is not supported', async () => {
+      const preview = await service.previewSubscriptionPlanChange({
+        subscriptionId: 'sub_123',
+        subscriptionItemId: 'si_456',
+        currentPriceId: 'price_basic',
+        currentPlanName: 'Basic Plan',
+        currentPlanAmount: 4900,
+        currentPlanCurrency: 'usd',
+        currentPlanInterval: 'month',
+        newPriceId: 'price_advanced',
+        newPlanName: 'Advanced Plan',
+        newPlanAmount: 8900,
+        newPlanCurrency: 'usd',
+        newPlanInterval: 'month',
+        isUpgrade: true,
+        currentPeriodStart: 1700000000,
+        currentPeriodEnd: 1702500000,
+        promotionCode: 'SAVE50',
+      });
+
+      expect(preview.verified).toBe(false);
+      expect(preview.couponState).toBe('invalid_or_ineligible');
+      expect(preview.errorCode).toBe('PLAN_CHANGE_PROMO_UNSUPPORTED');
+    });
+
+    it('4. loadSavedPaymentMethods enforces subscription > customer default precedence and does not mark unverified cards as default', async () => {
+      // Case A: standard Directus response with paymentMethods array only -> defaultVerified: false
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        paymentMethods: [
+          { id: 'pm_saved_1', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2029 },
+        ],
+      });
+      const unverifiedRes = await service.loadSavedPaymentMethods();
+      expect(unverifiedRes.defaultVerified).toBe(false);
+      expect(unverifiedRes.defaultPaymentMethodId).toBeNull();
+      expect(unverifiedRes.paymentMethods[0].isRenewalCard).not.toBe(true);
+
+      // Case B: subscription default takes precedence over customer default
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        paymentMethods: [
+          { id: 'pm_cust', brand: 'visa', last4: '1111', expMonth: 12, expYear: 2029 },
+          { id: 'pm_sub', brand: 'mastercard', last4: '2222', expMonth: 12, expYear: 2029 },
+        ],
+        customerDefaultPaymentMethodId: 'pm_cust',
+        subscriptionDefaultPaymentMethodId: 'pm_sub',
+      });
+      const verifiedRes = await service.loadSavedPaymentMethods();
+      expect(verifiedRes.defaultVerified).toBe(true);
+      expect(verifiedRes.defaultPaymentMethodId).toBe('pm_sub');
+      expect(verifiedRes.defaultPaymentMethodSource).toBe('subscription');
+      expect(verifiedRes.paymentMethods.find((m) => m.id === 'pm_sub')?.isRenewalCard).toBe(true);
+      expect(verifiedRes.paymentMethods.find((m) => m.id === 'pm_cust')?.isRenewalCard).toBe(false);
+    });
+
+    it('5. changeSubscriptionPlan preserves exact 8-field STRIPE_UPDATE_SUBSCRIPTION_FLOW payload and blocks invoice amount mismatch', async () => {
+      const flowSpy = vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        subscriptionId: 'sub_123',
+        status: 'active',
+        priceId: 'price_advanced',
+        invoiceAmountDue: 8900,
+        invoiceCurrency: 'usd',
+      });
+
+      const res = await service.changeSubscriptionPlan(
+        'sub_123',
+        'si_456',
+        'price_advanced',
+        true,
+        'Advanced Plan',
+        1700000000,
+        1702500000,
+        'price_basic',
+        {
+          approvedAmountDue: 4000,
+          approvedCurrency: 'usd',
+        },
+      );
+
+      expect(flowSpy).toHaveBeenCalledWith('2b1a4494-8999-4c27-b70e-ddcc47bb16f3', {
+        subscriptionId: 'sub_123',
+        subscriptionItemId: 'si_456',
+        newPriceId: 'price_advanced',
+        isUpgrade: true,
+        newPlanName: 'Advanced Plan',
+        currentPeriodStart: 1700000000,
+        currentPeriodEnd: 1702500000,
+        currentPriceId: 'price_basic',
+      });
+      expect(res.status).toBe('failed');
+      expect(res.errorCode).toBe('AMOUNT_MISMATCH_BLOCKED');
+    });
+
+    it('6. changeSubscriptionPlan reconciles against getSubscription after a network timeout before retrying', async () => {
+      const flowSpy = vi
+        .spyOn(service, 'flowPost')
+        .mockRejectedValueOnce(new Error('Network timeout'));
+
+      await expect(
+        service.changeSubscriptionPlan(
+          'sub_123',
+          'si_456',
+          'price_advanced',
+          true,
+          'Advanced Plan',
+          1700000000,
+          1702500000,
+          'price_basic',
+          { customerEmail: 'sofia@restaurant.com' },
+        ),
+      ).rejects.toThrow('Network timeout');
+      expect(flowSpy).toHaveBeenCalledTimes(1);
+
+      // On retry, getSubscription shows the upgrade already took effect on the server
+      vi.spyOn(service, 'getSubscription').mockResolvedValueOnce({
+        subscriptionId: 'sub_123',
+        subscriptionItemId: 'si_456',
+        status: 'active',
+        cancelAtPeriodEnd: false,
+        currentPeriodStart: 1700000000,
+        currentPeriodEnd: 1702500000,
+        plan: {
+          priceId: 'price_advanced',
+          productName: 'Advanced Plan',
+          amount: 8900,
+          currency: 'usd',
+          interval: 'month',
+        },
+      });
+
+      const retryRes = await service.changeSubscriptionPlan(
+        'sub_123',
+        'si_456',
+        'price_advanced',
+        true,
+        'Advanced Plan',
+        1700000000,
+        1702500000,
+        'price_basic',
+        { customerEmail: 'sofia@restaurant.com' },
+      );
+
+      // Should not call the update flow a second time when reconciled
+      expect(flowSpy).toHaveBeenCalledTimes(1);
+      expect(retryRes.status).toBe('confirmed');
+      expect(retryRes.priceId).toBe('price_advanced');
+    });
+  });
 });
+
 

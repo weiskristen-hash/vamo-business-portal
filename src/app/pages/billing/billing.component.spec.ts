@@ -2725,5 +2725,261 @@ describe('BillingComponent', () => {
     });
   });
 
+  describe('Subscription Plan-Change Review & Payment Safeguards', () => {
+    it('1. blocks plan-change confirmation when no saved payment methods exist and provides the Add Card workflow', async () => {
+      await fixture.whenStable();
+      component.savedMethods.set([]);
+      component.defaultPaymentMethodId.set(null);
+      component.defaultPaymentMethodVerified.set(false);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]); // Advanced Plan
+      fixture.detectChanges();
+
+      expect(component.getPlanChangePaymentMethodState()).toBe('missing');
+      expect(component.hasUsablePlanChangePaymentMethod()).toBe(false);
+      expect(component.canConfirmPlanChange()).toBe(false);
+
+      const alertEl = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-payment-required"]',
+      ) as HTMLElement;
+      expect(alertEl).not.toBeNull();
+      expect(alertEl.textContent).toContain(
+        'A valid payment method is required before changing your subscription plan.',
+      );
+
+      const addCardBtn = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-add-card-btn"]',
+      ) as HTMLButtonElement;
+      expect(addCardBtn).not.toBeNull();
+
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+      expect(component.errorMessage()).toContain(
+        'A valid payment method is required before changing your subscription plan.',
+      );
+    });
+
+    it('2. blocks plan-change confirmation when all saved cards are expired or when default verification fails', async () => {
+      await fixture.whenStable();
+      component.savedMethods.set([
+        { id: 'pm_exp', brand: 'visa', last4: '9999', expMonth: 1, expYear: 2020 },
+      ]);
+      component.defaultPaymentMethodId.set(null);
+      component.defaultPaymentMethodVerified.set(false);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[0]); // Starter Plan
+      fixture.detectChanges();
+
+      expect(component.getPlanChangePaymentMethodState()).toBe('stale');
+      expect(component.hasUsablePlanChangePaymentMethod()).toBe(false);
+      expect(component.canConfirmPlanChange()).toBe(false);
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="plan-change-payment-required"]')
+          ?.textContent,
+      ).toContain('expired or no longer valid');
+
+      // Explicit backend verification failure -> unverified
+      component.paymentMethodVerificationFailed.set(true);
+      fixture.detectChanges();
+      expect(component.getPlanChangePaymentMethodState()).toBe('unverified');
+      expect(component.canConfirmPlanChange()).toBe(false);
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="plan-change-payment-required"]')
+          ?.textContent,
+      ).toContain('verify your default subscription payment method');
+    });
+
+    it('3. distinguishes an unverified card on file from a verified default renewal card', async () => {
+      await fixture.whenStable();
+      component.openChangePlan();
+      component.selectPlan(mockPlans[0]); // Starter Plan
+      fixture.detectChanges();
+
+      // Default mockSavedMethods has defaultVerified: false -> state is 'on_file'
+      expect(component.getPlanChangePaymentMethodState()).toBe('on_file');
+      expect(component.getVerifiedPlanChangePaymentMethod()).toBeNull();
+      const pmEl = fixture.nativeElement.querySelector(
+        '[data-testid="review-payment-method"]',
+      ) as HTMLElement;
+      expect(pmEl.textContent?.trim()).toBe('Current payment method on file');
+      expect(pmEl.textContent).not.toContain('4242');
+
+      // When backend verifies pm_1 as the default renewal card -> state is 'verified_card'
+      component.savedMethods.set([{ ...mockSavedMethods[0], isRenewalCard: true }]);
+      component.defaultPaymentMethodId.set('pm_1');
+      component.defaultPaymentMethodVerified.set(true);
+      fixture.detectChanges();
+
+      expect(component.getPlanChangePaymentMethodState()).toBe('verified_card');
+      expect(component.getVerifiedPlanChangePaymentMethod()?.id).toBe('pm_1');
+      expect(pmEl.textContent?.trim()).toBe('VISA •••• 4242');
+    });
+
+    it('4. renders scheduled downgrade review with $0.00 due today, effective renewal date, and no-charge-today notice', async () => {
+      await fixture.whenStable();
+      component.postsUsed.set(1);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[0]); // Starter Plan ($29 < $49)
+      fixture.detectChanges();
+
+      const summary = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-review-summary"]',
+      ) as HTMLElement;
+      expect(summary).not.toBeNull();
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="review-current-plan"]')?.textContent,
+      ).toContain('Basic Plan ($49.00/month)');
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="review-new-plan"]')?.textContent,
+      ).toContain('Starter Plan ($29.00/month)');
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="review-change-timing"]')?.textContent,
+      ).toContain('Scheduled for end of billing period');
+      expect(
+        fixture.nativeElement
+          .querySelector('[data-testid="plan-change-amount-due-today"]')
+          ?.textContent?.trim(),
+      ).toBe('$0.00');
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="downgrade-confirmation-notice"]')
+          ?.textContent,
+      ).toContain('No immediate payment is due today ($0.00)');
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="downgrade-confirmation-notice"]')
+          ?.textContent,
+      ).toContain('Starter Plan at $29.00 / month');
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="upgrade-amount-unknown-alert"]'),
+      ).toBeNull();
+    });
+
+    it('5. never invents an upgrade dollar amount when proration preview is unavailable and requires explicit acknowledgement before confirming', async () => {
+      await fixture.whenStable();
+      stripeServiceSpy.previewSubscriptionPlanChange = vi.fn().mockImplementation((req: any) =>
+        StripeService.prototype.previewSubscriptionPlanChange.call(stripeServiceSpy, req),
+      );
+
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]); // Advanced Plan ($89 > $49)
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const dueTodayEl = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-amount-due-today"]',
+      ) as HTMLElement;
+      expect(dueTodayEl.textContent?.trim()).toBe('Unable to verify');
+      // Must never display a guessed price difference ($40.00) or full price ($89.00) as Amount Due Today
+      expect(dueTodayEl.textContent).not.toContain('$40.00');
+      expect(dueTodayEl.textContent).not.toContain('$89.00');
+
+      const alertEl = fixture.nativeElement.querySelector(
+        '[data-testid="upgrade-amount-unknown-alert"]',
+      ) as HTMLElement;
+      expect(alertEl).not.toBeNull();
+      expect(alertEl.textContent).toContain(
+        'verify the exact prorated charge due today',
+      );
+
+      const ackCheckbox = fixture.nativeElement.querySelector(
+        '[data-testid="acknowledge-unknown-upgrade-charge-checkbox"]',
+      ) as HTMLInputElement;
+      expect(ackCheckbox).not.toBeNull();
+      expect(component.canConfirmPlanChange()).toBe(false);
+
+      // Attempting to confirm without checking acknowledgement is blocked
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+
+      // Checking acknowledgement enables confirmation
+      component.upgradeUnverifiedAmountAcknowledged.set(true);
+      fixture.detectChanges();
+      expect(component.canConfirmPlanChange()).toBe(true);
+    });
+
+    it('6. displays verified prorated upgrade amount due today when previewSubscriptionPlanChange returns a verified preview', async () => {
+      await fixture.whenStable();
+      stripeServiceSpy.previewSubscriptionPlanChange = vi.fn().mockResolvedValue({
+        verified: true,
+        verificationStatus: 'verified',
+        isUpgrade: true,
+        timing: 'immediate',
+        effectiveDate: null,
+        amountDueToday: 4000,
+        subtotal: 8900,
+        prorationAmount: 4000,
+        discountAmount: 0,
+        tax: 0,
+        currency: 'usd',
+        renewalAmount: 8900,
+        renewalInterval: 'month',
+        promoSupported: false,
+        couponState: 'not_applied',
+        errorCode: null,
+        message: null,
+      });
+
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(
+        fixture.nativeElement
+          .querySelector('[data-testid="plan-change-amount-due-today"]')
+          ?.textContent?.trim(),
+      ).toBe('$40.00');
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="upgrade-amount-unknown-alert"]'),
+      ).toBeNull();
+      expect(component.canConfirmPlanChange()).toBe(true);
+    });
+
+    it('7. blocks confirmation if the subscription state changes while the customer is reviewing a plan change', async () => {
+      await fixture.whenStable();
+      component.openChangePlan();
+      component.selectPlan(mockPlans[0]);
+      fixture.detectChanges();
+      expect(component.canConfirmPlanChange()).toBe(true);
+
+      // Simulate subscription period end changing while review is open
+      component.subscription.set({
+        ...mockSubscription,
+        currentPeriodEnd: 1705000000,
+      });
+      fixture.detectChanges();
+
+      expect(component.hasSubscriptionChangedDuringReview()).toBe(true);
+      expect(component.canConfirmPlanChange()).toBe(false);
+
+      await component.confirmChangePlan();
+      expect(stripeServiceSpy.changeSubscriptionPlan).not.toHaveBeenCalled();
+      expect(component.errorMessage()).toContain('subscription details changed while reviewing');
+    });
+
+    it('8. translates Plan-Change Review labels and warnings in both English and Spanish', async () => {
+      await fixture.whenStable();
+      const i18n = TestBed.inject(I18nService);
+      component.openChangePlan();
+      component.selectPlan(mockPlans[2]);
+      fixture.detectChanges();
+
+      i18n.setLang('en');
+      fixture.detectChanges();
+      const summaryEn = fixture.nativeElement.querySelector(
+        '[data-testid="plan-change-review-summary"]',
+      ) as HTMLElement;
+      expect(summaryEn.textContent).toContain('Plan Change Summary');
+      expect(summaryEn.textContent).toContain('Unable to verify');
+
+      i18n.setLang('es');
+      fixture.detectChanges();
+      expect(summaryEn.textContent).toContain('Resumen del cambio de plan');
+      expect(summaryEn.textContent).toContain('No se pudo verificar');
+
+      i18n.setLang('en');
+    });
+  });
+
 });
+
 
