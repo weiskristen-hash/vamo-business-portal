@@ -2739,6 +2739,150 @@ describe('BillingComponent', () => {
 
       i18n.setLang('en');
     });
+
+    it('16. formats Single-Post Add-On price as "$20 USD" with a space and without duplicating "One-time purchase"', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const priceEl = fixture.nativeElement.querySelector(
+        '[data-testid="single-post-addon-price"]',
+      ) as HTMLElement;
+      const badgeEl = fixture.nativeElement.querySelector(
+        '[data-testid="single-post-addon-badge"]',
+      ) as HTMLElement;
+
+      expect(priceEl).not.toBeNull();
+      expect(priceEl.textContent?.replace(/\s+/g, ' ').trim()).toBe('$20 USD');
+      expect(priceEl.textContent).not.toContain('$20USD');
+      expect(priceEl.textContent?.toLowerCase()).not.toContain('one-time purchase');
+      expect(badgeEl.textContent?.trim()).toBe('One-time purchase');
+    });
+
+    it('17. closes the add-on card container and shows a payment-form error (never the generic page-load message) when Payment Element mounting fails, and reuses the existing PaymentIntent on retry', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      stripeServiceSpy.mountPaymentElement.mockRejectedValueOnce(
+        new Error('Container #portal-addon-payment-element not found.'),
+      );
+
+      await component.proceedToAddonPayment();
+      await (component as any).mountAddonPaymentElement('pi_addon_secret_123');
+      fixture.detectChanges();
+
+      // Must immediately close addonPaymentActive so an empty card container is never displayed as a working checkout
+      expect(component.addonPaymentActive()).toBe(false);
+      expect(component.addonStripeReady()).toBe(false);
+      expect(component.addonError()).toContain(
+        'We couldn’t load the secure payment form for this single-post purchase.',
+      );
+      expect(component.addonError()).not.toContain(
+        "We couldn't load this information. Please refresh the page.",
+      );
+
+      // Safe retry must reuse the cached PaymentIntent clientSecret instead of calling createAddonPayment again
+      expect(stripeServiceSpy.createAddonPayment).toHaveBeenCalledTimes(1);
+      stripeServiceSpy.mountPaymentElement.mockResolvedValueOnce({
+        stripe: {} as any,
+        elements: {} as any,
+      });
+
+      const retryBtn = fixture.nativeElement.querySelector(
+        '[data-testid="retry-addon-payment-btn"]',
+      ) as HTMLButtonElement;
+      expect(retryBtn).not.toBeNull();
+      await component.proceedToAddonPayment();
+      expect(stripeServiceSpy.createAddonPayment).toHaveBeenCalledTimes(1);
+      expect(component.addonPaymentActive()).toBe(true);
+      expect(component.addonClientSecret()).toBe('pi_addon_secret_123');
+    });
+
+    it('18. honours optional card-saving consent in Single-Post Add-On new-card checkout and detaches the card when unchecked', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      await component.proceedToAddonPayment();
+      await (component as any).mountAddonPaymentElement('pi_addon_secret_123');
+      fixture.detectChanges();
+
+      const consentCheckbox = fixture.nativeElement.querySelector(
+        '[data-testid="addon-save-card-future-checkbox"]',
+      ) as HTMLInputElement;
+      const distinctionNote = fixture.nativeElement.querySelector(
+        '[data-testid="addon-card-renewal-distinction-note"]',
+      ) as HTMLElement;
+      expect(consentCheckbox).not.toBeNull();
+      expect(component.saveAddonCardForFuturePurchases()).toBe(true);
+      expect(distinctionNote.textContent).toContain(
+        'won’t change your recurring subscription renewal card',
+      );
+
+      // Customer opts OUT of saving the new card for future purchases
+      component.saveAddonCardForFuturePurchases.set(false);
+      stripeServiceSpy.confirmPayment.mockResolvedValueOnce({
+        paymentIntent: { id: 'pi_addon_123', status: 'succeeded', payment_method: 'pm_new_addon_99' },
+      });
+      stripeServiceSpy.loadSavedPaymentMethods = vi.fn().mockResolvedValue({
+        paymentMethods: [
+          ...mockSavedMethods,
+          { id: 'pm_new_addon_99', brand: 'mastercard', last4: '5555', expMonth: 10, expYear: 2029 },
+        ],
+        defaultPaymentMethodId: 'pm_1',
+        defaultVerified: true,
+        defaultPaymentMethodSource: 'subscription',
+      });
+      stripeServiceSpy.detachPaymentMethod = vi.fn().mockResolvedValue(undefined);
+
+      await component.confirmAddonPayment();
+
+      expect(stripeServiceSpy.detachPaymentMethod).toHaveBeenCalledWith('pm_new_addon_99');
+      expect(component.addonPurchaseSuccess()).toBe(true);
+    });
+  });
+
+  describe('New Subscription Card Consent & Persistence Verification', () => {
+    it('displays required renewal disclosure and optional future-purchase consent for new subscriptions, and warns if backend card persistence is not verified', async () => {
+      await fixture.whenStable();
+      component.subscription.set(null);
+      component.savedMethods.set([]);
+      component.selectedSavedMethod.set(null);
+      component.selectPlan(mockPlans[1]); // Basic Plan
+      fixture.detectChanges();
+
+      const renewalDisclosure = fixture.nativeElement.querySelector(
+        '[data-testid="subscription-renewal-card-disclosure"]',
+      ) as HTMLElement;
+      const futureCheckbox = fixture.nativeElement.querySelector(
+        '[data-testid="subscription-save-card-future-checkbox"]',
+      ) as HTMLInputElement;
+
+      expect(renewalDisclosure).not.toBeNull();
+      expect(renewalDisclosure.textContent).toContain(
+        'required for recurring subscription renewals',
+      );
+      expect(futureCheckbox).not.toBeNull();
+      expect(component.saveSubscriptionCardForFuturePurchases()).toBe(true);
+
+      // Simulate post-checkout finalizeSubscriptionSuccess where backend returns 0 saved cards
+      stripeServiceSpy.getSubscription.mockResolvedValueOnce(mockSubscription);
+      stripeServiceSpy.loadSavedPaymentMethods = vi.fn().mockResolvedValueOnce({
+        paymentMethods: [],
+        defaultPaymentMethodId: null,
+        defaultVerified: false,
+      });
+
+      await (component as any).finalizeSubscriptionSuccess(mockPlans[1]);
+      fixture.detectChanges();
+
+      // Must NOT assume the checkbox saved the card; must surface persistence verification warning
+      expect(component.subscriptionCardPersistenceWarning()).toContain(
+        'verify your saved renewal card',
+      );
+      const warnBanner = fixture.nativeElement.querySelector(
+        '[data-testid="subscription-card-persistence-warning"]',
+      ) as HTMLElement;
+      expect(warnBanner).not.toBeNull();
+    });
   });
 
   describe('Subscription Plan-Change Review & Payment Safeguards', () => {

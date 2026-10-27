@@ -1541,7 +1541,15 @@ export const esTranslations: Record<string, any> = {
       "ADDON_SINGLE_POST_ACTIVATION_PENDING_TITLE": "Pago recibido — Activación pendiente",
       "ADDON_SINGLE_POST_ACTIVATION_PENDING_DESC": "Tu pago se completó, pero aún no pudimos confirmar tu espacio de publicación adicional. No envíes el pago de nuevo — actualiza la facturación para verificar tu límite actualizado.",
       "ADDON_SINGLE_POST_ERROR_APPLY_PENDING": "Se recibió el pago, pero aún no pudimos confirmar tu espacio de publicación adicional. No envíes el pago de nuevo — actualiza la facturación para verificar tu límite actualizado.",
-      "ADDON_SINGLE_POST_ERROR_INIT": "No pudimos iniciar el pago del post adicional. Por favor inténtalo de nuevo."
+      "ADDON_SINGLE_POST_ERROR_INIT": "No pudimos iniciar el pago del post adicional. Por favor inténtalo de nuevo.",
+      "ADDON_SINGLE_POST_ERROR_FORM_LOAD": "No pudimos cargar el formulario de pago seguro para esta compra de publicación adicional. No se ha realizado ningún cargo a tu tarjeta — por favor inténtalo de nuevo.",
+      "ADDON_SINGLE_POST_LOADING_FORM": "Preparando formulario de pago seguro…",
+      "ADDON_SINGLE_POST_RETRY_BTN": "Intentar de nuevo",
+      "ADDON_SAVE_CARD_FUTURE_LABEL": "Guardar esta tarjeta para futuras compras (complementos de pago único y promociones)",
+      "ADDON_CARD_RENEWAL_DISTINCTION_NOTE": "Esta compra única no cambiará la tarjeta de renovación de tu suscripción recurrente.",
+      "SUBSCRIPTION_RENEWAL_CARD_REQUIRED_NOTE": "Se requiere un método de pago válido para las renovaciones recurrentes de la suscripción y se cobrará automáticamente en cada período de renovación hasta que se cancele.",
+      "SUBSCRIPTION_SAVE_CARD_FUTURE_LABEL": "Guardar también esta tarjeta como mi método de pago predeterminado para futuras compras únicas (como publicaciones adicionales y promociones)",
+      "WARN_SUBSCRIPTION_CARD_NOT_VERIFIED": "Tu suscripción está activa, pero aún no pudimos verificar tu tarjeta de renovación guardada. Por favor revisa la sección de Métodos de pago a continuación."
     },
     "PROMOTIONS": {
       "TITLE": "Promocionar una publicación",

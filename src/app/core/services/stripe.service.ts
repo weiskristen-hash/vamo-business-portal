@@ -502,6 +502,7 @@ export class StripeService {
   private auditService = inject(CheckoutAuditService);
   private stripePromise: Promise<Stripe | null> | null = null;
   private activeElements: StripeElements | null = null;
+  private activePaymentElement: any = null;
   private cardSetupElements: StripeElements | null = null;
   private cardSetupPaymentElement: any = null;
   private inFlightCheckoutPreviews = new Map<string, Promise<CheckoutPreviewResult>>();
@@ -1707,8 +1708,12 @@ export class StripeService {
       const result =
         data?.extract_result ??
         data?.extract_result_existing ??
+        data?.setup_result_existing ??
+        data?.setup_result_new ??
         data?.extract_sub_error_new ??
         data?.extract_sub_error_existing ??
+        data?.extract_si_error_existing ??
+        data?.extract_si_error_new ??
         data?.data ??
         data;
 
@@ -2267,8 +2272,12 @@ export class StripeService {
     const result =
       data?.extract_result ??
       data?.extract_result_existing ??
+      data?.setup_result_existing ??
+      data?.setup_result_new ??
       data?.extract_sub_error_new ??
       data?.extract_sub_error_existing ??
+      data?.extract_si_error_existing ??
+      data?.extract_si_error_new ??
       data;
     if (result?.stripeError) {
       throw new Error(result.stripeError);
@@ -2443,18 +2452,51 @@ export class StripeService {
   async mountPaymentElement(
     clientSecret: string,
     containerId: string,
-  ): Promise<{ stripe: Stripe; elements: StripeElements }> {
+    options?: {
+      onLoadError?: (error: any) => void;
+      onReady?: () => void;
+    },
+  ): Promise<{ stripe: Stripe; elements: StripeElements; paymentElement?: any }> {
+    const cleanSecret = typeof clientSecret === 'string' ? clientSecret.trim() : '';
+    if (!cleanSecret) {
+      const secretErr: any = new Error('Invalid payment session client secret.');
+      secretErr.code = 'invalid_client_secret';
+      throw secretErr;
+    }
+
     const stripe = await this.getStripe();
     if (!stripe) throw new Error('Stripe failed to initialize.');
 
-    this.activeElements = this.createElementsInstance(stripe, clientSecret);
+    this.cleanup();
+    this.activeElements = this.createElementsInstance(stripe, cleanSecret);
 
-    const paymentElement = this.activeElements.create('payment');
-    const container = document.getElementById(containerId);
+    const paymentElement: any = this.activeElements.create('payment');
+    let container = document.getElementById(containerId);
+    if (!container) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      container = document.getElementById(containerId);
+    }
     if (!container) throw new Error(`Container #${containerId} not found.`);
-    paymentElement.mount(container);
 
-    return { stripe, elements: this.activeElements };
+    container.innerHTML = '';
+
+    if (typeof paymentElement?.on === 'function') {
+      if (options?.onLoadError) {
+        paymentElement.on('loaderror', (ev: any) => {
+          options.onLoadError?.(ev?.error ?? ev ?? new Error('Payment form failed to load.'));
+        });
+      }
+      if (options?.onReady) {
+        paymentElement.on('ready', () => {
+          options.onReady?.();
+        });
+      }
+    }
+
+    paymentElement.mount(container);
+    this.activePaymentElement = paymentElement;
+
+    return { stripe, elements: this.activeElements, paymentElement };
   }
 
   async mountCardSetupElement(
@@ -4134,6 +4176,18 @@ export class StripeService {
   }
 
   cleanup(): void {
+    if (this.activePaymentElement) {
+      try {
+        if (typeof this.activePaymentElement.destroy === 'function') {
+          this.activePaymentElement.destroy();
+        } else if (typeof this.activePaymentElement.unmount === 'function') {
+          this.activePaymentElement.unmount();
+        }
+      } catch {
+        // Ignore unmount errors when container is already removed
+      }
+    }
+    this.activePaymentElement = null;
     this.activeElements = null;
   }
 

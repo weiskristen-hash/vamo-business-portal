@@ -1541,7 +1541,15 @@ export const enTranslations: Record<string, any> = {
       "ADDON_SINGLE_POST_ACTIVATION_PENDING_TITLE": "Payment Received — Activation Pending",
       "ADDON_SINGLE_POST_ACTIVATION_PENDING_DESC": "Your payment was completed, but we couldn’t confirm your extra post slot yet. Please do not submit payment again — refresh billing to check your updated quota.",
       "ADDON_SINGLE_POST_ERROR_APPLY_PENDING": "Payment was received, but we couldn’t confirm your extra post slot yet. Please do not submit payment again — refresh billing to check your updated quota.",
-      "ADDON_SINGLE_POST_ERROR_INIT": "We couldn’t start the single-post add-on payment. Please try again."
+      "ADDON_SINGLE_POST_ERROR_INIT": "We couldn’t start the single-post add-on payment. Please try again.",
+      "ADDON_SINGLE_POST_ERROR_FORM_LOAD": "We couldn’t load the secure payment form for this single-post purchase. Your card has not been charged — please try again.",
+      "ADDON_SINGLE_POST_LOADING_FORM": "Preparing secure payment form…",
+      "ADDON_SINGLE_POST_RETRY_BTN": "Try Again",
+      "ADDON_SAVE_CARD_FUTURE_LABEL": "Save this card for future purchases (one-time add-ons and promotions)",
+      "ADDON_CARD_RENEWAL_DISTINCTION_NOTE": "This one-time purchase won’t change your recurring subscription renewal card.",
+      "SUBSCRIPTION_RENEWAL_CARD_REQUIRED_NOTE": "A valid payment method is required for recurring subscription renewals and will be billed automatically each renewal period until canceled.",
+      "SUBSCRIPTION_SAVE_CARD_FUTURE_LABEL": "Also save this card as my default payment method for future one-time purchases (such as Single Post add-ons and promotions)",
+      "WARN_SUBSCRIPTION_CARD_NOT_VERIFIED": "Your subscription is active, but we couldn’t verify your saved renewal card yet. Please check your Payment methods section below."
     },
     "PROMOTIONS": {
       "TITLE": "Promote a Post",
