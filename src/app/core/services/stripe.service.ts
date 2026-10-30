@@ -318,9 +318,46 @@ export type ScheduledDowngradeVerification =
   | 'reported_by_lookup'
   | 'unverified';
 
+export type StripeInvoicePreviewMode = 'upgrade' | 'downgrade' | 'new';
+
+export interface StripeInvoicePreviewLineItem {
+  description: string;
+  /** Signed amount in Stripe minor currency units (e.g. cents; negative = credit, positive = charge). */
+  amount: number;
+}
+
+export interface StripeInvoicePreviewRequest {
+  priceId: string;
+  promotionCode?: string | null;
+}
+
+export interface StripeInvoicePreviewResponse {
+  ok: boolean;
+  error: boolean;
+  mode: StripeInvoicePreviewMode | null;
+  currency: string | null;
+  subtotal: number | null;
+  discount: number;
+  tax: number;
+  total: number | null;
+  lines: StripeInvoicePreviewLineItem[];
+  prorationCreditAmount: number | null;
+  prorationChargeAmount: number | null;
+  accountCreditAmount: number;
+  amountDueNow: number | null;
+  nextAmount: number | null;
+  nextDate: number | null;
+  prorationDate: number | null;
+  errorCode: string | null;
+  message: string | null;
+  httpStatus?: number | null;
+  flowUnavailable?: boolean;
+}
+
 export interface PlanChangePreviewRequest {
   subscriptionId: string;
   subscriptionItemId: string;
+  subscriptionStatus?: string | null;
   currentPriceId: string;
   currentPlanName: string;
   currentPlanAmount: number;
@@ -349,6 +386,11 @@ export interface PlanChangePreviewResult {
   subtotal: number;
   prorationDelta?: number | null;
   prorationAmount?: number | null;
+  prorationCreditAmount?: number | null;
+  prorationChargeAmount?: number | null;
+  accountCreditAmount?: number | null;
+  prorationDate?: number | null;
+  lines?: StripeInvoicePreviewLineItem[];
   discountAmount: number;
   tax: number;
   currency: string;
@@ -382,6 +424,7 @@ export interface PlanChangePreviewResult {
 export interface ChangeSubscriptionPlanOptions {
   promotionCode?: string | null;
   promotionCodeId?: string | null;
+  prorationDate?: number | null;
   approvedAmountDue?: number | null;
   approvedCurrency?: string | null;
   verificationReference?: string | null;
@@ -2614,19 +2657,284 @@ export class StripeService {
     }
   >();
 
+  public static readonly PLAN_CHANGE_PREVIEW_TTL_MS = 5 * 60 * 1000;
+
   isPlanChangePromoSupported(): boolean {
     return Boolean((runtimeConfig as any).stripePlanChangePromoEnabled);
   }
 
   isPlanChangeUpgradePreviewConfigured(): boolean {
-    const previewFlowId = (runtimeConfig as any).stripePreviewPlanChangeFlow;
+    const previewFlowId =
+      runtimeConfig.stripePreviewInvoiceFlow || (runtimeConfig as any).stripePreviewPlanChangeFlow;
     return Boolean(typeof previewFlowId === 'string' && previewFlowId.trim().length > 0);
+  }
+
+  /**
+   * Calls the Directus `Stripe - Preview Invoice` Flow (`f1e2d3c4-5b6a-4789-8a0b-1c2d3e4f5a67`)
+   * using the signed-in user's Directus session token. All monetary fields in the returned
+   * `StripeInvoicePreviewResponse` are normalized in Stripe minor currency units (e.g. cents).
+   * Never throws on absent/disabled Flows or Stripe preview refusals.
+   */
+  async previewInvoice(
+    request: StripeInvoicePreviewRequest,
+  ): Promise<StripeInvoicePreviewResponse> {
+    const cleanPriceId = typeof request?.priceId === 'string' ? request.priceId.trim() : '';
+    if (!/^price_[A-Za-z0-9_]+$/.test(cleanPriceId)) {
+      return {
+        ok: false,
+        error: true,
+        mode: null,
+        currency: null,
+        subtotal: null,
+        discount: 0,
+        tax: 0,
+        total: null,
+        lines: [],
+        prorationCreditAmount: null,
+        prorationChargeAmount: null,
+        accountCreditAmount: 0,
+        amountDueNow: null,
+        nextAmount: null,
+        nextDate: null,
+        prorationDate: null,
+        errorCode: 'INVALID_PRICE',
+        message: 'This plan is not available.',
+      };
+    }
+
+    const flowId =
+      typeof runtimeConfig.stripePreviewInvoiceFlow === 'string' &&
+      runtimeConfig.stripePreviewInvoiceFlow.trim()
+        ? runtimeConfig.stripePreviewInvoiceFlow.trim()
+        : typeof (runtimeConfig as any).stripePreviewPlanChangeFlow === 'string'
+          ? (runtimeConfig as any).stripePreviewPlanChangeFlow.trim()
+          : '';
+
+    if (!flowId) {
+      return {
+        ok: false,
+        error: true,
+        mode: null,
+        currency: null,
+        subtotal: null,
+        discount: 0,
+        tax: 0,
+        total: null,
+        lines: [],
+        prorationCreditAmount: null,
+        prorationChargeAmount: null,
+        accountCreditAmount: 0,
+        amountDueNow: null,
+        nextAmount: null,
+        nextDate: null,
+        prorationDate: null,
+        errorCode: 'PREVIEW_FLOW_NOT_CONFIGURED',
+        message: 'Invoice preview flow is not configured.',
+        flowUnavailable: true,
+      };
+    }
+
+    const cleanPromo =
+      typeof request?.promotionCode === 'string' && request.promotionCode.trim()
+        ? request.promotionCode.trim()
+        : null;
+
+    const payload: Record<string, unknown> = {
+      priceId: cleanPriceId,
+    };
+    if (cleanPromo) {
+      payload['promotionCode'] = cleanPromo;
+    }
+
+    try {
+      const raw = await this.flowPost(flowId, payload);
+      const body =
+        raw?.format_preview ??
+        raw?.preview_result ??
+        raw?.change_preview ??
+        raw?.invoice_preview ??
+        raw?.extract_preview ??
+        raw?.data ??
+        raw;
+
+      const rawAmountDue =
+        body?.amountDueNow ??
+        body?.amountDueToday ??
+        body?.amount_due ??
+        body?.amountDue ??
+        null;
+
+      if (
+        !body ||
+        typeof body !== 'object' ||
+        body.error ||
+        body.stripeError ||
+        body.verified === false ||
+        typeof rawAmountDue !== 'number' ||
+        !Number.isFinite(rawAmountDue) ||
+        rawAmountDue < 0
+      ) {
+        const errCode =
+          (typeof body?.code === 'string' && body.code.trim()) ||
+          (typeof body?.errorCode === 'string' && body.errorCode.trim()) ||
+          'UPGRADE_PRORATION_PREVIEW_UNAVAILABLE';
+        const errMsg =
+          (typeof body?.message === 'string' && body.message.trim()) ||
+          (typeof body?.error === 'string' && body.error.trim()) ||
+          'We could not verify the exact prorated charge due today with Stripe.';
+        return {
+          ok: false,
+          error: true,
+          mode: null,
+          currency: null,
+          subtotal: null,
+          discount: 0,
+          tax: 0,
+          total: null,
+          lines: [],
+          prorationCreditAmount: null,
+          prorationChargeAmount: null,
+          accountCreditAmount: 0,
+          amountDueNow: null,
+          nextAmount: null,
+          nextDate: null,
+          prorationDate: null,
+          errorCode: errCode,
+          message: errMsg,
+          flowUnavailable: false,
+        };
+      }
+
+      const mode: StripeInvoicePreviewMode | null =
+        body.mode === 'upgrade' || body.mode === 'downgrade' || body.mode === 'new'
+          ? body.mode
+          : null;
+      const amountDueNow = Math.round(rawAmountDue);
+      const subtotal =
+        typeof body.subtotal === 'number' && Number.isFinite(body.subtotal)
+          ? Math.round(body.subtotal)
+          : null;
+      const rawDiscount = body.discount ?? body.discountAmount;
+      const discount =
+        typeof rawDiscount === 'number' && Number.isFinite(rawDiscount) && rawDiscount >= 0
+          ? Math.round(rawDiscount)
+          : 0;
+      const tax =
+        typeof body.tax === 'number' && Number.isFinite(body.tax) && body.tax >= 0
+          ? Math.round(body.tax)
+          : 0;
+      const total =
+        typeof body.total === 'number' && Number.isFinite(body.total)
+          ? Math.round(body.total)
+          : null;
+      const currency =
+        typeof body.currency === 'string' && body.currency.trim()
+          ? body.currency.trim().toLowerCase()
+          : null;
+      const rawNextAmount = body.nextAmount ?? body.renewalAmount;
+      const nextAmount =
+        typeof rawNextAmount === 'number' && Number.isFinite(rawNextAmount) && rawNextAmount >= 0
+          ? Math.round(rawNextAmount)
+          : null;
+      const rawNextDate = body.nextDate ?? body.nextBillingDate;
+      const nextDate =
+        typeof rawNextDate === 'number' && Number.isFinite(rawNextDate) && rawNextDate > 0
+          ? Math.round(rawNextDate)
+          : null;
+      const prorationDate =
+        typeof body.prorationDate === 'number' &&
+        Number.isFinite(body.prorationDate) &&
+        body.prorationDate > 0
+          ? Math.round(body.prorationDate)
+          : null;
+
+      let lines: StripeInvoicePreviewLineItem[] = [];
+      let prorationCreditAmount: number | null = null;
+      let prorationChargeAmount: number | null = null;
+
+      if (Array.isArray(body.lines)) {
+        lines = body.lines
+          .filter((item: any) => typeof item?.amount === 'number' && Number.isFinite(item.amount))
+          .map((item: any) => ({
+            description: typeof item.description === 'string' ? item.description : '',
+            amount: Math.round(item.amount),
+          }));
+        prorationCreditAmount = lines
+          .filter((item) => item.amount < 0)
+          .reduce((sum, item) => sum + Math.abs(item.amount), 0);
+        prorationChargeAmount = lines
+          .filter((item) => item.amount > 0)
+          .reduce((sum, item) => sum + item.amount, 0);
+      }
+
+      const accountCreditAmount =
+        mode !== 'downgrade' && total !== null && total > amountDueNow
+          ? Math.max(0, total - amountDueNow)
+          : 0;
+
+      return {
+        ok: true,
+        error: false,
+        mode,
+        currency,
+        subtotal,
+        discount,
+        tax,
+        total,
+        lines,
+        prorationCreditAmount,
+        prorationChargeAmount,
+        accountCreditAmount,
+        amountDueNow,
+        nextAmount,
+        nextDate,
+        prorationDate,
+        errorCode: null,
+        message: null,
+      };
+    } catch (err: any) {
+      const status = typeof err?.status === 'number' ? err.status : null;
+      const isAbsentOrDisabled = status === 404 || status === 403;
+      return {
+        ok: false,
+        error: true,
+        mode: null,
+        currency: null,
+        subtotal: null,
+        discount: 0,
+        tax: 0,
+        total: null,
+        lines: [],
+        prorationCreditAmount: null,
+        prorationChargeAmount: null,
+        accountCreditAmount: 0,
+        amountDueNow: null,
+        nextAmount: null,
+        nextDate: null,
+        prorationDate: null,
+        errorCode: isAbsentOrDisabled
+          ? 'PREVIEW_FLOW_UNAVAILABLE'
+          : 'UPGRADE_PRORATION_PREVIEW_UNAVAILABLE',
+        message: isAbsentOrDisabled
+          ? 'Invoice preview flow is unavailable in this environment.'
+          : 'We could not verify the exact prorated charge due today with Stripe.',
+        httpStatus: status,
+        flowUnavailable: true,
+      };
+    }
   }
 
   async previewSubscriptionPlanChange(
     request: PlanChangePreviewRequest,
   ): Promise<PlanChangePreviewResult> {
-    const promoSupported = this.isPlanChangePromoSupported();
+    const promoSupported =
+      typeof this.isPlanChangePromoSupported === 'function'
+        ? this.isPlanChangePromoSupported()
+        : StripeService.prototype.isPlanChangePromoSupported.call(this);
+    const previewConfigured =
+      typeof this.isPlanChangeUpgradePreviewConfigured === 'function'
+        ? this.isPlanChangeUpgradePreviewConfigured()
+        : StripeService.prototype.isPlanChangeUpgradePreviewConfigured.call(this);
     const cleanPromoCode =
       typeof request.promotionCode === 'string' && request.promotionCode.trim()
         ? request.promotionCode.trim()
@@ -2637,6 +2945,41 @@ export class StripeService {
       typeof request.newPlanAmount === 'number' && Number.isFinite(request.newPlanAmount)
         ? Math.max(0, Math.round(request.newPlanAmount))
         : 0;
+
+    const buildUnverifiedMismatch = (
+      errorCode: string,
+      message: string,
+    ): PlanChangePreviewResult => ({
+      verified: false,
+      verificationStatus: 'mismatch_blocked',
+      isUpgrade: request.isUpgrade,
+      timing: request.isUpgrade ? 'immediate' : 'scheduled',
+      effectiveDate: request.isUpgrade ? null : request.currentPeriodEnd,
+      amountDueToday: null,
+      subtotal: baseNewAmount,
+      discountAmount: 0,
+      tax: 0,
+      currency,
+      renewalAmount: baseNewAmount,
+      renewalInterval,
+      promoSupported,
+      couponState: 'not_applied',
+      subscriptionId: request.subscriptionId,
+      subscriptionItemId: request.subscriptionItemId,
+      currentPriceId: request.currentPriceId,
+      targetPriceId: request.newPriceId,
+      newPriceId: request.newPriceId,
+      currentPeriodStart: request.currentPeriodStart,
+      currentPeriodEnd: request.currentPeriodEnd,
+      nextBillingDate: request.currentPeriodEnd,
+      promoCode: cleanPromoCode,
+      promoCodeId: null,
+      promoCodeName: null,
+      couponDuration: null,
+      couponDurationInMonths: null,
+      errorCode,
+      message,
+    });
 
     if (cleanPromoCode && !promoSupported) {
       return {
@@ -2662,6 +3005,44 @@ export class StripeService {
         errorCode: 'PLAN_CHANGE_PROMO_UNSUPPORTED',
         message: 'Promotion codes are not supported for subscription plan changes.',
       };
+    }
+
+    if (
+      typeof request.subscriptionStatus === 'string' &&
+      request.subscriptionStatus.trim() &&
+      !['active', 'trialing', 'past_due'].includes(request.subscriptionStatus.trim().toLowerCase())
+    ) {
+      return buildUnverifiedMismatch(
+        'SUBSCRIPTION_NOT_ACTIVE',
+        'No active subscription found for this account.',
+      );
+    }
+
+    if (
+      !request.subscriptionId?.trim() ||
+      !request.subscriptionItemId?.trim() ||
+      !request.newPriceId?.trim()
+    ) {
+      return buildUnverifiedMismatch(
+        'SUBSCRIPTION_NOT_FOUND',
+        'No active subscription found for this account.',
+      );
+    }
+
+    if (request.currentPriceId && request.newPriceId === request.currentPriceId) {
+      return buildUnverifiedMismatch('SAME_PLAN', 'This is already your current plan.');
+    }
+
+    if (
+      request.currentPlanInterval &&
+      request.newPlanInterval &&
+      request.currentPlanInterval.trim().toLowerCase() !==
+        request.newPlanInterval.trim().toLowerCase()
+    ) {
+      return buildUnverifiedMismatch(
+        'PREVIEW_EXECUTION_PARAMETER_MISMATCH',
+        'Billing interval changes cannot verify renewal anchor parity.',
+      );
     }
 
     let promoPreview: CheckoutPreviewResult | null = null;
@@ -2705,8 +3086,9 @@ export class StripeService {
       }
     }
 
-    if (!request.isUpgrade) {
-      const discountedNextRenewal = promoPreview ? promoPreview.amountDueToday : baseNewAmount;
+    const buildScheduledDowngradeFallback = (renewalAmountOverride?: number): PlanChangePreviewResult => {
+      const discountedNextRenewal =
+        renewalAmountOverride ?? (promoPreview ? promoPreview.amountDueToday : baseNewAmount);
       return {
         verified: true,
         verificationStatus: 'verified',
@@ -2715,216 +3097,19 @@ export class StripeService {
         effectiveDate: request.currentPeriodEnd,
         amountDueToday: 0,
         subtotal: baseNewAmount,
-        discountAmount: promoPreview ? promoPreview.discountAmount : 0,
+        discountAmount: 0,
         tax: 0,
         currency,
         renewalAmount: discountedNextRenewal,
         renewalInterval,
-        promoSupported,
-        couponState: promoPreview ? 'verified_applied' : 'not_applied',
-        promoCode: promoPreview?.promoCode ?? cleanPromoCode,
-        promoCodeId: promoPreview?.promoCodeId ?? null,
-        promoCodeName: promoPreview?.promoCodeName ?? null,
-        couponDuration: promoPreview?.couponDuration ?? null,
-        couponDurationInMonths: promoPreview?.couponDurationInMonths ?? null,
-        errorCode: null,
-        message: null,
-      };
-    }
-
-    const previewFlowId =
-      typeof (runtimeConfig as any).stripePreviewPlanChangeFlow === 'string'
-        ? (runtimeConfig as any).stripePreviewPlanChangeFlow.trim()
-        : '';
-    if (!previewFlowId) {
-      return {
-        verified: false,
-        verificationStatus: 'unavailable',
-        isUpgrade: true,
-        timing: 'immediate',
-        effectiveDate: null,
-        amountDueToday: null,
-        subtotal: baseNewAmount,
-        discountAmount: promoPreview ? promoPreview.discountAmount : 0,
-        tax: 0,
-        currency,
-        renewalAmount: promoPreview
-          ? (promoPreview.renewalAmount ?? baseNewAmount)
-          : baseNewAmount,
-        renewalInterval,
-        promoSupported,
-        couponState: promoPreview ? 'verified_applied' : 'not_applied',
-        promoCode: promoPreview?.promoCode ?? cleanPromoCode,
-        promoCodeId: promoPreview?.promoCodeId ?? null,
-        promoCodeName: promoPreview?.promoCodeName ?? null,
-        couponDuration: promoPreview?.couponDuration ?? null,
-        couponDurationInMonths: promoPreview?.couponDurationInMonths ?? null,
-        errorCode: 'UPGRADE_PRORATION_PREVIEW_UNAVAILABLE',
-        message:
-          'We could not verify the exact prorated charge due today with Stripe. This upgrade requires explicit customer confirmation before submitting.',
-      };
-    }
-
-    try {
-      const previewPayload: Record<string, unknown> = {
+        nextBillingDate: request.currentPeriodEnd,
         subscriptionId: request.subscriptionId,
         subscriptionItemId: request.subscriptionItemId,
         currentPriceId: request.currentPriceId,
+        targetPriceId: request.newPriceId,
         newPriceId: request.newPriceId,
-        isUpgrade: true,
         currentPeriodStart: request.currentPeriodStart,
         currentPeriodEnd: request.currentPeriodEnd,
-      };
-      if (promoSupported && (promoPreview?.promoCodeId || cleanPromoCode)) {
-        previewPayload['promotionCode'] = promoPreview?.promoCodeId ?? cleanPromoCode;
-      }
-
-      const raw = await this.flowPost(previewFlowId, previewPayload);
-      const body =
-        raw?.preview_result ??
-        raw?.change_preview ??
-        raw?.invoice_preview ??
-        raw?.extract_preview ??
-        raw?.data ??
-        raw;
-
-      const rawAmountDue =
-        body?.amountDueToday ?? body?.amount_due ?? body?.amountDue ?? body?.total ?? null;
-      if (
-        !body ||
-        typeof body !== 'object' ||
-        body.error ||
-        body.stripeError ||
-        body.verified === false ||
-        typeof rawAmountDue !== 'number' ||
-        !Number.isFinite(rawAmountDue) ||
-        rawAmountDue < 0
-      ) {
-        return {
-          verified: false,
-          verificationStatus: 'unavailable',
-          isUpgrade: true,
-          timing: 'immediate',
-          effectiveDate: null,
-          amountDueToday: null,
-          subtotal: baseNewAmount,
-          discountAmount: promoPreview ? promoPreview.discountAmount : 0,
-          tax: 0,
-          currency,
-          renewalAmount: promoPreview
-            ? (promoPreview.renewalAmount ?? baseNewAmount)
-            : baseNewAmount,
-          renewalInterval,
-          promoSupported,
-          couponState: promoPreview ? 'verified_applied' : 'not_applied',
-          promoCode: promoPreview?.promoCode ?? cleanPromoCode,
-          promoCodeId: promoPreview?.promoCodeId ?? null,
-          promoCodeName: promoPreview?.promoCodeName ?? null,
-          couponDuration: promoPreview?.couponDuration ?? null,
-          couponDurationInMonths: promoPreview?.couponDurationInMonths ?? null,
-          errorCode:
-            (typeof body?.errorCode === 'string' && body.errorCode) ||
-            'UPGRADE_PRORATION_PREVIEW_UNAVAILABLE',
-          message:
-            (typeof (body?.error ?? body?.message) === 'string' && (body?.error ?? body?.message)) ||
-            'We could not verify the exact prorated charge due today with Stripe.',
-        };
-      }
-
-      const verifiedAmountDue = Math.round(rawAmountDue);
-      const verifiedSubtotal =
-        typeof body.subtotal === 'number' && Number.isFinite(body.subtotal)
-          ? Math.round(body.subtotal)
-          : verifiedAmountDue + (promoPreview ? promoPreview.discountAmount : 0);
-      const verifiedDiscount =
-        typeof body.discountAmount === 'number' && Number.isFinite(body.discountAmount)
-          ? Math.round(body.discountAmount)
-          : promoPreview
-            ? promoPreview.discountAmount
-            : 0;
-      const verifiedTax =
-        typeof body.tax === 'number' && Number.isFinite(body.tax) ? Math.round(body.tax) : 0;
-      const verifiedCurrency =
-        typeof body.currency === 'string' && body.currency.trim()
-          ? body.currency.trim().toLowerCase()
-          : currency;
-      const verifiedRenewalAmount =
-        typeof body.renewalAmount === 'number' && Number.isFinite(body.renewalAmount)
-          ? Math.round(body.renewalAmount)
-          : promoPreview
-            ? (promoPreview.renewalAmount ?? baseNewAmount)
-            : baseNewAmount;
-
-      const rawProration =
-        typeof body.prorationAmount === 'number' && Number.isFinite(body.prorationAmount)
-          ? Math.round(body.prorationAmount)
-          : typeof body.prorationDelta === 'number' && Number.isFinite(body.prorationDelta)
-            ? Math.round(body.prorationDelta)
-            : null;
-
-      return {
-        verified: true,
-        verificationStatus: 'verified',
-        isUpgrade: true,
-        timing: 'immediate',
-        effectiveDate: null,
-        amountDueToday: verifiedAmountDue,
-        subtotal: verifiedSubtotal,
-        prorationDelta: rawProration,
-        prorationAmount: rawProration,
-        discountAmount: verifiedDiscount,
-        tax: verifiedTax,
-        currency: verifiedCurrency,
-        renewalAmount: verifiedRenewalAmount,
-        renewalInterval,
-        promoSupported,
-        couponState: promoPreview ? 'verified_applied' : 'not_applied',
-        expiresAt:
-          typeof body.expiresAt === 'number' && Number.isFinite(body.expiresAt)
-            ? body.expiresAt
-            : null,
-        chargeAmountEnforcedByServer:
-          typeof body.chargeAmountEnforcedByServer === 'boolean'
-            ? body.chargeAmountEnforcedByServer
-            : undefined,
-        existingDiscountDescription:
-          typeof body.existingDiscountDescription === 'string' && body.existingDiscountDescription.trim()
-            ? body.existingDiscountDescription.trim()
-            : null,
-        verificationReference:
-          typeof body.verificationReference === 'string' && body.verificationReference.trim()
-            ? body.verificationReference.trim()
-            : null,
-        promoCode: promoPreview?.promoCode ?? cleanPromoCode,
-        promoCodeId:
-          (typeof body.promoCodeId === 'string' && body.promoCodeId) ||
-          promoPreview?.promoCodeId ||
-          null,
-        promoCodeName:
-          (typeof body.promoCodeName === 'string' && body.promoCodeName) ||
-          promoPreview?.promoCodeName ||
-          null,
-        couponDuration: promoPreview?.couponDuration ?? null,
-        couponDurationInMonths: promoPreview?.couponDurationInMonths ?? null,
-        errorCode: null,
-        message: null,
-      };
-    } catch {
-      return {
-        verified: false,
-        verificationStatus: 'unavailable',
-        isUpgrade: true,
-        timing: 'immediate',
-        effectiveDate: null,
-        amountDueToday: null,
-        subtotal: baseNewAmount,
-        discountAmount: promoPreview ? promoPreview.discountAmount : 0,
-        tax: 0,
-        currency,
-        renewalAmount: promoPreview
-          ? (promoPreview.renewalAmount ?? baseNewAmount)
-          : baseNewAmount,
-        renewalInterval,
         promoSupported,
         couponState: promoPreview ? 'verified_applied' : 'not_applied',
         promoCode: promoPreview?.promoCode ?? cleanPromoCode,
@@ -2932,11 +3117,214 @@ export class StripeService {
         promoCodeName: promoPreview?.promoCodeName ?? null,
         couponDuration: promoPreview?.couponDuration ?? null,
         couponDurationInMonths: promoPreview?.couponDurationInMonths ?? null,
-        errorCode: 'UPGRADE_PRORATION_PREVIEW_UNAVAILABLE',
-        message:
-          'We could not verify the exact prorated charge due today with Stripe. This upgrade requires explicit customer confirmation before submitting.',
+        errorCode: null,
+        message: null,
+      };
+    };
+
+    const buildUpgradeUnavailable = (
+      errorCode = 'UPGRADE_PRORATION_PREVIEW_UNAVAILABLE',
+      message = 'We could not verify the exact prorated charge due today with Stripe. This upgrade requires explicit customer confirmation before submitting.',
+    ): PlanChangePreviewResult => ({
+      verified: false,
+      verificationStatus: 'unavailable',
+      isUpgrade: true,
+      timing: 'immediate',
+      effectiveDate: null,
+      amountDueToday: null,
+      subtotal: baseNewAmount,
+      discountAmount: promoPreview ? promoPreview.discountAmount : 0,
+      tax: 0,
+      currency,
+      renewalAmount: promoPreview ? (promoPreview.renewalAmount ?? baseNewAmount) : baseNewAmount,
+      renewalInterval,
+      nextBillingDate: request.currentPeriodEnd,
+      subscriptionId: request.subscriptionId,
+      subscriptionItemId: request.subscriptionItemId,
+      currentPriceId: request.currentPriceId,
+      targetPriceId: request.newPriceId,
+      newPriceId: request.newPriceId,
+      currentPeriodStart: request.currentPeriodStart,
+      currentPeriodEnd: request.currentPeriodEnd,
+      promoSupported,
+      couponState: promoPreview ? 'verified_applied' : 'not_applied',
+      promoCode: promoPreview?.promoCode ?? cleanPromoCode,
+      promoCodeId: promoPreview?.promoCodeId ?? null,
+      promoCodeName: promoPreview?.promoCodeName ?? null,
+      couponDuration: promoPreview?.couponDuration ?? null,
+      couponDurationInMonths: promoPreview?.couponDurationInMonths ?? null,
+      errorCode,
+      message,
+    });
+
+    if (!previewConfigured) {
+      return request.isUpgrade
+        ? buildUpgradeUnavailable()
+        : buildScheduledDowngradeFallback();
+    }
+
+    const invokePreviewInvoice =
+      typeof this.previewInvoice === 'function'
+        ? this.previewInvoice.bind(this)
+        : StripeService.prototype.previewInvoice.bind(this);
+
+    const inv = await invokePreviewInvoice({
+      priceId: request.newPriceId,
+      promotionCode: promoSupported ? (promoPreview?.promoCodeId ?? cleanPromoCode) : null,
+    });
+
+    const domainRefusalCodes = new Set([
+      'NO_CUSTOMER',
+      'SUBSCRIPTION_NOT_FOUND',
+      'SUBSCRIPTION_NOT_ACTIVE',
+      'INVALID_PRICE',
+      'SAME_PLAN',
+    ]);
+
+    if (!inv.ok || inv.amountDueNow === null) {
+      if (inv.errorCode && domainRefusalCodes.has(inv.errorCode)) {
+        return buildUnverifiedMismatch(
+          inv.errorCode,
+          inv.message || 'Unable to verify subscription eligibility for this plan change.',
+        );
+      }
+      return request.isUpgrade
+        ? buildUpgradeUnavailable(
+            inv.errorCode || 'UPGRADE_PRORATION_PREVIEW_UNAVAILABLE',
+            inv.message ||
+              'We could not verify the exact prorated charge due today with Stripe. This upgrade requires explicit customer confirmation before submitting.',
+          )
+        : buildScheduledDowngradeFallback();
+    }
+
+    // Verify preview parameters match the subscription-change execution parameters
+    if (inv.mode === 'new') {
+      return buildUnverifiedMismatch(
+        'SUBSCRIPTION_NOT_FOUND',
+        'No active subscription found for this account.',
+      );
+    }
+
+    const expectedMode: StripeInvoicePreviewMode = request.isUpgrade ? 'upgrade' : 'downgrade';
+    if (inv.mode !== null && inv.mode !== expectedMode) {
+      return buildUnverifiedMismatch(
+        'PREVIEW_EXECUTION_PARAMETER_MISMATCH',
+        'Preview mode did not match the requested subscription plan change.',
+      );
+    }
+
+    if (
+      inv.nextDate !== null &&
+      request.currentPeriodEnd > 0 &&
+      inv.nextDate !== request.currentPeriodEnd
+    ) {
+      return buildUnverifiedMismatch(
+        'PREVIEW_EXECUTION_PARAMETER_MISMATCH',
+        'Subscription billing period changed before the preview could be verified.',
+      );
+    }
+
+    if (
+      request.isUpgrade &&
+      inv.nextAmount !== null &&
+      baseNewAmount > 0 &&
+      inv.nextAmount !== baseNewAmount
+    ) {
+      return buildUnverifiedMismatch(
+        'PREVIEW_EXECUTION_PARAMETER_MISMATCH',
+        'Selected plan price no longer matches the current Stripe catalog price.',
+      );
+    }
+
+    if (inv.currency !== null && currency && inv.currency !== currency) {
+      return buildUnverifiedMismatch(
+        'PREVIEW_EXECUTION_PARAMETER_MISMATCH',
+        'Preview currency did not match the selected subscription currency.',
+      );
+    }
+
+    if (!request.isUpgrade) {
+      return {
+        ...buildScheduledDowngradeFallback(inv.nextAmount ?? undefined),
+        currency: inv.currency || currency,
+        effectiveDate: inv.nextDate ?? request.currentPeriodEnd,
+        nextBillingDate: inv.nextDate ?? request.currentPeriodEnd,
       };
     }
+
+    const nowMs = Date.now();
+    if (inv.prorationDate !== null) {
+      if (
+        (request.currentPeriodStart > 0 && inv.prorationDate < request.currentPeriodStart) ||
+        inv.prorationDate * 1000 + StripeService.PLAN_CHANGE_PREVIEW_TTL_MS <= nowMs
+      ) {
+        return {
+          ...buildUpgradeUnavailable(
+            'UPGRADE_PREVIEW_EXPIRED',
+            'This upgrade price preview has expired. Please refresh the preview to continue.',
+          ),
+          verificationStatus: 'expired',
+          prorationDate: inv.prorationDate,
+          expiresAt: inv.prorationDate * 1000 + StripeService.PLAN_CHANGE_PREVIEW_TTL_MS,
+        };
+      }
+    }
+
+    const verifiedCurrency = inv.currency || currency;
+    const verifiedAmountDue = inv.amountDueNow;
+    const verifiedDiscount = inv.discount > 0 ? inv.discount : promoPreview ? promoPreview.discountAmount : 0;
+    const verifiedSubtotal =
+      inv.subtotal ?? verifiedAmountDue + verifiedDiscount;
+    const verifiedRenewalAmount =
+      inv.nextAmount ?? (promoPreview ? (promoPreview.renewalAmount ?? baseNewAmount) : baseNewAmount);
+    const expiresAt =
+      inv.prorationDate !== null
+        ? Math.min(
+            inv.prorationDate * 1000 + StripeService.PLAN_CHANGE_PREVIEW_TTL_MS,
+            nowMs + StripeService.PLAN_CHANGE_PREVIEW_TTL_MS,
+          )
+        : nowMs + StripeService.PLAN_CHANGE_PREVIEW_TTL_MS;
+
+    return {
+      verified: true,
+      verificationStatus: 'verified',
+      isUpgrade: true,
+      timing: 'immediate',
+      effectiveDate: inv.prorationDate,
+      prorationDate: inv.prorationDate,
+      amountDueToday: verifiedAmountDue,
+      subtotal: verifiedSubtotal,
+      prorationDelta: inv.subtotal,
+      prorationAmount: inv.subtotal,
+      prorationCreditAmount: inv.prorationCreditAmount,
+      prorationChargeAmount: inv.prorationChargeAmount,
+      accountCreditAmount: inv.accountCreditAmount,
+      lines: inv.lines,
+      discountAmount: verifiedDiscount,
+      tax: inv.tax,
+      currency: verifiedCurrency,
+      renewalAmount: verifiedRenewalAmount,
+      renewalInterval,
+      nextBillingDate: inv.nextDate ?? request.currentPeriodEnd,
+      subscriptionId: request.subscriptionId,
+      subscriptionItemId: request.subscriptionItemId,
+      currentPriceId: request.currentPriceId,
+      targetPriceId: request.newPriceId,
+      newPriceId: request.newPriceId,
+      previewTimestamp: inv.prorationDate ? inv.prorationDate * 1000 : nowMs,
+      currentPeriodStart: request.currentPeriodStart,
+      currentPeriodEnd: request.currentPeriodEnd,
+      promoSupported,
+      couponState: promoPreview ? 'verified_applied' : 'not_applied',
+      expiresAt,
+      promoCode: promoPreview?.promoCode ?? cleanPromoCode,
+      promoCodeId: promoPreview?.promoCodeId ?? null,
+      promoCodeName: promoPreview?.promoCodeName ?? null,
+      couponDuration: promoPreview?.couponDuration ?? null,
+      couponDurationInMonths: promoPreview?.couponDurationInMonths ?? null,
+      errorCode: null,
+      message: null,
+    };
   }
 
   async changeSubscriptionPlan(
@@ -2987,6 +3375,15 @@ export class StripeService {
 
     if (cleanPromo && this.isPlanChangePromoSupported()) {
       payload['promotionCode'] = options?.promotionCodeId ?? cleanPromo;
+    }
+
+    if (
+      isUpgrade &&
+      typeof options?.prorationDate === 'number' &&
+      Number.isInteger(options.prorationDate) &&
+      options.prorationDate > 0
+    ) {
+      payload['prorationDate'] = options.prorationDate;
     }
 
     const execution = (async (): Promise<PlanChangeResult> => {
@@ -3502,7 +3899,12 @@ export class StripeService {
     if (body?.stripeError || body?.error || body?.status === 'failed') {
       return {
         status: 'failed',
-        errorCode: typeof body?.errorCode === 'string' ? body.errorCode : null,
+        errorCode:
+          typeof body?.errorCode === 'string' && body.errorCode
+            ? body.errorCode
+            : typeof body?.code === 'string' && body.code
+              ? body.code
+              : null,
         message:
           typeof body?.error === 'string'
             ? body.error

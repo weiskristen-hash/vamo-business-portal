@@ -12,6 +12,7 @@ export interface RuntimeConfig {
   stripeCreateSubscriptionFlow: string;
   stripeCreateSubscriptionFromSetupFlow: string;
   stripeChangeSubscriptionFlow: string;
+  stripePreviewInvoiceFlow: string;
   stripeCancelSubscriptionFlow: string;
   stripeReleaseScheduleFlow: string;
   stripeGetPaymentMethodsFlow: string;
@@ -33,12 +34,15 @@ export const DEV_DIRECTUS_HOST = 'quepasa-api.c1oud7.de';
 export const PROD_DIRECTUS_VERIFICATION_URL = 'https://vamo-app.com/verify.html';
 export const DEV_DIRECTUS_VERIFICATION_URL = '';
 
+export const VERIFIED_STRIPE_PREVIEW_INVOICE_FLOW = 'f1e2d3c4-5b6a-4789-8a0b-1c2d3e4f5a67';
+
 export const DEV_DIRECTUS_CARD_FLOWS = {
   stripeGetPaymentMethodsFlow: '44946457-c8cd-42e2-98b2-a7a0672d59d3',
   stripeDetachPaymentMethodFlow: '9845ee00-779b-4f6b-9e07-fb8f175f945d',
   stripeCreateSetupIntentFlow: 'b1c4e8a2-7f3d-4e9a-8c1b-2d5f6a9e0c31',
   stripeFinalizeSetupIntentFlow: 'c2d5f9b3-8e4a-4f0b-9d2c-3e6a7b0f1d42',
   stripeSetDefaultPaymentMethodFlow: 'd3e6a0c4-9f5b-4a1c-8e3d-4f7b8c1a2e53',
+  stripePreviewInvoiceFlow: VERIFIED_STRIPE_PREVIEW_INVOICE_FLOW,
 } as const;
 
 export function stripTrailingSlash(value: string): string {
@@ -99,6 +103,29 @@ function buildInitialConfig(overrides: Record<string, any> = {}): RuntimeConfig 
       '',
     stripeChangeSubscriptionFlow:
       overrides['stripeChangeSubscriptionFlow'] || environment.STRIPE_CHANGE_SUBSCRIPTION_FLOW || '',
+    stripePreviewInvoiceFlow:
+      overrides['stripePreviewInvoiceFlow'] !== undefined
+        ? String(overrides['stripePreviewInvoiceFlow'])
+        : overrides['stripePreviewPlanChangeFlow'] !== undefined
+          ? String(overrides['stripePreviewPlanChangeFlow'])
+          : overrides['stripePreviewInvoiceEnabled'] === true
+            ? String(
+                overrides['stripePreviewInvoiceFlowId'] ||
+                  (environment as any).STRIPE_PREVIEW_INVOICE_FLOW_ID ||
+                  VERIFIED_STRIPE_PREVIEW_INVOICE_FLOW,
+              )
+            : overrides['stripePreviewInvoiceEnabled'] === false
+              ? ''
+              : (environment as any).STRIPE_PREVIEW_INVOICE_FLOW
+                ? String((environment as any).STRIPE_PREVIEW_INVOICE_FLOW)
+                : (environment as any).STRIPE_PREVIEW_INVOICE_ENABLED === true
+                  ? String(
+                      (environment as any).STRIPE_PREVIEW_INVOICE_FLOW_ID ||
+                        VERIFIED_STRIPE_PREVIEW_INVOICE_FLOW,
+                    )
+                  : isDevHost
+                    ? DEV_DIRECTUS_CARD_FLOWS.stripePreviewInvoiceFlow
+                    : '',
     stripeCancelSubscriptionFlow:
       overrides['stripeCancelSubscriptionFlow'] || environment.STRIPE_CANCEL_SUBSCRIPTION_FLOW || '',
     stripeReleaseScheduleFlow:
@@ -174,6 +201,9 @@ export const runtimeConfig = {
         if (!currentConfig.stripeDetachPaymentMethodFlow) {
           currentConfig.stripeDetachPaymentMethodFlow = DEV_DIRECTUS_CARD_FLOWS.stripeDetachPaymentMethodFlow;
         }
+        if (!currentConfig.stripePreviewInvoiceFlow) {
+          currentConfig.stripePreviewInvoiceFlow = DEV_DIRECTUS_CARD_FLOWS.stripePreviewInvoiceFlow;
+        }
       } else {
         if (!currentConfig.verificationUrl) {
           currentConfig.verificationUrl =
@@ -191,6 +221,16 @@ export const runtimeConfig = {
         ) {
           currentConfig.stripeSetDefaultPaymentMethodFlow =
             (environment as any).STRIPE_SET_DEFAULT_PAYMENT_METHOD_FLOW || '';
+        }
+        if (currentConfig.stripePreviewInvoiceFlow === DEV_DIRECTUS_CARD_FLOWS.stripePreviewInvoiceFlow) {
+          currentConfig.stripePreviewInvoiceFlow =
+            (environment as any).STRIPE_PREVIEW_INVOICE_FLOW ||
+            ((environment as any).STRIPE_PREVIEW_INVOICE_ENABLED === true
+              ? String(
+                  (environment as any).STRIPE_PREVIEW_INVOICE_FLOW_ID ||
+                    VERIFIED_STRIPE_PREVIEW_INVOICE_FLOW,
+                )
+              : '');
         }
       }
     }
@@ -215,6 +255,12 @@ export const runtimeConfig = {
   },
   get stripeChangeSubscriptionFlow(): string {
     return currentConfig.stripeChangeSubscriptionFlow;
+  },
+  get stripePreviewInvoiceFlow(): string {
+    return currentConfig.stripePreviewInvoiceFlow;
+  },
+  get stripePreviewPlanChangeFlow(): string {
+    return currentConfig.stripePreviewInvoiceFlow;
   },
   get stripeCancelSubscriptionFlow(): string {
     return currentConfig.stripeCancelSubscriptionFlow;
@@ -261,8 +307,32 @@ export const runtimeConfig = {
   get deleteAccountFlow(): string {
     return currentConfig.deleteAccountFlow;
   },
-  updateConfig(partial: Partial<RuntimeConfig>): void {
-    currentConfig = { ...currentConfig, ...partial };
+  updateConfig(
+    partial: Partial<RuntimeConfig> & {
+      stripePreviewPlanChangeFlow?: string;
+      stripePreviewInvoiceEnabled?: boolean;
+      stripePreviewInvoiceFlowId?: string;
+    },
+  ): void {
+    const next: Partial<RuntimeConfig> = { ...partial };
+    if (
+      partial.stripePreviewInvoiceFlow === undefined &&
+      partial.stripePreviewPlanChangeFlow !== undefined
+    ) {
+      next.stripePreviewInvoiceFlow = partial.stripePreviewPlanChangeFlow;
+    } else if (
+      partial.stripePreviewInvoiceFlow === undefined &&
+      partial.stripePreviewInvoiceEnabled !== undefined
+    ) {
+      next.stripePreviewInvoiceFlow = partial.stripePreviewInvoiceEnabled
+        ? String(
+            partial.stripePreviewInvoiceFlowId ||
+              (environment as any).STRIPE_PREVIEW_INVOICE_FLOW_ID ||
+              VERIFIED_STRIPE_PREVIEW_INVOICE_FLOW,
+          )
+        : '';
+    }
+    currentConfig = { ...currentConfig, ...next };
   },
   reset(): void {
     currentConfig = buildInitialConfig();

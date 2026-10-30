@@ -1975,6 +1975,10 @@ describe('StripeService', () => {
     });
 
     it('2. previewSubscriptionPlanChange returns unverified amountDueToday=null for upgrades when no preview flow is configured, never inventing a dollar amount', async () => {
+      runtimeConfig.updateConfig({
+        stripePreviewInvoiceEnabled: false,
+        stripePreviewInvoiceFlow: '',
+      });
       const flowSpy = vi.spyOn(service, 'flowPost');
       const preview = await service.previewSubscriptionPlanChange({
         subscriptionId: 'sub_123',
@@ -2236,6 +2240,412 @@ describe('StripeService', () => {
       } finally {
         container.remove();
       }
+    });
+  });
+
+  describe('Stripe - Preview Invoice Integration (f1e2d3c4-5b6a-4789-8a0b-1c2d3e4f5a67)', () => {
+    const PREVIEW_FLOW_UUID = 'f1e2d3c4-5b6a-4789-8a0b-1c2d3e4f5a67';
+
+    it('keeps production stripePreviewInvoiceFlow disabled by default and activates verified UUID on Quepasa staging or explicit enablement', () => {
+      runtimeConfig.reset();
+      expect(runtimeConfig.stripePreviewInvoiceFlow).toBe('');
+      expect(service.isPlanChangeUpgradePreviewConfigured()).toBe(false);
+
+      // Switching to Quepasa staging host enables verified Flow UUID automatically
+      runtimeConfig.setDirectusUrl('https://quepasa-api.c1oud7.de');
+      expect(runtimeConfig.stripePreviewInvoiceFlow).toBe(PREVIEW_FLOW_UUID);
+      expect(DEV_DIRECTUS_CARD_FLOWS.stripePreviewInvoiceFlow).toBe(PREVIEW_FLOW_UUID);
+      expect(service.isPlanChangeUpgradePreviewConfigured()).toBe(true);
+
+      // Switching back to production host disables automatic invocation until production Flow is enabled
+      runtimeConfig.setDirectusUrl('https://api.vamo-app.com');
+      expect(runtimeConfig.stripePreviewInvoiceFlow).toBe('');
+      expect(service.isPlanChangeUpgradePreviewConfigured()).toBe(false);
+
+      // Production configuration path activates the exact verified UUID once stripePreviewInvoiceEnabled is true
+      runtimeConfig.updateConfig({ stripePreviewInvoiceEnabled: true });
+      expect(runtimeConfig.stripePreviewInvoiceFlow).toBe(PREVIEW_FLOW_UUID);
+      expect(service.isPlanChangeUpgradePreviewConfigured()).toBe(true);
+    });
+
+    it('previews a $29 -> $59 mid-cycle upgrade with proration credit, proration charge, minor-unit amounts, and prorationDate parity', async () => {
+      runtimeConfig.setDirectusUrl('https://quepasa-api.c1oud7.de');
+      const nowSec = Math.floor(Date.now() / 1000);
+      const periodStart = nowSec - 15 * 86400;
+      const periodEnd = nowSec + 15 * 86400;
+
+      const flowSpy = vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        error: false,
+        mode: 'upgrade',
+        currency: 'usd',
+        subtotal: 1500,
+        discount: 0,
+        tax: 0,
+        total: 1500,
+        lines: [
+          { description: 'Unused time on Starter Plan after mid-cycle', amount: -1450 },
+          { description: 'Remaining time on Basic Plan after mid-cycle', amount: 2950 },
+        ],
+        amountDueNow: 1500,
+        nextAmount: 5900,
+        nextDate: periodEnd,
+        prorationDate: nowSec,
+      });
+
+      const preview = await service.previewSubscriptionPlanChange({
+        subscriptionId: 'sub_midcycle_1',
+        subscriptionItemId: 'si_midcycle_1',
+        subscriptionStatus: 'active',
+        currentPriceId: 'price_starter29',
+        currentPlanName: 'Starter Plan',
+        currentPlanAmount: 2900,
+        currentPlanCurrency: 'usd',
+        currentPlanInterval: 'month',
+        newPriceId: 'price_basic59',
+        newPlanName: 'Basic Plan',
+        newPlanAmount: 5900,
+        newPlanCurrency: 'usd',
+        newPlanInterval: 'month',
+        isUpgrade: true,
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+      });
+
+      expect(flowSpy).toHaveBeenCalledWith(PREVIEW_FLOW_UUID, {
+        priceId: 'price_basic59',
+      });
+      expect(preview.verified).toBe(true);
+      expect(preview.verificationStatus).toBe('verified');
+      expect(preview.prorationCreditAmount).toBe(1450);
+      expect(preview.prorationChargeAmount).toBe(2950);
+      expect(preview.amountDueToday).toBe(1500);
+      expect(preview.renewalAmount).toBe(5900);
+      expect(preview.nextBillingDate).toBe(periodEnd);
+      expect(preview.prorationDate).toBe(nowSec);
+      expect(preview.effectiveDate).toBe(nowSec);
+    });
+
+    it('handles promotional trialing subscriptions, existing subscription discounts, taxes, and $0.00 zero-dollar upgrade invoices', async () => {
+      runtimeConfig.setDirectusUrl('https://quepasa-api.c1oud7.de');
+      const nowSec = Math.floor(Date.now() / 1000);
+      const periodStart = nowSec - 5 * 86400;
+      const periodEnd = nowSec + 25 * 86400;
+
+      // Case A: Existing discount + tax on upgrade
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        error: false,
+        mode: 'upgrade',
+        currency: 'usd',
+        subtotal: 2500,
+        discount: 500,
+        tax: 360,
+        total: 2360,
+        lines: [
+          { description: 'Unused time on Starter Plan', amount: -2400 },
+          { description: 'Remaining time on Basic Plan', amount: 4900 },
+        ],
+        amountDueNow: 2360,
+        nextAmount: 5900,
+        nextDate: periodEnd,
+        prorationDate: nowSec,
+      });
+
+      const discountedWithTax = await service.previewSubscriptionPlanChange({
+        subscriptionId: 'sub_promo_1',
+        subscriptionItemId: 'si_promo_1',
+        subscriptionStatus: 'trialing',
+        currentPriceId: 'price_starter29',
+        currentPlanName: 'Starter Plan',
+        currentPlanAmount: 2900,
+        currentPlanCurrency: 'usd',
+        currentPlanInterval: 'month',
+        newPriceId: 'price_basic59',
+        newPlanName: 'Basic Plan',
+        newPlanAmount: 5900,
+        newPlanCurrency: 'usd',
+        newPlanInterval: 'month',
+        isUpgrade: true,
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+      });
+
+      expect(discountedWithTax.verified).toBe(true);
+      expect(discountedWithTax.discountAmount).toBe(500);
+      expect(discountedWithTax.tax).toBe(360);
+      expect(discountedWithTax.amountDueToday).toBe(2360);
+
+      // Case B: Zero-dollar invoice (e.g. promotional/account credit covers full prorated upgrade)
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        error: false,
+        mode: 'upgrade',
+        currency: 'usd',
+        subtotal: 1500,
+        discount: 0,
+        tax: 0,
+        total: 1500,
+        lines: [
+          { description: 'Unused time on Starter Plan', amount: -1450 },
+          { description: 'Remaining time on Basic Plan', amount: 2950 },
+        ],
+        amountDueNow: 0,
+        nextAmount: 5900,
+        nextDate: periodEnd,
+        prorationDate: nowSec,
+      });
+
+      const zeroDue = await service.previewSubscriptionPlanChange({
+        subscriptionId: 'sub_promo_1',
+        subscriptionItemId: 'si_promo_1',
+        subscriptionStatus: 'trialing',
+        currentPriceId: 'price_starter29',
+        currentPlanName: 'Starter Plan',
+        currentPlanAmount: 0,
+        currentPlanCurrency: 'usd',
+        currentPlanInterval: 'month',
+        newPriceId: 'price_basic59',
+        newPlanName: 'Basic Plan',
+        newPlanAmount: 5900,
+        newPlanCurrency: 'usd',
+        newPlanInterval: 'month',
+        isUpgrade: true,
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+      });
+
+      expect(zeroDue.verified).toBe(true);
+      expect(zeroDue.verificationStatus).toBe('verified');
+      expect(zeroDue.amountDueToday).toBe(0);
+      expect(zeroDue.accountCreditAmount).toBe(1500);
+    });
+
+    it('uses live Stripe nextAmount and nextDate on scheduled downgrades without showing an immediate charge', async () => {
+      runtimeConfig.setDirectusUrl('https://quepasa-api.c1oud7.de');
+      const periodStart = 1700000000;
+      const periodEnd = 1702500000;
+
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        error: false,
+        mode: 'downgrade',
+        currency: 'usd',
+        subtotal: 2900,
+        discount: 580,
+        tax: 0,
+        total: 2320,
+        lines: [{ description: '1 × Starter Plan', amount: 2900 }],
+        amountDueNow: 0,
+        nextAmount: 2320,
+        nextDate: periodEnd,
+        prorationDate: null,
+      });
+
+      const downgradePreview = await service.previewSubscriptionPlanChange({
+        subscriptionId: 'sub_123',
+        subscriptionItemId: 'si_456',
+        subscriptionStatus: 'active',
+        currentPriceId: 'price_basic59',
+        currentPlanName: 'Basic Plan',
+        currentPlanAmount: 5900,
+        currentPlanCurrency: 'usd',
+        currentPlanInterval: 'month',
+        newPriceId: 'price_starter29',
+        newPlanName: 'Starter Plan',
+        newPlanAmount: 2900,
+        newPlanCurrency: 'usd',
+        newPlanInterval: 'month',
+        isUpgrade: false,
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+      });
+
+      expect(downgradePreview.verified).toBe(true);
+      expect(downgradePreview.timing).toBe('scheduled');
+      expect(downgradePreview.amountDueToday).toBe(0);
+      expect(downgradePreview.renewalAmount).toBe(2320);
+      expect(downgradePreview.effectiveDate).toBe(periodEnd);
+    });
+
+    it('degrades gracefully to unavailable when the Flow returns 404/403/500 and blocks on domain refusal or parameter mismatches', async () => {
+      runtimeConfig.setDirectusUrl('https://quepasa-api.c1oud7.de');
+      const nowSec = Math.floor(Date.now() / 1000);
+      const periodStart = nowSec - 10 * 86400;
+      const periodEnd = nowSec + 20 * 86400;
+
+      const baseReq = {
+        subscriptionId: 'sub_123',
+        subscriptionItemId: 'si_456',
+        subscriptionStatus: 'active',
+        currentPriceId: 'price_starter29',
+        currentPlanName: 'Starter Plan',
+        currentPlanAmount: 2900,
+        currentPlanCurrency: 'usd',
+        currentPlanInterval: 'month',
+        newPriceId: 'price_basic59',
+        newPlanName: 'Basic Plan',
+        newPlanAmount: 5900,
+        newPlanCurrency: 'usd',
+        newPlanInterval: 'month',
+        isUpgrade: true,
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+      };
+
+      // 1. Absent or disabled Flow (HTTP 404) -> graceful unavailable fallback
+      const notFoundErr: any = new Error('Flow request failed (404)');
+      notFoundErr.status = 404;
+      vi.spyOn(service, 'flowPost').mockRejectedValueOnce(notFoundErr);
+
+      const unavailable = await service.previewSubscriptionPlanChange(baseReq);
+      expect(unavailable.verified).toBe(false);
+      expect(unavailable.verificationStatus).toBe('unavailable');
+      expect(unavailable.amountDueToday).toBeNull();
+      expect(unavailable.errorCode).toBe('PREVIEW_FLOW_UNAVAILABLE');
+
+      // 2. Invalid/inaccessible subscription (SUBSCRIPTION_NOT_FOUND or mode: 'new') -> mismatch_blocked
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        error: true,
+        code: 'SUBSCRIPTION_NOT_FOUND',
+        message: 'No active subscription found for this account.',
+      });
+      const subMissing = await service.previewSubscriptionPlanChange(baseReq);
+      expect(subMissing.verified).toBe(false);
+      expect(subMissing.verificationStatus).toBe('mismatch_blocked');
+      expect(subMissing.errorCode).toBe('SUBSCRIPTION_NOT_FOUND');
+
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        error: false,
+        mode: 'new',
+        currency: 'usd',
+        subtotal: 5900,
+        discount: 0,
+        tax: 0,
+        total: 5900,
+        lines: [],
+        amountDueNow: 5900,
+        nextAmount: null,
+        nextDate: null,
+        prorationDate: null,
+      });
+      const modeNewMismatch = await service.previewSubscriptionPlanChange(baseReq);
+      expect(modeNewMismatch.verified).toBe(false);
+      expect(modeNewMismatch.verificationStatus).toBe('mismatch_blocked');
+      expect(modeNewMismatch.errorCode).toBe('SUBSCRIPTION_NOT_FOUND');
+
+      // 3. Preview/execution parameter mismatch (periodEnd anchor mismatch & catalog nextAmount mismatch & interval mismatch)
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        error: false,
+        mode: 'upgrade',
+        currency: 'usd',
+        subtotal: 1500,
+        discount: 0,
+        tax: 0,
+        total: 1500,
+        lines: [],
+        amountDueNow: 1500,
+        nextAmount: 5900,
+        nextDate: periodEnd + 86400, // Mismatched periodEnd!
+        prorationDate: nowSec,
+      });
+      const anchorMismatch = await service.previewSubscriptionPlanChange(baseReq);
+      expect(anchorMismatch.verified).toBe(false);
+      expect(anchorMismatch.verificationStatus).toBe('mismatch_blocked');
+      expect(anchorMismatch.errorCode).toBe('PREVIEW_EXECUTION_PARAMETER_MISMATCH');
+
+      const intervalMismatch = await service.previewSubscriptionPlanChange({
+        ...baseReq,
+        newPlanInterval: 'year',
+      });
+      expect(intervalMismatch.verified).toBe(false);
+      expect(intervalMismatch.verificationStatus).toBe('mismatch_blocked');
+      expect(intervalMismatch.errorCode).toBe('PREVIEW_EXECUTION_PARAMETER_MISMATCH');
+
+      // 4. Stale server prorationDate -> verificationStatus: 'expired'
+      vi.spyOn(service, 'flowPost').mockResolvedValueOnce({
+        error: false,
+        mode: 'upgrade',
+        currency: 'usd',
+        subtotal: 1500,
+        discount: 0,
+        tax: 0,
+        total: 1500,
+        lines: [],
+        amountDueNow: 1500,
+        nextAmount: 5900,
+        nextDate: periodEnd,
+        prorationDate: nowSec - 600, // 10 minutes old (> 5 min TTL)
+      });
+      const stalePreview = await service.previewSubscriptionPlanChange(baseReq);
+      expect(stalePreview.verified).toBe(false);
+      expect(stalePreview.verificationStatus).toBe('expired');
+      expect(stalePreview.errorCode).toBe('UPGRADE_PREVIEW_EXPIRED');
+    });
+
+    it('forwards verified prorationDate on upgrade execution and prevents duplicate in-flight plan changes', async () => {
+      let resolveChange!: (val: any) => void;
+      const flowSpy = vi.spyOn(service, 'flowPost').mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveChange = resolve;
+          }),
+      );
+
+      const prorationDate = 1701234567;
+      const p1 = service.changeSubscriptionPlan(
+        'sub_123',
+        'si_456',
+        'price_basic59',
+        true,
+        'Basic Plan',
+        1700000000,
+        1702500000,
+        'price_starter29',
+        {
+          prorationDate,
+          approvedAmountDue: 1500,
+          approvedCurrency: 'usd',
+        },
+      );
+      const p2 = service.changeSubscriptionPlan(
+        'sub_123',
+        'si_456',
+        'price_basic59',
+        true,
+        'Basic Plan',
+        1700000000,
+        1702500000,
+        'price_starter29',
+        {
+          prorationDate,
+          approvedAmountDue: 1500,
+          approvedCurrency: 'usd',
+        },
+      );
+
+      expect(flowSpy).toHaveBeenCalledTimes(1);
+      expect(flowSpy).toHaveBeenCalledWith('2b1a4494-8999-4c27-b70e-ddcc47bb16f3', {
+        subscriptionId: 'sub_123',
+        subscriptionItemId: 'si_456',
+        newPriceId: 'price_basic59',
+        isUpgrade: true,
+        newPlanName: 'Basic Plan',
+        currentPeriodStart: 1700000000,
+        currentPeriodEnd: 1702500000,
+        currentPriceId: 'price_starter29',
+        prorationDate,
+      });
+
+      resolveChange({
+        subscriptionId: 'sub_123',
+        status: 'active',
+        priceId: 'price_basic59',
+        invoiceStatus: 'paid',
+        invoiceAmountDue: 1500,
+        invoiceCurrency: 'usd',
+      });
+
+      const [r1, r2] = await Promise.all([p1, p2]);
+      expect(r1.status).toBe('confirmed');
+      expect(r2.status).toBe('confirmed');
+      expect(flowSpy).toHaveBeenCalledTimes(1);
     });
   });
 });
