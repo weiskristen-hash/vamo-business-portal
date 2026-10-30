@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ListingEditorComponent } from './listing-editor.component';
+import { ListingsComponent } from '../listings.component';
 import { AuthService } from '../../../core/services/auth.service';
 import { BusinessService } from '../../../core/services/business.service';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
@@ -2339,7 +2340,7 @@ describe('ListingEditorComponent', () => {
         live: 'Live bands, DJs, karaoke, dance nights',
         food: 'Brunch, happy hours, tastings, dining & drink specials',
         excursions: 'Boat trips, guided tours, ATV rentals, equipment rentals',
-        wellness: 'Massages, spa treatments, beauty services, wellness workshops',
+        wellness: 'Yoga, massages, spa treatments, meditation, wellness workshops',
         arts: 'Art classes, exhibitions, cultural tours, craft workshops',
         sports: 'Padel, yoga, fitness classes, hikes, tournaments',
         personalized: 'Photography sessions, wedding/event planning, private chefs, custom experiences',
@@ -2441,38 +2442,153 @@ describe('ListingEditorComponent', () => {
       expect(component.activeCategoryTooltip).toBeNull();
     });
 
-    it('places Yoga under Sports & Outdoor instead of Wellness & Beauty in both English and Spanish', () => {
+    it('renames Wellness & Beauty to Yoga & Wellness with updated tooltip examples in EN and ES while preserving wellness ID, lotus icon, position, and other categories', () => {
       i18nService.setLang('en');
       fixture.detectChanges();
 
-      const wellnessEn = fixture.nativeElement.querySelector(
+      // Category position (index 3, between excursions and arts), stored ID ('wellness'), and lotus icon preserved
+      expect(component.categories.map((c) => c.value)).toEqual([
+        'live',
+        'food',
+        'excursions',
+        'wellness',
+        'arts',
+        'sports',
+        'personalized',
+        'celebrations',
+        'other',
+      ]);
+      expect(component.categories[3]).toEqual({
+        value: 'wellness',
+        label: 'Yoga & Wellness',
+        emoji: '💆',
+        icon: '/assets/category-icons/Wellness.png',
+      });
+
+      const cardButtons = Array.from(
+        fixture.nativeElement.querySelectorAll('.category-grid .category-card-btn')
+      ) as HTMLButtonElement[];
+      const wellnessBtn = cardButtons[3];
+      const wellnessIcon = wellnessBtn.querySelector('img.cat-icon-img') as HTMLImageElement;
+      const wellnessLabel = wellnessBtn.querySelector('.cat-label') as HTMLElement;
+      const wellnessTitle = fixture.nativeElement.querySelector(
+        '#cat-tooltip-wellness .category-tooltip-title'
+      ) as HTMLElement;
+      const wellnessExamples = fixture.nativeElement.querySelector(
         '#cat-tooltip-wellness .category-tooltip-examples'
       ) as HTMLElement;
-      const sportsEn = fixture.nativeElement.querySelector(
+      const sportsExamples = fixture.nativeElement.querySelector(
         '#cat-tooltip-sports .category-tooltip-examples'
       ) as HTMLElement;
 
-      expect(wellnessEn.textContent?.trim()).toBe(
-        'Massages, spa treatments, beauty services, wellness workshops'
+      expect(wellnessIcon.getAttribute('src')).toBe('/assets/category-icons/Wellness.png');
+      expect(wellnessLabel.textContent?.trim()).toBe('Yoga & Wellness');
+      expect(wellnessTitle.textContent?.trim()).toBe('Yoga & Wellness');
+      expect(wellnessExamples.textContent?.trim()).toBe(
+        'Yoga, massages, spa treatments, meditation, wellness workshops'
       );
-      expect(wellnessEn.textContent?.toLowerCase()).not.toContain('yoga');
-      expect(sportsEn.textContent?.trim()).toBe(
+      expect(component.getCategoryLabel('wellness')).toBe('Yoga & Wellness');
+      expect(fixture.nativeElement.textContent).not.toContain('Wellness & Beauty');
+      // Other categories remain untouched
+      expect(sportsExamples.textContent?.trim()).toBe(
         'Padel, yoga, fitness classes, hikes, tournaments'
       );
-      expect(sportsEn.textContent?.toLowerCase()).toContain('yoga');
 
+      // Selecting Yoga & Wellness stores canonical 'wellness' category ID
+      wellnessBtn.click();
+      fixture.detectChanges();
+      expect(component.draft.category).toBe('wellness');
+      expect(wellnessBtn.getAttribute('aria-pressed')).toBe('true');
+
+      // Spanish label and tooltip examples
       i18nService.setLang('es');
       fixture.detectChanges();
 
-      expect(wellnessEn.textContent?.trim()).toBe(
-        'Masajes, tratamientos de spa, servicios de belleza, talleres de bienestar'
+      expect(wellnessLabel.textContent?.trim()).toBe('Yoga y Bienestar');
+      expect(wellnessTitle.textContent?.trim()).toBe('Yoga y Bienestar');
+      expect(wellnessExamples.textContent?.trim()).toBe(
+        'Yoga, masajes, tratamientos de spa, meditación, talleres de bienestar'
       );
-      expect(wellnessEn.textContent?.toLowerCase()).not.toContain('yoga');
-      expect(sportsEn.textContent?.trim()).toBe(
+      expect(component.getCategoryLabel('wellness')).toBe('Yoga y Bienestar');
+      expect(fixture.nativeElement.textContent).not.toContain('Bienestar y Belleza');
+      expect(sportsExamples.textContent?.trim()).toBe(
         'Pádel, yoga, clases de fitness, senderismo, torneos'
       );
-      expect(sportsEn.textContent?.toLowerCase()).toContain('yoga');
     });
   });
 
+});
+
+describe('Listings Screen Yoga & Wellness Category Consistency', () => {
+  it('renders Yoga & Wellness (EN) and Yoga y Bienestar (ES) consistently in Listings category filter and event badges while preserving wellness value', async () => {
+    const wellnessEvent: VamoEvent = {
+      id: 'ev-wellness-1',
+      name: 'Morning Beach Yoga & Meditation',
+      category: 'wellness',
+      status: 'published',
+      mode: 'recurring',
+      recurring: { days: ['mon', 'wed', 'fri'] },
+      isFree: true,
+    };
+    const authSpy = {
+      currentUser: { id: 'user-1', email: 'host@beachbar.com', provider_link: { id: 'provider-999' } },
+      safeRequest: vi.fn((fn: () => unknown) => fn()),
+    };
+    const businessSpy = {
+      getEventsForProvider: vi.fn().mockResolvedValue([wellnessEvent]),
+      isEventUpcomingOrOngoing: vi.fn().mockReturnValue(true),
+      getAssetUrl: vi.fn((id: string) => `https://api.vamo-app.com/assets/${id}`),
+    };
+    const accessSpy = {
+      check: vi.fn().mockResolvedValue({ allowed: true, usesAddonSlot: false }),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [ListingsComponent],
+      providers: [
+        provideRouter([]),
+        { provide: AuthService, useValue: authSpy },
+        { provide: BusinessService, useValue: businessSpy },
+        { provide: PublishingAccessService, useValue: accessSpy },
+      ],
+    }).compileComponents();
+
+    const i18nService = TestBed.inject(I18nService);
+    i18nService.setLang('en');
+
+    const listingsFixture = TestBed.createComponent(ListingsComponent);
+    const listingsComponent = listingsFixture.componentInstance;
+    listingsFixture.detectChanges();
+    await listingsFixture.whenStable();
+    listingsFixture.detectChanges();
+
+    const wellnessOption = listingsFixture.nativeElement.querySelector(
+      'select.filter-select option[value="wellness"]'
+    ) as HTMLOptionElement;
+    expect(wellnessOption).toBeTruthy();
+    expect(wellnessOption.textContent?.trim()).toBe('Yoga & Wellness');
+
+    const badgeIcon = listingsFixture.nativeElement.querySelector(
+      '.category-badge img.cat-badge-icon'
+    ) as HTMLImageElement;
+    const badgeLabel = listingsFixture.nativeElement.querySelector(
+      '.category-badge span'
+    ) as HTMLElement;
+    expect(badgeIcon.getAttribute('src')).toBe('/assets/category-icons/Wellness.png');
+    expect(badgeLabel.textContent?.trim()).toBe('Yoga & Wellness');
+    expect(listingsComponent.getCategoryLabel('wellness')).toBe('Yoga & Wellness');
+
+    // Filtering by 'wellness' continues to match stored 'wellness' events
+    listingsComponent.categoryFilter = 'wellness';
+    listingsComponent.applyFilters();
+    expect(listingsComponent.filteredEvents.length).toBe(1);
+    expect(listingsComponent.filteredEvents[0].category).toBe('wellness');
+
+    // Switch to Spanish
+    i18nService.setLang('es');
+    listingsFixture.detectChanges();
+    expect(wellnessOption.textContent?.trim()).toBe('Yoga y Bienestar');
+    expect(badgeLabel.textContent?.trim()).toBe('Yoga y Bienestar');
+    expect(listingsComponent.getCategoryLabel('wellness')).toBe('Yoga y Bienestar');
+  });
 });

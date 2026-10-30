@@ -32,7 +32,7 @@ export const EVENT_CATEGORIES: EventCategory[] = [
   { value: 'live', label: 'Live Music & Shows', emoji: '🎶', icon: '/assets/category-icons/music_nightlife.png' },
   { value: 'food', label: 'Food & Specials', emoji: '🍽', icon: '/assets/category-icons/Food_drink.png' },
   { value: 'excursions', label: 'Tours & Excursions', emoji: '🛶', icon: '/assets/category-icons/excursion.png' },
-  { value: 'wellness', label: 'Wellness & Spa', emoji: '💆', icon: '/assets/category-icons/Wellness.png' },
+  { value: 'wellness', label: 'Yoga & Wellness', emoji: '💆', icon: '/assets/category-icons/Wellness.png' },
   { value: 'arts', label: 'Arts & Culture', emoji: '🎨', icon: '/assets/category-icons/arts_and_culture.png' },
   { value: 'sports', label: 'Sports & Fitness', emoji: '⚽', icon: '/assets/category-icons/sports_outdoor.png' },
   { value: 'personalized', label: 'Unique Experiences', emoji: '✨', icon: '/assets/category-icons/personalized.png' },
