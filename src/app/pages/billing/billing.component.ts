@@ -728,6 +728,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             </h4>
             <span
               class="verification-status-badge"
+              data-testid="plan-change-verification-badge"
               [attr.data-verification-status]="getPlanChangeVerificationStatus()"
               [class.verification-status-badge--verified]="getPlanChangeVerificationStatus() === 'verified'"
               [class.verification-status-badge--verifying]="getPlanChangeVerificationStatus() === 'verifying'"
@@ -764,12 +765,44 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             <div class="summary-row">
               <span class="summary-label">{{ 'PORTAL.BILLING.REVIEW_EFFECTIVE_DATE' | translate }}</span>
               <span class="summary-value" data-testid="review-effective-date">
-                {{ isSelectedPlanUpgrade() ? ('PORTAL.BILLING.REVIEW_EFFECTIVE_IMMEDIATE' | translate) : formatDate(sub.currentPeriodEnd) }}
+                {{ getPlanChangeEffectiveDateDisplay(sub) }}
               </span>
             </div>
 
             <div
-              *ngIf="isSelectedPlanUpgrade() && getEffectivePlanChangePreview()?.verified && getEffectivePlanChangePreview()?.prorationAmount !== null && getEffectivePlanChangePreview()?.prorationAmount !== undefined"
+              *ngIf="planChangePreviewLoading()"
+              class="summary-row"
+              data-testid="plan-change-preview-loading"
+              role="status"
+            >
+              <span class="summary-label">{{ 'PORTAL.BILLING.VERIFICATION_STATUS_LABEL' | translate }}</span>
+              <span class="summary-value">{{ 'PORTAL.BILLING.PLAN_CHANGE_PREVIEW_LOADING' | translate }}</span>
+            </div>
+
+            <div
+              *ngIf="!planChangePreviewLoading() && isSelectedPlanUpgrade() && isPlanChangePreviewVerifiedCurrent() && getEffectivePlanChangePreview()?.prorationCreditAmount !== null && getEffectivePlanChangePreview()?.prorationCreditAmount !== undefined"
+              class="summary-row summary-row--discount"
+              data-testid="plan-change-proration-credit"
+            >
+              <span class="summary-label">{{ 'PORTAL.BILLING.REVIEW_PRORATION_CREDIT' | translate }}</span>
+              <span class="summary-value summary-discount-amount" data-testid="review-proration-credit">
+                {{ (getEffectivePlanChangePreview()!.prorationCreditAmount! > 0 ? '-' : '') + formatExactPrice(getEffectivePlanChangePreview()!.prorationCreditAmount!, getEffectivePlanChangePreview()!.currency) }}
+              </span>
+            </div>
+
+            <div
+              *ngIf="!planChangePreviewLoading() && isSelectedPlanUpgrade() && isPlanChangePreviewVerifiedCurrent() && getEffectivePlanChangePreview()?.prorationChargeAmount !== null && getEffectivePlanChangePreview()?.prorationChargeAmount !== undefined"
+              class="summary-row"
+              data-testid="plan-change-proration-charge"
+            >
+              <span class="summary-label">{{ 'PORTAL.BILLING.REVIEW_PRORATION_CHARGE' | translate }}</span>
+              <span class="summary-value" data-testid="review-proration-charge">
+                {{ formatExactPrice(getEffectivePlanChangePreview()!.prorationChargeAmount!, getEffectivePlanChangePreview()!.currency) }}
+              </span>
+            </div>
+
+            <div
+              *ngIf="!planChangePreviewLoading() && isSelectedPlanUpgrade() && isPlanChangePreviewVerifiedCurrent() && (getEffectivePlanChangePreview()?.prorationCreditAmount === null || getEffectivePlanChangePreview()?.prorationCreditAmount === undefined) && (getEffectivePlanChangePreview()?.prorationChargeAmount === null || getEffectivePlanChangePreview()?.prorationChargeAmount === undefined) && getEffectivePlanChangePreview()?.prorationAmount !== null && getEffectivePlanChangePreview()?.prorationAmount !== undefined"
               class="summary-row"
               data-testid="plan-change-proration-adjustment"
             >
@@ -791,23 +824,34 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             </div>
 
             <div
-              *ngIf="getEffectivePlanChangePreview()?.verified && (getEffectivePlanChangePreview()?.discountAmount ?? 0) > 0"
+              *ngIf="!planChangePreviewLoading() && isSelectedPlanUpgrade() && isPlanChangePreviewVerifiedCurrent() && (getEffectivePlanChangePreview()?.discountAmount ?? 0) > 0"
               class="summary-row summary-row--discount"
               data-testid="plan-change-discount-amount"
             >
               <span class="summary-label">{{ 'PORTAL.BILLING.SUMMARY_DISCOUNT' | translate }}</span>
-              <span class="summary-value summary-discount-amount">
+              <span class="summary-value summary-discount-amount" data-testid="review-discount-amount">
                 -{{ formatExactPrice(getEffectivePlanChangePreview()!.discountAmount, getEffectivePlanChangePreview()!.currency) }}
               </span>
             </div>
 
             <div
-              *ngIf="getEffectivePlanChangePreview()?.verified && (getEffectivePlanChangePreview()?.tax ?? 0) > 0"
+              *ngIf="!planChangePreviewLoading() && isSelectedPlanUpgrade() && isPlanChangePreviewVerifiedCurrent() && (getEffectivePlanChangePreview()?.accountCreditAmount ?? 0) > 0"
+              class="summary-row summary-row--discount"
+              data-testid="plan-change-account-credit"
+            >
+              <span class="summary-label">{{ 'PORTAL.BILLING.REVIEW_ACCOUNT_CREDIT' | translate }}</span>
+              <span class="summary-value summary-discount-amount" data-testid="review-account-credit">
+                -{{ formatExactPrice(getEffectivePlanChangePreview()!.accountCreditAmount!, getEffectivePlanChangePreview()!.currency) }}
+              </span>
+            </div>
+
+            <div
+              *ngIf="!planChangePreviewLoading() && isSelectedPlanUpgrade() && isPlanChangePreviewVerifiedCurrent() && (getEffectivePlanChangePreview()?.tax ?? 0) > 0"
               class="summary-row"
               data-testid="plan-change-tax-amount"
             >
               <span class="summary-label">{{ 'PORTAL.BILLING.SUMMARY_TAX' | translate }}</span>
-              <span class="summary-value">
+              <span class="summary-value" data-testid="review-tax-amount">
                 {{ formatExactPrice(getEffectivePlanChangePreview()!.tax, getEffectivePlanChangePreview()!.currency) }}
               </span>
             </div>
@@ -827,21 +871,34 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             </div>
 
             <div *ngIf="getPlanChangeRenewalDisclosureText(selPlan, sub) as planChangeRenewal" class="summary-row summary-row--renewal">
-              <span class="summary-label">{{ 'PORTAL.BILLING.SUMMARY_RENEWAL_LABEL' | translate }}</span>
-              <span class="summary-value summary-renewal-text" data-testid="plan-change-renewal-disclosure">
+              <span class="summary-label">{{ 'PORTAL.BILLING.REVIEW_NEXT_RENEWAL_LABEL' | translate }}</span>
+              <span
+                class="summary-value summary-renewal-text"
+                data-testid="plan-change-renewal-disclosure"
+                [attr.data-next-renewal-amount]="getPlanChangeNextRenewalAmountDisplay(selPlan, sub)"
+                [attr.data-next-renewal-date]="getPlanChangeNextRenewalDateDisplay(sub)"
+              >
                 {{ planChangeRenewal }}
               </span>
             </div>
           </div>
 
-          <p *ngIf="!isSelectedPlanUpgrade()" class="plan-change-schedule-note" data-testid="downgrade-confirmation-notice">
+          <p *ngIf="!isSelectedPlanUpgrade() && !isPlanChangePreviewMismatchBlocked()" class="plan-change-schedule-note" data-testid="downgrade-confirmation-notice">
             {{ 'PORTAL.BILLING.REVIEW_DOWNGRADE_NO_CHARGE_TODAY' | translate: {
               currentPlan: (planTitleKey(sub.plan.productName) | translate),
-              date: formatDate(sub.currentPeriodEnd),
+              date: getPlanChangeNextRenewalDateDisplay(sub),
               newPlan: (planTitleKey(selPlan.name) | translate),
-              amount: formatExactPrice(selPlan.amount, selPlan.currency),
+              amount: getPlanChangeNextRenewalAmountDisplay(selPlan, sub),
               interval: ('PORTAL.BILLING.INTERVAL_' + selPlan.interval.toUpperCase() | translate)
             } }}
+          </p>
+
+          <p
+            *ngIf="!planChangePreviewLoading() && isSelectedPlanUpgrade() && isPlanChangePreviewVerifiedCurrent()"
+            class="plan-change-schedule-note"
+            data-testid="plan-change-preview-note"
+          >
+            {{ 'PORTAL.BILLING.PLAN_CHANGE_PREVIEW_NOTE' | translate }}
           </p>
 
           <p *ngIf="hasScheduledDowngrade(sub) && !isPendingPlan(selPlan)" class="plan-change-schedule-note" data-testid="existing-scheduled-change-notice">
@@ -851,6 +908,48 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               date: formatDate(sub.pendingPeriodEnd!)
             } }}
           </p>
+
+          <div
+            *ngIf="isPlanChangePreviewExpiredAlertVisible()"
+            class="alert alert-warning plan-change-preview-expired-alert"
+            data-testid="plan-change-preview-expired-alert"
+            role="alert"
+          >
+            <span class="alert-icon">⚠️</span>
+            <div class="plan-change-inline-alert-content">
+              <span class="alert-text">{{ 'PORTAL.BILLING.ERROR_UPGRADE_PREVIEW_EXPIRED' | translate }}</span>
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm"
+                data-testid="refresh-plan-change-preview-btn"
+                [disabled]="planChangePreviewLoading() || isLoading()"
+                (click)="refreshSelectedPlanChangePreview()"
+              >
+                {{ 'PORTAL.BILLING.BTN_REFRESH_PREVIEW' | translate }}
+              </button>
+            </div>
+          </div>
+
+          <div
+            *ngIf="isPlanChangePreviewMismatchBlocked()"
+            class="alert alert-warning plan-change-parameter-mismatch-alert"
+            data-testid="plan-change-parameter-mismatch-alert"
+            role="alert"
+          >
+            <span class="alert-icon">⚠️</span>
+            <div class="plan-change-inline-alert-content">
+              <span class="alert-text">{{ 'PORTAL.BILLING.ERROR_PLAN_CHANGE_PREVIEW_MISMATCH' | translate }}</span>
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm"
+                data-testid="refresh-plan-change-billing-btn"
+                [disabled]="isLoading() || planChangePreviewLoading()"
+                (click)="refreshBilling()"
+              >
+                {{ 'PORTAL.BILLING.BTN_REFRESH_BILLING' | translate }}
+              </button>
+            </div>
+          </div>
 
           <div *ngIf="isUpgradeAmountUnknown()" class="alert alert-warning upgrade-amount-unknown-alert" data-testid="upgrade-amount-unknown-alert" role="alert">
             <span class="alert-icon">⚠️</span>
@@ -2647,8 +2746,9 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 .plan-change-review-summary {
   margin-bottom: 1rem;
   .plan-change-schedule-note { margin: 0.75rem 0 0; font-size: 0.85rem; color: var(--vamo-text-muted); }
-  .upgrade-amount-unknown-alert, .upgrade-charge-enforcement-alert { margin-top: 0.75rem; margin-bottom: 0; }
+  .upgrade-amount-unknown-alert, .upgrade-charge-enforcement-alert, .plan-change-preview-expired-alert, .plan-change-parameter-mismatch-alert { margin-top: 0.75rem; margin-bottom: 0; }
   .upgrade-unknown-charge-content { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; }
+  .plan-change-inline-alert-content { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex: 1; flex-wrap: wrap; }
   .upgrade-unknown-charge-ack { display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.82rem; font-weight: 500; cursor: pointer; }
 }
 .plan-change-payment-required-box {
@@ -3804,6 +3904,8 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.clearError();
 
     // Changing or deselecting plan invalidates prior verified total and requires recalculation
+    ++this.planChangePreviewSeq;
+    this.planChangePreviewLoading.set(false);
     this.checkoutPreview.set(null);
     this.checkoutVerificationStatus.set('unverified');
     this.planChangePreview.set(null);
@@ -4586,6 +4688,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       const preview = await this.stripeService.previewSubscriptionPlanChange({
         subscriptionId: sub.subscriptionId,
         subscriptionItemId: sub.subscriptionItemId,
+        subscriptionStatus: sub.status,
         currentPriceId: sub.plan.priceId,
         currentPlanName: sub.plan.productName,
         currentPlanAmount: sub.plan.amount,
@@ -4619,6 +4722,50 @@ export class BillingComponent implements OnInit, OnDestroy {
     }
   }
 
+  async refreshSelectedPlanChangePreview(): Promise<PlanChangePreviewResult | null> {
+    const plan = this.selectedPlan();
+    const sub = this.subscription();
+    if (!plan || !sub) return null;
+    this.upgradeUnverifiedAmountAcknowledged.set(false);
+    this.clearError();
+    this.capturePlanChangeReviewSnapshot(plan);
+    const appliedPromo =
+      this.isPlanChangePromoSupported() && this.promoResult()?.valid
+        ? (this.couponCode().trim() || this.promoResult()?.name || null)
+        : null;
+    return this.refreshPlanChangePreview(plan, appliedPromo);
+  }
+
+  private async revalidateOpenPlanChangePreview(): Promise<void> {
+    ++this.planChangePreviewSeq;
+    this.planChangePreviewLoading.set(false);
+    this.planChangePreview.set(null);
+    this.upgradeUnverifiedAmountAcknowledged.set(false);
+
+    const selPlan = this.selectedPlan();
+    const sub = this.subscription();
+    if (!selPlan || !sub || this.subscriptionLoadError()) {
+      this.reviewSubscriptionSnapshot.set(null);
+      this.reviewTargetPriceId.set(null);
+      return;
+    }
+
+    if (this.isCurrentPlan(selPlan) || this.isPendingPlan(selPlan)) {
+      this.showChangePlanSection.set(false);
+      this.selectedPlan.set(null);
+      this.reviewSubscriptionSnapshot.set(null);
+      this.reviewTargetPriceId.set(null);
+      return;
+    }
+
+    this.capturePlanChangeReviewSnapshot(selPlan);
+    const appliedPromo =
+      this.isPlanChangePromoSupported() && this.promoResult()?.valid
+        ? (this.couponCode().trim() || this.promoResult()?.name || null)
+        : null;
+    await this.refreshPlanChangePreview(selPlan, appliedPromo);
+  }
+
   getEffectivePlanChangePreview(): PlanChangePreviewResult | null {
     const existing = this.planChangePreview();
     if (existing) return existing;
@@ -4640,6 +4787,7 @@ export class BillingComponent implements OnInit, OnDestroy {
         currency: (plan.currency || sub.plan.currency || 'usd').toLowerCase(),
         renewalAmount: plan.amount,
         renewalInterval: plan.interval || 'month',
+        nextBillingDate: sub.currentPeriodEnd,
         promoSupported: this.isPlanChangePromoSupported(),
         couponState: 'not_applied',
         promoCode: null,
@@ -4664,6 +4812,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       currency: (plan.currency || sub.plan.currency || 'usd').toLowerCase(),
       renewalAmount: plan.amount,
       renewalInterval: plan.interval || 'month',
+      nextBillingDate: sub.currentPeriodEnd,
       promoSupported: this.isPlanChangePromoSupported(),
       couponState: 'not_applied',
       promoCode: null,
@@ -4685,16 +4834,33 @@ export class BillingComponent implements OnInit, OnDestroy {
     return false;
   }
 
+  isPlanChangePreviewVerifiedCurrent(): boolean {
+    if (this.planChangePreviewLoading()) return false;
+    const preview = this.getEffectivePlanChangePreview();
+    if (!preview || !preview.verified || typeof preview.amountDueToday !== 'number') return false;
+    if (this.isPlanChangePreviewExpired(preview)) return false;
+    if (this.isUpgradeChargeEnforcementBlocked()) return false;
+    return true;
+  }
+
+  isPlanChangePreviewExpiredAlertVisible(): boolean {
+    if (!this.isSelectedPlanUpgrade() || this.planChangePreviewLoading()) return false;
+    return this.isPlanChangePreviewExpired(this.planChangePreview());
+  }
+
+  isPlanChangePreviewMismatchBlocked(): boolean {
+    if (this.planChangePreviewLoading()) return false;
+    const preview = this.planChangePreview();
+    return Boolean(preview && preview.verificationStatus === 'mismatch_blocked');
+  }
+
   isUpgradeAmountUnknown(): boolean {
     if (!this.isSelectedPlanUpgrade()) return false;
     if (this.planChangePreviewLoading()) return false;
+    if (this.isPlanChangePreviewExpiredAlertVisible()) return false;
+    if (this.isPlanChangePreviewMismatchBlocked()) return false;
     const preview = this.getEffectivePlanChangePreview();
-    return (
-      !preview ||
-      !preview.verified ||
-      preview.amountDueToday === null ||
-      this.isPlanChangePreviewExpired(preview)
-    );
+    return !preview || !preview.verified || preview.amountDueToday === null;
   }
 
   requiresUnknownUpgradeChargeAcknowledgement(): boolean {
@@ -4734,37 +4900,84 @@ export class BillingComponent implements OnInit, OnDestroy {
       case 'expired':
         return 'PORTAL.BILLING.VERIFICATION_BADGE_EXPIRED';
       case 'mismatch_blocked':
-        return 'PORTAL.BILLING.VERIFICATION_BADGE_BLOCKED';
       case 'unavailable':
-        return 'PORTAL.BILLING.VERIFICATION_BADGE_UNAVAILABLE';
+        return 'PORTAL.BILLING.PLAN_CHANGE_PREVIEW_UNAVAILABLE';
       case 'unverified':
       default:
         return 'PORTAL.BILLING.VERIFICATION_BADGE_UNVERIFIED';
     }
   }
 
+  getPlanChangeEffectiveDateDisplay(sub: StripeSubscription): string {
+    const preview = this.getEffectivePlanChangePreview();
+    if (this.isSelectedPlanUpgrade()) {
+      if (
+        this.isPlanChangePreviewVerifiedCurrent() &&
+        typeof preview?.effectiveDate === 'number' &&
+        Number.isFinite(preview.effectiveDate) &&
+        preview.effectiveDate > 0
+      ) {
+        return this.i18n.t('PORTAL.BILLING.REVIEW_EFFECTIVE_IMMEDIATE_DATED', {
+          date: this.formatDate(preview.effectiveDate),
+        });
+      }
+      return this.i18n.t('PORTAL.BILLING.REVIEW_EFFECTIVE_IMMEDIATE');
+    }
+    const scheduledTs =
+      typeof preview?.effectiveDate === 'number' &&
+      Number.isFinite(preview.effectiveDate) &&
+      preview.effectiveDate > 0
+        ? preview.effectiveDate
+        : sub.currentPeriodEnd;
+    return this.formatDate(scheduledTs);
+  }
+
   getPlanChangeDueTodayDisplay(plan: StripePlan, sub: StripeSubscription): string {
+    if (this.planChangePreviewLoading()) {
+      return this.i18n.t('PORTAL.BILLING.VERIFICATION_BADGE_VERIFYING');
+    }
     const preview = this.getEffectivePlanChangePreview();
     const currency = preview?.currency || plan.currency || sub.plan.currency || 'usd';
-    if (preview && preview.verified && typeof preview.amountDueToday === 'number') {
+    if (
+      preview &&
+      preview.verified &&
+      !this.isPlanChangePreviewExpired(preview) &&
+      typeof preview.amountDueToday === 'number'
+    ) {
       return this.formatExactPrice(preview.amountDueToday, currency);
     }
     return this.i18n.t('PORTAL.BILLING.REVIEW_AMOUNT_UNKNOWN');
   }
 
-  getPlanChangeRenewalDisclosureText(plan: StripePlan, sub: StripeSubscription): string {
+  getPlanChangeNextRenewalAmountDisplay(plan: StripePlan, sub: StripeSubscription): string {
     const preview = this.getEffectivePlanChangePreview();
     const currency = preview?.currency || plan.currency || sub.plan.currency || 'usd';
     const renewalAmountCents = preview?.renewalAmount ?? plan.amount;
+    return this.formatExactPrice(renewalAmountCents, currency);
+  }
+
+  getPlanChangeNextRenewalDateDisplay(sub: StripeSubscription): string {
+    const preview = this.getEffectivePlanChangePreview();
+    const nextTs =
+      typeof preview?.nextBillingDate === 'number' &&
+      Number.isFinite(preview.nextBillingDate) &&
+      preview.nextBillingDate > 0
+        ? preview.nextBillingDate
+        : sub.currentPeriodEnd;
+    return this.formatDate(nextTs);
+  }
+
+  getPlanChangeRenewalDisclosureText(plan: StripePlan, sub: StripeSubscription): string {
+    const preview = this.getEffectivePlanChangePreview();
     const intervalKey =
       (preview?.renewalInterval || plan.interval) === 'year'
         ? 'PORTAL.BILLING.INTERVAL_YEAR'
         : 'PORTAL.BILLING.INTERVAL_MONTH';
     const intervalLabel = this.i18n.t(intervalKey);
     return this.i18n.t('PORTAL.BILLING.REVIEW_RENEWAL_STARTING_DATE', {
-      amount: this.formatExactPrice(renewalAmountCents, currency),
+      amount: this.getPlanChangeNextRenewalAmountDisplay(plan, sub),
       interval: intervalLabel,
-      date: this.formatDate(sub.currentPeriodEnd),
+      date: this.getPlanChangeNextRenewalDateDisplay(sub),
     });
   }
 
@@ -4788,6 +5001,8 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (this.paymentActive()) {
       this.cancelPayment();
     }
+    ++this.planChangePreviewSeq;
+    this.planChangePreviewLoading.set(false);
     this.showChangePlanSection.set(false);
     this.selectedPlan.set(null);
     this.selectedSavedMethod.set(null);
@@ -4818,6 +5033,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (this.planChangeUnverified()) return false;
     if (this.isCurrentPlan(newPlan) || this.isPendingPlan(newPlan)) return false;
     if (this.hasSubscriptionChangedDuringReview()) return false;
+    if (this.isPlanChangePreviewMismatchBlocked()) return false;
 
     // Require a usable saved payment method on file and block if missing, expired, or unverified
     if (!this.hasUsablePlanChangePaymentMethod()) return false;
@@ -4856,6 +5072,11 @@ export class BillingComponent implements OnInit, OnDestroy {
 
     if (this.hasSubscriptionChangedDuringReview()) {
       this.setTranslatedError('PORTAL.BILLING.ERROR_SUBSCRIPTION_STATE_CHANGED');
+      return;
+    }
+
+    if (this.isPlanChangePreviewMismatchBlocked()) {
+      this.setTranslatedError('PORTAL.BILLING.ERROR_PLAN_CHANGE_PREVIEW_MISMATCH');
       return;
     }
 
@@ -4926,9 +5147,19 @@ export class BillingComponent implements OnInit, OnDestroy {
         ? (this.promoResult()?.promoCodeId ?? null)
         : null;
     const verifiedPm = this.getVerifiedPlanChangePaymentMethod();
+    const verifiedProrationDate =
+      isUpgrade &&
+      preview?.verified &&
+      !this.isPlanChangePreviewExpired(preview) &&
+      typeof preview.prorationDate === 'number' &&
+      Number.isInteger(preview.prorationDate) &&
+      preview.prorationDate > 0
+        ? preview.prorationDate
+        : null;
     const hasExtraOptions = Boolean(
       appliedPromoCode ||
         appliedPromoId ||
+        verifiedProrationDate ||
         (preview?.verified && typeof preview.amountDueToday === 'number' && isUpgrade) ||
         preview?.verificationReference ||
         verifiedPm?.id
@@ -4948,6 +5179,7 @@ export class BillingComponent implements OnInit, OnDestroy {
             {
               promotionCode: appliedPromoCode,
               promotionCodeId: appliedPromoId,
+              prorationDate: verifiedProrationDate,
               approvedAmountDue:
                 preview?.verified && typeof preview.amountDueToday === 'number'
                   ? preview.amountDueToday
@@ -5279,6 +5511,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       if (user?.email) {
         await this.loadSubscription(user.email);
       }
+      await this.revalidateOpenPlanChangePreview();
     } catch (err: any) {
       this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'save'));
@@ -5749,6 +5982,7 @@ export class BillingComponent implements OnInit, OnDestroy {
         );
       }
     }
+    await this.revalidateOpenPlanChangePreview();
   }
 
   // ─── Cancellation & Reactivation ─────────────────────────────────
@@ -5776,6 +6010,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       if (user?.email) {
         await this.loadSubscription(user.email);
       }
+      await this.revalidateOpenPlanChangePreview();
     } catch (err: any) {
       this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'save'));
@@ -5796,6 +6031,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       if (user?.email) {
         await this.loadSubscription(user.email);
       }
+      await this.revalidateOpenPlanChangePreview();
     } catch (err: any) {
       this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'save'));
@@ -6002,6 +6238,7 @@ export class BillingComponent implements OnInit, OnDestroy {
 
     if (!shouldSetRenewal) {
       this.pendingRenewalRetryCardId.set(null);
+      await this.revalidateOpenPlanChangePreview();
       this.setTranslatedSuccess('PORTAL.BILLING.SUCCESS_CARD_SAVED');
       return;
     }
@@ -6027,13 +6264,12 @@ export class BillingComponent implements OnInit, OnDestroy {
         list.map((m) => ({ ...m, isRenewalCard: m.id === finalized.paymentMethodId })),
       );
       await this.loadSavedMethods();
-      if (this.selectedPlan() && this.subscription()) {
-        await this.refreshPlanChangePreview(this.selectedPlan()!, null);
-      }
+      await this.revalidateOpenPlanChangePreview();
       this.setTranslatedSuccess('PORTAL.BILLING.SUCCESS_CARD_SAVED_AND_RENEWAL');
     } catch {
       // Partial failure: keep the saved card, allow retrying default selection without repeating setup
       this.pendingRenewalRetryCardId.set(finalized.paymentMethodId);
+      await this.revalidateOpenPlanChangePreview();
       this.setTranslatedError('PORTAL.BILLING.WARN_CARD_SAVED_RENEWAL_FAILED');
     }
   }
@@ -6089,9 +6325,7 @@ export class BillingComponent implements OnInit, OnDestroy {
         list.map((m) => ({ ...m, isRenewalCard: m.id === pm.id })),
       );
       await this.loadSavedMethods();
-      if (this.selectedPlan() && this.subscription()) {
-        await this.refreshPlanChangePreview(this.selectedPlan()!, null);
-      }
+      await this.revalidateOpenPlanChangePreview();
       this.setTranslatedSuccess('PORTAL.BILLING.SUCCESS_RENEWAL_CARD_UPDATED');
     } catch {
       this.setTranslatedError('PORTAL.BILLING.ERROR_RENEWAL_UPDATE_FAILED');
@@ -6122,6 +6356,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       if (this.pendingRenewalRetryCardId() === pm.id) {
         this.pendingRenewalRetryCardId.set(null);
       }
+      await this.revalidateOpenPlanChangePreview();
     } catch (err: any) {
       if (err?.code === 'RENEWAL_CARD_PROTECTED') {
         this.setTranslatedError('PORTAL.BILLING.RENEWAL_CARD_REMOVE_BLOCKED');
