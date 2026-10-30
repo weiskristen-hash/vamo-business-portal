@@ -721,7 +721,7 @@ export const esTranslations: Record<string, any> = {
     "EXCURSIONS": "Paseos en bote, tours guiados, alquiler de four wheels/ATV, alquiler de equipos",
     "WELLNESS": "Yoga, masajes, tratamientos de spa, meditación, talleres de bienestar",
     "ARTS": "Clases de arte, exposiciones, tours culturales, talleres de artesanía",
-    "SPORTS": "Pádel, yoga, clases de fitness, senderismo, torneos",
+    "SPORTS": "Pádel, clases de fitness, senderismo, torneos",
     "PERSONALIZED": "Sesiones de fotografía, planificación de bodas y eventos, chefs privados, experiencias a medida",
     "CELEBRATIONS": "Eventos festivos, festivales, fiestas temáticas, celebraciones comunitarias",
     "OTHER": "Eventos, actividades o servicios que no encajan en otra categoría"
