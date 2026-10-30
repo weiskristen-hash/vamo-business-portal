@@ -721,7 +721,7 @@ export const enTranslations: Record<string, any> = {
     "EXCURSIONS": "Boat trips, guided tours, ATV rentals, equipment rentals",
     "WELLNESS": "Yoga, massages, spa treatments, meditation, wellness workshops",
     "ARTS": "Art classes, exhibitions, cultural tours, craft workshops",
-    "SPORTS": "Padel, yoga, fitness classes, hikes, tournaments",
+    "SPORTS": "Padel, fitness classes, hikes, tournaments",
     "PERSONALIZED": "Photography sessions, wedding/event planning, private chefs, custom experiences",
     "CELEBRATIONS": "Holiday events, festivals, themed parties, community celebrations",
     "OTHER": "Events, activities, or services that don't fit another category"

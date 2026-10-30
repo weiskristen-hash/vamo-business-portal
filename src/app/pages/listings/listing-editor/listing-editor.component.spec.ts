@@ -2342,7 +2342,7 @@ describe('ListingEditorComponent', () => {
         excursions: 'Boat trips, guided tours, ATV rentals, equipment rentals',
         wellness: 'Yoga, massages, spa treatments, meditation, wellness workshops',
         arts: 'Art classes, exhibitions, cultural tours, craft workshops',
-        sports: 'Padel, yoga, fitness classes, hikes, tournaments',
+        sports: 'Padel, fitness classes, hikes, tournaments',
         personalized: 'Photography sessions, wedding/event planning, private chefs, custom experiences',
         celebrations: 'Holiday events, festivals, themed parties, community celebrations',
         other: "Events, activities, or services that don't fit another category",
@@ -2429,7 +2429,7 @@ describe('ListingEditorComponent', () => {
       fixture.detectChanges();
       expect(component.activeCategoryTooltip).toBe('sports');
       expect(sportsTooltip.classList.contains('visible')).toBe(true);
-      expect(sportsTooltip.textContent).toContain('Padel, yoga, fitness classes, hikes, tournaments');
+      expect(sportsTooltip.textContent).toContain('Padel, fitness classes, hikes, tournaments');
 
       sportsBtn.click();
       fixture.detectChanges();
@@ -2489,10 +2489,11 @@ describe('ListingEditorComponent', () => {
       );
       expect(component.getCategoryLabel('wellness')).toBe('Yoga & Wellness');
       expect(fixture.nativeElement.textContent).not.toContain('Wellness & Beauty');
-      // Other categories remain untouched
+      // Sports & Outdoor removes Yoga while keeping all other examples unchanged
       expect(sportsExamples.textContent?.trim()).toBe(
-        'Padel, yoga, fitness classes, hikes, tournaments'
+        'Padel, fitness classes, hikes, tournaments'
       );
+      expect(sportsExamples.textContent?.toLowerCase()).not.toContain('yoga');
 
       // Selecting Yoga & Wellness stores canonical 'wellness' category ID
       wellnessBtn.click();
@@ -2512,8 +2513,9 @@ describe('ListingEditorComponent', () => {
       expect(component.getCategoryLabel('wellness')).toBe('Yoga y Bienestar');
       expect(fixture.nativeElement.textContent).not.toContain('Bienestar y Belleza');
       expect(sportsExamples.textContent?.trim()).toBe(
-        'Pádel, yoga, clases de fitness, senderismo, torneos'
+        'Pádel, clases de fitness, senderismo, torneos'
       );
+      expect(sportsExamples.textContent?.toLowerCase()).not.toContain('yoga');
     });
   });
 
