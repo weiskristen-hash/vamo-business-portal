@@ -315,14 +315,14 @@ describe('OnboardingComponent (Canonical Source Parity)', () => {
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/app/listings/create'], { replaceUrl: true });
   });
 
-  it('15. Google signup avoids hosted OAuth and keeps Apple hidden in business registration', async () => {
+  it('15. Google signup avoids hosted OAuth and renders Apple alongside Google in business registration', async () => {
     component.currentStep.set('business-register');
     fixture.detectChanges();
     await component.onGoogleSignUp();
     expect(authServiceSpy.loginWithGoogle).toHaveBeenCalledOnce();
     expect(authServiceSpy.loginWithProvider).not.toHaveBeenCalled();
     const buttons = Array.from(fixture.nativeElement.querySelectorAll('.ob-social-row button')) as HTMLButtonElement[];
-    expect(buttons.some((b) => b.textContent?.includes('Apple'))).toBe(false);
+    expect(buttons.some((b) => b.textContent?.includes('Apple'))).toBe(true);
     expect(buttons.some((b) => b.textContent?.includes('Google'))).toBe(true);
     component.onAppleSignUp();
     expect(authServiceSpy.loginWithProvider).toHaveBeenCalledWith('apple', '/app/listings/create');

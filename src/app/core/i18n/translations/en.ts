@@ -168,7 +168,17 @@ export const enTranslations: Record<string, any> = {
     "GOOGLE_LOGIN_ERROR": "Google Sign-In failed. Please try again.",
     "GOOGLE_UNAVAILABLE": "Google Sign-In is currently unavailable. Please try again or use email and password.",
     "GOOGLE_CANCELLED": "Google Sign-In was cancelled.",
-    "GOOGLE_TOKEN_MISSING": "Could not retrieve your Google credentials. Please try again."
+    "GOOGLE_TOKEN_MISSING": "Could not retrieve your Google credentials. Please try again.",
+    "APPLE_LOGIN_ERROR": "Apple Sign-In failed. Please try again.",
+    "APPLE_UNAVAILABLE": "Apple Sign-In is currently unavailable. Please try again or use email and password.",
+    "APPLE_CANCELLED": "Apple Sign-In was cancelled.",
+    "APPLE_TOKEN_MISSING": "Could not retrieve your Apple credentials. Please try again.",
+    "APPLE_ACCOUNT_CONFLICT": "This email is already linked to a different Apple account. Please sign in with your email and password or contact support.",
+    "APPLE_ADMIN_FORBIDDEN": "Staff and administrator accounts must sign in with email and password.",
+    "APPLE_TFA_REQUIRED": "Accounts with two-factor authentication must sign in with email and password.",
+    "APPLE_ACCOUNT_INACTIVE": "Your account is not active. Please verify your email or contact support.",
+    "APPLE_PROVIDER_MISMATCH": "This account uses a different sign-in method. Please sign in with your original method.",
+    "APPLE_EMAIL_REQUIRED": "Apple did not share an email address for your account. Please try again and allow email sharing."
   },
   "HOME": {
     "WHATS_HOT": "🔥 What's Hot",

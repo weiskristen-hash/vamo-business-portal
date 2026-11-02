@@ -8,6 +8,8 @@ export const environment = {
   googleLoginEnabled: true,
   googleClientId: '654016609429-5995je1smpgrlov4uv92pn637a7dlp0t.apps.googleusercontent.com',
   googleSignInFlow: 'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',
+  appleLoginEnabled: true,
+  appleClientId: 'com.vamoapp.vamomobile.signin',
   allowedHosts: ['api.vamo-app.com', 'quepasa-api.c1oud7.de', 'vamo-app.com', 'localhost'],
 
   // Stripe TEST mode & verified development Directus flow IDs (https://quepasa-api.c1oud7.de)

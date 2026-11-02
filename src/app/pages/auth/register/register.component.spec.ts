@@ -216,8 +216,8 @@ describe('RegisterComponent (Canonical Source Parity)', () => {
     expect(routerSpy.navigate).not.toHaveBeenCalled();
   });
 
-  it('11. should not render Apple action button while preserving component Apple sign-up method and Google action', () => {
-    expect(fixture.nativeElement.querySelector('.apple-btn')).toBeNull();
+  it('11. should render Apple action button alongside Google action and trigger Apple sign-up', () => {
+    expect(fixture.nativeElement.querySelector('.apple-btn')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('.google-btn')).toBeTruthy();
 
     component.onAppleSignUp();

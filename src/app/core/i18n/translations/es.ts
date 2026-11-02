@@ -168,7 +168,17 @@ export const esTranslations: Record<string, any> = {
     "GOOGLE_LOGIN_ERROR": "Error al iniciar sesión con Google. Por favor, inténtalo de nuevo.",
     "GOOGLE_UNAVAILABLE": "El inicio de sesión con Google no está disponible actualmente. Inténtalo de nuevo o usa correo y contraseña.",
     "GOOGLE_CANCELLED": "Se canceló el inicio de sesión con Google.",
-    "GOOGLE_TOKEN_MISSING": "No se pudieron obtener las credenciales de Google. Por favor, inténtalo de nuevo."
+    "GOOGLE_TOKEN_MISSING": "No se pudieron obtener las credenciales de Google. Por favor, inténtalo de nuevo.",
+    "APPLE_LOGIN_ERROR": "Error al iniciar sesión con Apple. Por favor, inténtalo de nuevo.",
+    "APPLE_UNAVAILABLE": "El inicio de sesión con Apple no está disponible actualmente. Inténtalo de nuevo o usa correo y contraseña.",
+    "APPLE_CANCELLED": "Se canceló el inicio de sesión con Apple.",
+    "APPLE_TOKEN_MISSING": "No se pudieron obtener las credenciales de Apple. Por favor, inténtalo de nuevo.",
+    "APPLE_ACCOUNT_CONFLICT": "Este correo electrónico ya está vinculado a otra cuenta de Apple. Inicia sesión con tu correo y contraseña o contacta a soporte.",
+    "APPLE_ADMIN_FORBIDDEN": "Las cuentas de personal y administrador deben iniciar sesión con correo y contraseña.",
+    "APPLE_TFA_REQUIRED": "Las cuentas con autenticación de dos factores deben iniciar sesión con correo y contraseña.",
+    "APPLE_ACCOUNT_INACTIVE": "Tu cuenta no está activa. Por favor verifica tu correo o contacta a soporte.",
+    "APPLE_PROVIDER_MISMATCH": "Esta cuenta utiliza otro método de inicio de sesión. Inicia sesión con tu método original.",
+    "APPLE_EMAIL_REQUIRED": "Apple no compartió una dirección de correo para tu cuenta. Inténtalo de nuevo y permite compartir tu correo."
   },
   "HOME": {
     "WHATS_HOT": "🔥 Lo más caliente",
