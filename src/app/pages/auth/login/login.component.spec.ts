@@ -166,12 +166,12 @@ describe('LoginComponent', () => {
     expect(component.loading).toBe(true);
   });
 
-  it('should not render Apple action button while preserving component Apple SSO method and Google action', () => {
+  it('should render Apple action button alongside Google action and trigger Apple SSO method', () => {
     authServiceSpy.loginWithProvider = vi.fn();
     const appleBtn = fixture.nativeElement.querySelector('.apple-btn');
     const googleBtn = fixture.nativeElement.querySelector('.google-btn');
 
-    expect(appleBtn).toBeNull();
+    expect(appleBtn).toBeTruthy();
     expect(googleBtn).toBeTruthy();
 
     component.onAppleLogin();

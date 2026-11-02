@@ -5,11 +5,13 @@ import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { VamoUser } from '../../../core/models/user.model';
 import { googleAuthErrorKey } from '../../../core/utils/google-auth-error';
+import { appleAuthErrorKey } from '../../../core/utils/apple-auth-error';
 import { GoogleSignInButtonComponent } from '../../../shared/components/google-sign-in-button/google-sign-in-button.component';
 import { CustomerErrorService } from '../../../core/services/customer-error.service';
 import { I18nService } from '../../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../../core/i18n/translate.pipe';
 import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.component';
+import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'app-register',
@@ -326,6 +328,21 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
                 (fallback)="onGoogleSignUp()"
                 (failed)="handleGoogleError($event)"
               ></app-google-sign-in-button>
+
+              <!-- Apple Sign-In Button -->
+              <button
+                *ngIf="appleLoginEnabled"
+                type="button"
+                class="btn btn-secondary social-btn apple-btn"
+                data-testid="apple-sign-in-btn"
+                (click)="onAppleSignUp()"
+                [disabled]="loading"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+                </svg>
+                <span>{{ 'AUTH.LOGIN_APPLE' | translate }}</span>
+              </button>
             </div>
           </div>
 
@@ -812,6 +829,18 @@ import { LanguageSelectorComponent } from '../../../core/i18n/language-selector.
       cursor: not-allowed;
     }
 
+    .apple-btn {
+      background: #000000;
+      border-color: #000000;
+      color: #ffffff;
+    }
+
+    .apple-btn:hover:not(:disabled) {
+      background: #1e293b;
+      border-color: #1e293b;
+      color: #ffffff;
+    }
+
     /* Bottom Prompt */
     .signup-prompt {
       margin-top: 22px;
@@ -854,6 +883,7 @@ export class RegisterComponent implements OnInit {
   private i18n = inject(I18nService);
 
   currentYear = new Date().getFullYear();
+  appleLoginEnabled = environment.appleLoginEnabled ?? true;
 
   firstName = '';
   lastName = '';
@@ -1023,7 +1053,15 @@ export class RegisterComponent implements OnInit {
   onAppleSignUp(): void {
     this.loading = true;
     this.errorMessage = '';
-    this.authService.loginWithProvider('apple', '/app/overview');
+    try {
+      this.authService.loginWithProvider('apple', '/app/overview');
+    } catch (err: any) {
+      this.loading = false;
+      const key = appleAuthErrorKey(err);
+      this.errorKey = key;
+      this.errorParams = undefined;
+      this.rawErrorMessage = this.i18n.t(key);
+    }
   }
 
   private isEmailTakenError(err: any): boolean {

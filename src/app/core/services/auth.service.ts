@@ -587,20 +587,27 @@ export class AuthService implements OnDestroy {
   }
 
   /**
-   * Hand off to Directus hosted OAuth flow (e.g. google).
-   * Directus redirects back to /auth/callback with access_token, refresh_token, expires.
+   * Hand off to Directus hosted OAuth flow (e.g. google) or Apple Sign-In web flow.
    */
   loginWithProvider(
     provider: 'google' | 'apple',
     returnUrl: string = '/app/overview',
     signupIntent?: 'business' | 'browse'
   ): void {
+    if (provider === 'apple') {
+      this.loginWithApple(returnUrl, signupIntent);
+      return;
+    }
+
     if (typeof window === 'undefined') return;
 
     try {
       window.sessionStorage.setItem('vamo_auth_return_url', returnUrl);
-      if (signupIntent) {
-        window.sessionStorage.setItem('vamo_auth_signup_intent', signupIntent);
+      const resolvedSignupIntent =
+        signupIntent ||
+        (returnUrl === '/app/listings/create' || returnUrl.startsWith('/onboarding') ? 'business' : undefined);
+      if (resolvedSignupIntent) {
+        window.sessionStorage.setItem('vamo_auth_signup_intent', resolvedSignupIntent);
       } else {
         window.sessionStorage.removeItem('vamo_auth_signup_intent');
       }
@@ -610,7 +617,246 @@ export class AuthService implements OnDestroy {
 
     const callbackUrl = `${window.location.origin}/auth/callback`;
     const authUrl = `${runtimeConfig.directusUrl}/auth/login/${provider}?redirect=${encodeURIComponent(callbackUrl)}`;
-    window.location.href = authUrl;
+    this.navigateToExternalUrl(authUrl);
+  }
+
+  protected navigateToExternalUrl(url: string): void {
+    if (typeof window !== 'undefined') {
+      window.location.href = url;
+    }
+  }
+
+  private randomHexToken(): string {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  private encodeBase64Url(value: string): string {
+    return btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  /**
+   * Builds the Apple OAuth 2.0 / OIDC authorization URL for web redirect sign-in
+   * compatible with directus-extension-vamo-auth (/vamo-auth/apple/callback).
+   */
+  buildAppleAuthorizeUrl(origin: string = typeof window !== 'undefined' ? window.location.origin : ''): {
+    url: string;
+    state: string;
+    nonce: string;
+  } {
+    const clientId = (runtimeConfig.appleClientId || '').trim();
+    if (!clientId) {
+      throw new Error('APPLE_CLIENT_ID_NOT_CONFIGURED');
+    }
+
+    const r = this.randomHexToken();
+    const nonce = this.randomHexToken();
+    const target = { t: 'web', o: origin, r };
+    const state = this.encodeBase64Url(JSON.stringify(target));
+    const redirectUri = `${runtimeConfig.directusUrl}/vamo-auth/apple/callback`;
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code id_token',
+      response_mode: 'form_post',
+      scope: 'name email',
+      state,
+      nonce,
+    });
+
+    return {
+      url: `https://appleid.apple.com/auth/authorize?${params.toString()}`,
+      state,
+      nonce,
+    };
+  }
+
+  /**
+   * Initiates Sign in with Apple on the web by storing single-use CSRF state & nonce
+   * in sessionStorage and redirecting to Apple's authorization endpoint.
+   */
+  loginWithApple(returnUrl: string = '/app/overview', signupIntent?: 'business' | 'browse'): void {
+    if (typeof window === 'undefined') return;
+
+    const { url, state, nonce } = this.buildAppleAuthorizeUrl(window.location.origin);
+
+    try {
+      window.sessionStorage.setItem(
+        'appleWebAuth',
+        JSON.stringify({ state, nonce, createdAt: Date.now() })
+      );
+      window.sessionStorage.setItem('vamo_auth_return_url', returnUrl);
+      const resolvedSignupIntent =
+        signupIntent ||
+        (returnUrl === '/app/listings/create' || returnUrl.startsWith('/onboarding') ? 'business' : undefined);
+      if (resolvedSignupIntent) {
+        window.sessionStorage.setItem('vamo_auth_signup_intent', resolvedSignupIntent);
+      } else {
+        window.sessionStorage.removeItem('vamo_auth_signup_intent');
+      }
+    } catch {
+      // Ignore storage restrictions
+    }
+
+    this.navigateToExternalUrl(url);
+  }
+
+  /**
+   * Exchanges an Apple identity token and nonce with the Directus vamo-auth extension
+   * (POST /vamo-auth/apple), stores the returned Directus session tokens, and loads the user.
+   */
+  async loginWithAppleCredential(
+    identityToken: string,
+    nonce: string,
+    firstName?: string | null,
+    lastName?: string | null
+  ): Promise<VamoUser> {
+    if (!identityToken || typeof identityToken !== 'string' || !identityToken.trim()) {
+      throw new Error('APPLE_TOKEN_MISSING');
+    }
+    if (!nonce || typeof nonce !== 'string' || !nonce.trim()) {
+      throw new Error('APPLE_NONCE_MISSING');
+    }
+
+    const endpointUrl = `${runtimeConfig.directusUrl}/vamo-auth/apple`;
+
+    let response: Response;
+    try {
+      response = await fetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          identity_token: identityToken.trim(),
+          nonce: nonce.trim(),
+          first_name: (firstName ?? '').trim(),
+          last_name: (lastName ?? '').trim(),
+        }),
+      });
+    } catch {
+      throw new Error('NETWORK_ERROR');
+    }
+
+    if (!response.ok) {
+      let errorCode = '';
+      try {
+        const errBody = await response.json();
+        const extCode = errBody?.errors?.[0]?.extensions?.code;
+        if (typeof extCode === 'string' && extCode.trim()) {
+          errorCode = extCode.trim();
+        }
+      } catch {
+        // Ignore malformed error body
+      }
+      throw new Error(errorCode || `APPLE_AUTH_FAILED_${response.status}`);
+    }
+
+    let body: any;
+    try {
+      body = await response.json();
+    } catch {
+      throw new Error('MALFORMED_AUTH_RESPONSE');
+    }
+
+    const session = body?.data && typeof body.data === 'object' ? body.data : body;
+    if (!session || typeof session !== 'object' || !session.access_token || typeof session.access_token !== 'string') {
+      throw new Error('MALFORMED_AUTH_RESPONSE');
+    }
+
+    const user = await this.handleSsoTokens(
+      session.access_token,
+      session.refresh_token ?? null,
+      session.expires ? Number(session.expires) : null
+    );
+
+    if (!user) {
+      throw new Error('USER_LOAD_FAILED');
+    }
+
+    return user;
+  }
+
+  /**
+   * Validates the Apple web callback fragment parameters against the stored single-use
+   * state/nonce in sessionStorage and completes authentication via POST /vamo-auth/apple.
+   */
+  async handleAppleCallbackFragment(hashParams: URLSearchParams): Promise<VamoUser> {
+    let rawStored: string | null = null;
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        rawStored = window.sessionStorage.getItem('appleWebAuth');
+        window.sessionStorage.removeItem('appleWebAuth');
+      } catch {
+        rawStored = null;
+      }
+    }
+
+    const appleError = hashParams.get('error');
+    if (appleError) {
+      if (appleError === 'user_cancelled_authorize' || appleError === 'access_denied') {
+        throw new Error('APPLE_CANCELLED');
+      }
+      throw new Error('APPLE_LOGIN_ERROR');
+    }
+
+    if (!rawStored) {
+      throw new Error('APPLE_STATE_MISMATCH');
+    }
+
+    let expected: { state?: string; nonce?: string; createdAt?: number } | null = null;
+    try {
+      expected = JSON.parse(rawStored);
+    } catch {
+      throw new Error('APPLE_STATE_MISMATCH');
+    }
+
+    if (
+      !expected ||
+      typeof expected.state !== 'string' ||
+      !expected.state ||
+      typeof expected.nonce !== 'string' ||
+      !expected.nonce
+    ) {
+      throw new Error('APPLE_STATE_MISMATCH');
+    }
+
+    if (typeof expected.createdAt === 'number' && Date.now() - expected.createdAt > 10 * 60 * 1000) {
+      throw new Error('APPLE_STATE_EXPIRED');
+    }
+
+    const callbackState = hashParams.get('state');
+    if (!callbackState || callbackState !== expected.state) {
+      throw new Error('APPLE_STATE_MISMATCH');
+    }
+
+    const idToken = hashParams.get('id_token');
+    if (!idToken || !idToken.trim()) {
+      throw new Error('APPLE_TOKEN_MISSING');
+    }
+
+    let firstName: string | undefined;
+    let lastName: string | undefined;
+    const rawUser = hashParams.get('user');
+    if (rawUser) {
+      try {
+        const parsedUser = JSON.parse(rawUser);
+        if (parsedUser && typeof parsedUser === 'object' && parsedUser.name && typeof parsedUser.name === 'object') {
+          if (typeof parsedUser.name.firstName === 'string') {
+            firstName = parsedUser.name.firstName;
+          }
+          if (typeof parsedUser.name.lastName === 'string') {
+            lastName = parsedUser.name.lastName;
+          }
+        }
+      } catch {
+        // Ignore malformed optional user JSON
+      }
+    }
+
+    return await this.loginWithAppleCredential(idToken, expected.nonce, firstName, lastName);
   }
 
   /**
@@ -713,6 +959,7 @@ export class AuthService implements OnDestroy {
       try {
         window.sessionStorage.removeItem('vamo_expired_session');
         window.sessionStorage.removeItem('vamo_expired_return_url');
+        window.sessionStorage.removeItem('appleWebAuth');
       } catch {}
     }
 

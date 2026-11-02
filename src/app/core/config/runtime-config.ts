@@ -5,6 +5,7 @@ export interface RuntimeConfig {
   verificationUrl: string;
   googleClientId: string;
   googleSignInFlow: string;
+  appleClientId: string;
   stripePublishableKey: string;
   stripeGetPricesFlow: string;
   stripeGetSubscriptionFlow: string;
@@ -91,6 +92,10 @@ function buildInitialConfig(overrides: Record<string, any> = {}): RuntimeConfig 
       overrides['googleSignInFlow'] ||
       (environment as any).googleSignInFlow ||
       'aceed368-a6ee-4c27-9fa6-fe6c8c60a1c7',
+    appleClientId:
+      overrides['appleClientId'] !== undefined
+        ? String(overrides['appleClientId'])
+        : (environment as any).appleClientId || 'com.vamoapp.vamomobile.signin',
     stripePublishableKey: overrides['stripePublishableKey'] || environment.STRIPE_PUBLISHABLE_KEY || '',
     stripeGetPricesFlow: overrides['stripeGetPricesFlow'] || environment.STRIPE_GET_PRICES_FLOW || '',
     stripeGetSubscriptionFlow: overrides['stripeGetSubscriptionFlow'] || environment.STRIPE_GET_SUBSCRIPTION_FLOW || '',
@@ -179,6 +184,9 @@ export const runtimeConfig = {
   },
   get googleSignInFlow(): string {
     return currentConfig.googleSignInFlow;
+  },
+  get appleClientId(): string {
+    return currentConfig.appleClientId;
   },
   setDirectusUrl(url: string): void {
     if (isAllowedApiUrl(url)) {

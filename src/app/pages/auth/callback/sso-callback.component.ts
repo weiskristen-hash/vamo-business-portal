@@ -2,6 +2,8 @@ import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
+import { I18nService } from '../../../core/i18n/i18n.service';
+import { appleAuthErrorKey } from '../../../core/utils/apple-auth-error';
 import { capturePromoCode, extractPromoFromUrl } from '../../../core/utils/promo-code.util';
 
 @Component({
@@ -94,12 +96,21 @@ export class SsoCallbackComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private authService = inject(AuthService);
+  private i18n = inject(I18nService);
 
   errorMessage = '';
 
   async ngOnInit(): Promise<void> {
     const params = this.route.snapshot.queryParams || {};
     const hashParams = this.parseHashParams();
+    const provider = params['provider'] || hashParams.get('provider');
+    const isAppleCallback = provider === 'apple';
+
+    // Immediately scrub any URL fragment/tokens before async processing or navigation
+    if (isAppleCallback || hashParams.has('id_token') || hashParams.has('access_token') || hashParams.has('state')) {
+      this.scrubUrlTokens();
+    }
+
     capturePromoCode(params['promo'] || hashParams.get('promo'));
     const errorParam =
       params['error'] ||
@@ -110,7 +121,21 @@ export class SsoCallbackComponent implements OnInit {
       hashParams.get('reason');
 
     if (errorParam) {
-      await this.router.navigate(['/login'], { queryParams: { error: errorParam } });
+      if (isAppleCallback && typeof window !== 'undefined' && window.sessionStorage) {
+        try {
+          window.sessionStorage.removeItem('appleWebAuth');
+        } catch {}
+      }
+      const queryParams: Record<string, string> = {
+        error:
+          isAppleCallback && (errorParam === 'user_cancelled_authorize' || errorParam === 'access_denied')
+            ? 'APPLE_CANCELLED'
+            : errorParam,
+      };
+      if (isAppleCallback && queryParams['error'] !== 'APPLE_CANCELLED') {
+        queryParams['provider'] = 'apple';
+      }
+      await this.router.navigate(['/login'], { queryParams });
       return;
     }
 
@@ -139,7 +164,9 @@ export class SsoCallbackComponent implements OnInit {
 
       let user: any = null;
 
-      if (idToken && typeof this.authService.loginWithGoogleCredential === 'function') {
+      if (isAppleCallback) {
+        user = await this.authService.handleAppleCallbackFragment(hashParams);
+      } else if (idToken && typeof this.authService.loginWithGoogleCredential === 'function') {
         user = await this.authService.loginWithGoogleCredential(idToken);
       } else if (accessToken) {
         user = await this.authService.handleSsoTokens(accessToken, refreshToken, expires);
@@ -189,7 +216,7 @@ export class SsoCallbackComponent implements OnInit {
           await this.router.navigate(['/onboarding'], { queryParams: { social: 'business' } });
         }
       } else {
-        // Normal Google login
+        // Normal social login
         if (hasLinkedBusiness) {
           await this.router.navigateByUrl(returnUrl);
         } else {
@@ -198,8 +225,13 @@ export class SsoCallbackComponent implements OnInit {
       }
     } catch (err: any) {
       clearTimeout(timeoutId);
-      console.warn('[SsoCallback] Callback processing error:', err);
-      this.errorMessage = 'Could not verify your authentication session. Please try again.';
+      const safeCode = err instanceof Error ? err.message : 'CALLBACK_ERROR';
+      console.warn('[SsoCallback] Callback processing error:', safeCode);
+      if (isAppleCallback) {
+        this.errorMessage = this.i18n.t(appleAuthErrorKey(err));
+      } else {
+        this.errorMessage = 'Could not verify your authentication session. Please try again.';
+      }
     }
   }
 
