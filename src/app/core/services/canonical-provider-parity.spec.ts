@@ -437,4 +437,37 @@ describe('Canonical Provider Translation Save Parity (Phase 2B)', () => {
       delete: ['junc-456'],
     });
   });
+
+  // 16. website parity on provider edit
+  it('16. website parity: persists website to providers.website, supports bare domains, clears to null, and rejects unsafe schemes', async () => {
+    clientRequestMock.mockResolvedValueOnce({ id: 'prov-1', website: 'https://playagrill.do' });
+
+    await businessService.updateProvider('prov-1', {
+      name: 'Playa Bar & Grill',
+      website: '  https://playagrill.do  ',
+    });
+
+    const savedPayload = extractPayload(clientRequestMock.mock.calls[0][0]);
+    expect(savedPayload.website).toBe('https://playagrill.do');
+
+    clientRequestMock.mockReset();
+    clientRequestMock.mockResolvedValueOnce({ id: 'prov-1', website: 'www.playagrill.do' });
+    await businessService.updateProvider('prov-1', {
+      website: 'www.playagrill.do',
+    });
+    expect(extractPayload(clientRequestMock.mock.calls[0][0]).website).toBe('www.playagrill.do');
+
+    clientRequestMock.mockReset();
+    clientRequestMock.mockResolvedValueOnce({ id: 'prov-1', website: null });
+    await businessService.updateProvider('prov-1', {
+      website: '',
+    });
+    expect(extractPayload(clientRequestMock.mock.calls[0][0]).website).toBeNull();
+
+    await expect(
+      businessService.updateProvider('prov-1', {
+        website: 'javascript:alert(1)',
+      })
+    ).rejects.toThrow('INVALID_WEBSITE_URL');
+  });
 });

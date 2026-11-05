@@ -1183,6 +1183,272 @@ describe('BusinessProfileComponent', () => {
     });
   });
 
+  describe('Website Field Integration (providers.website)', () => {
+    it('1. renders Website in #section-social in exact order (Instagram, Facebook, Website, Google) with full-width .span-2 styling', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const socialGroups = Array.from(
+        compiled.querySelectorAll('#section-social .form-grid > .form-group')
+      );
+      expect(socialGroups.length).toBe(4);
+
+      const inputIds = socialGroups.map(
+        (group) => (group.querySelector('input') as HTMLInputElement | null)?.id
+      );
+      expect(inputIds).toEqual(['field-ig', 'field-fb', 'field-website', 'field-google']);
+
+      const websiteGroup = socialGroups[2];
+      expect(websiteGroup.classList.contains('span-2')).toBe(true);
+
+      const websiteInput = websiteGroup.querySelector('input#field-website') as HTMLInputElement;
+      expect(websiteInput).toBeTruthy();
+      expect(websiteInput.getAttribute('maxlength')).toBe('255');
+    });
+
+    it('2. loads existing website from provider record and handles null/empty website as optional', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const websiteInput = compiled.querySelector('input#field-website') as HTMLInputElement;
+      expect(component.form().website).toBe('https://kitesurfoasis.com');
+      expect(websiteInput.value).toBe('https://kitesurfoasis.com');
+
+      businessServiceSpy.getProviderById.mockResolvedValueOnce({
+        ...mockProvider,
+        website: null,
+      });
+      await component.loadProfile();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const reloadedWebsiteInput = compiled.querySelector('input#field-website') as HTMLInputElement;
+      expect(component.form().website).toBe('');
+      expect(reloadedWebsiteInput.value).toBe('');
+      expect(component.isFormValid()).toBe(true);
+    });
+
+    it('3 & 4. saves a new website to providers.website and updates an existing website on edit', async () => {
+      businessServiceSpy.getProviderById.mockResolvedValueOnce({
+        ...mockProvider,
+        website: null,
+      });
+      await component.loadProfile();
+      fixture.detectChanges();
+
+      const websiteInput = fixture.nativeElement.querySelector(
+        'input#field-website'
+      ) as HTMLInputElement;
+
+      // Add new website
+      websiteInput.value = 'https://www.newkitesurf.com';
+      websiteInput.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      businessServiceSpy.updateProvider.mockResolvedValueOnce({
+        ...mockProvider,
+        website: 'https://www.newkitesurf.com',
+      });
+      await component.saveProfile();
+
+      expect(businessServiceSpy.updateProvider).toHaveBeenCalledWith(
+        'prov-101',
+        expect.objectContaining({
+          website: 'https://www.newkitesurf.com',
+        }),
+        expect.anything()
+      );
+      expect(component.provider()?.website).toBe('https://www.newkitesurf.com');
+      expect(component.form().website).toBe('https://www.newkitesurf.com');
+
+      // Edit existing website without unintended mutation
+      businessServiceSpy.updateProvider.mockClear();
+      websiteInput.value = 'https://booking.newkitesurf.com/lessons?lang=en';
+      websiteInput.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      businessServiceSpy.updateProvider.mockResolvedValueOnce({
+        ...mockProvider,
+        website: 'https://booking.newkitesurf.com/lessons?lang=en',
+      });
+      await component.saveProfile();
+
+      expect(businessServiceSpy.updateProvider).toHaveBeenCalledWith(
+        'prov-101',
+        expect.objectContaining({
+          website: 'https://booking.newkitesurf.com/lessons?lang=en',
+        }),
+        expect.anything()
+      );
+    });
+
+    it('5. clearing the website input sends website: null to remove the stored value', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const websiteInput = fixture.nativeElement.querySelector(
+        'input#field-website'
+      ) as HTMLInputElement;
+      expect(component.form().website).toBe('https://kitesurfoasis.com');
+
+      websiteInput.value = '   ';
+      websiteInput.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      expect(component.isFormValid()).toBe(true);
+      businessServiceSpy.updateProvider.mockResolvedValueOnce({
+        ...mockProvider,
+        website: null,
+      });
+
+      await component.saveProfile();
+
+      expect(businessServiceSpy.updateProvider).toHaveBeenCalledWith(
+        'prov-101',
+        expect.objectContaining({
+          website: null,
+        }),
+        expect.anything()
+      );
+      expect(component.provider()?.website).toBeNull();
+      expect(component.form().website).toBe('');
+      expect(component.saveSuccess()).toBe(true);
+    });
+
+    it('6. accepts website inputs with http://, https://, www., and bare domains without https://', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      for (const candidate of [
+        'https://example.com',
+        'http://example.com',
+        'example.com',
+        'www.example.com',
+      ]) {
+        businessServiceSpy.updateProvider.mockClear();
+        businessServiceSpy.updateProvider.mockResolvedValueOnce({
+          ...mockProvider,
+          website: candidate,
+        });
+
+        component.onWebsiteChange(candidate);
+        fixture.detectChanges();
+
+        expect(component.isWebsiteValid(candidate)).toBe(true);
+        expect(component.isFormValid()).toBe(true);
+
+        await component.saveProfile();
+        expect(businessServiceSpy.updateProvider).toHaveBeenCalledWith(
+          'prov-101',
+          expect.objectContaining({ website: candidate }),
+          expect.anything()
+        );
+      }
+    });
+
+    it('7. rejects unsafe URL schemes (javascript:, data:) and >255-character URLs without calling updateProvider', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      for (const unsafeUrl of [
+        'javascript:alert(1)',
+        'data:text/html,<script>alert(1)</script>',
+        'vbscript:msgbox(1)',
+        'https://example.com/' + 'a'.repeat(240),
+      ]) {
+        businessServiceSpy.updateProvider.mockClear();
+        component.onWebsiteChange(unsafeUrl);
+        component.touched.website = true;
+        fixture.detectChanges();
+
+        expect(component.isWebsiteValid(unsafeUrl)).toBe(false);
+        expect(component.isFormValid()).toBe(false);
+
+        const websiteInput = fixture.nativeElement.querySelector(
+          'input#field-website'
+        ) as HTMLInputElement;
+        expect(websiteInput.classList.contains('is-invalid')).toBe(true);
+
+        const fieldError = websiteInput.parentElement?.querySelector('.form-error');
+        expect(fieldError?.textContent?.trim()).toBeTruthy();
+
+        await component.saveProfile();
+        expect(businessServiceSpy.updateProvider).not.toHaveBeenCalled();
+        expect(component.saveError()).toBeTruthy();
+      }
+    });
+
+    it('8 & 10. preserves Instagram, Facebook, Google Maps, and all unrelated provider fields when updating website', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      component.onWebsiteChange('https://www.oasisbeachclub.do');
+      businessServiceSpy.updateProvider.mockResolvedValueOnce({
+        ...mockProvider,
+        website: 'https://www.oasisbeachclub.do',
+      });
+
+      await component.saveProfile();
+
+      expect(businessServiceSpy.updateProvider).toHaveBeenCalledWith(
+        'prov-101',
+        {
+          name: mockProvider.name,
+          business_type: mockProvider.business_type,
+          description: mockProvider.description,
+          address: mockProvider.address,
+          city: mockProvider.city,
+          phone: mockProvider.phone,
+          wa_number: mockProvider.wa_number,
+          email: mockProvider.email,
+          facebook: mockProvider.facebook,
+          instagram: mockProvider.instagram,
+          website: 'https://www.oasisbeachclub.do',
+          google_business_link: mockProvider.google_business_link,
+          location: mockProvider.location,
+          offerings: mockProvider.offerings,
+          opening_times: mockProvider.opening_times,
+          logo: mockProvider.logo,
+        },
+        mockProvider
+      );
+    });
+
+    it('9. renders English and Spanish labels, placeholders, and validation messages accurately', async () => {
+      await fixture.whenStable();
+      i18nService.setLang('en');
+      component.onWebsiteChange('javascript:alert(1)');
+      component.touched.website = true;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const label = compiled.querySelector('label[for="field-website"]') as HTMLLabelElement;
+      const input = compiled.querySelector('input#field-website') as HTMLInputElement;
+      let errorEl = input.parentElement?.querySelector('.form-error') as HTMLElement;
+
+      expect(label.textContent?.trim()).toBe('Website');
+      expect(input.getAttribute('placeholder')).toBe('https://www.yourbusiness.com');
+      expect(errorEl.textContent?.trim()).toBe(
+        'Please enter a valid website URL (e.g. https://www.yourbusiness.com).'
+      );
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+
+      errorEl = input.parentElement?.querySelector('.form-error') as HTMLElement;
+      expect(label.textContent?.trim()).toBe('Sitio web');
+      expect(input.getAttribute('placeholder')).toBe('https://www.tunegocio.com');
+      expect(errorEl.textContent?.trim()).toBe(
+        'Por favor ingresa una dirección web válida (ej. https://www.tunegocio.com).'
+      );
+
+      i18nService.setLang('en');
+    });
+  });
+
 });
 
 

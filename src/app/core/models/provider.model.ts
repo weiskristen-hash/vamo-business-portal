@@ -46,7 +46,7 @@ export interface Provider {
   date_updated?: string | null;
   name: string;
   description?: string;
-  website?: string;
+  website?: string | null;
   address?: string;
   email?: string;
   location?: GeoJsonPoint | null;

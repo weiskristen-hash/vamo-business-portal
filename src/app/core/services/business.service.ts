@@ -17,6 +17,7 @@ import {
   normalizeDateStr,
   ScheduleClassificationOptions,
 } from '../utils/event-display.util';
+import { normalizeWebsiteForStorage } from '../utils/website-url.util';
 
 @Injectable({
   providedIn: 'root',
@@ -53,6 +54,7 @@ export class BusinessService {
     'email',
     'facebook',
     'instagram',
+    'website',
     'google_business_link',
     'location',
     'offerings',
@@ -77,6 +79,7 @@ export class BusinessService {
     'email',
     'facebook',
     'instagram',
+    'website',
     'google_business_link',
     'location',
     'offerings',
@@ -144,6 +147,9 @@ export class BusinessService {
     }
     if (data.google_business_link !== undefined) {
       payload['google_business_link'] = data.google_business_link;
+    }
+    if (data.website !== undefined) {
+      payload['website'] = normalizeWebsiteForStorage(data.website);
     }
     if (data.location !== undefined) {
       payload['location'] = data.location ?? null;
