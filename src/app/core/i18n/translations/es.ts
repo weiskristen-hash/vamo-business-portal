@@ -1041,6 +1041,10 @@ export const esTranslations: Record<string, any> = {
       "INSTAGRAM_PLACEHOLDER": "ej. @tunegocio o instagram.com/…",
       "FACEBOOK_LABEL": "Página de Facebook",
       "FACEBOOK_PLACEHOLDER": "ej. facebook.com/tunegocio",
+      "WEBSITE_LABEL": "Sitio web",
+      "WEBSITE_PLACEHOLDER": "https://www.tunegocio.com",
+      "WEBSITE_INVALID": "Por favor ingresa una dirección web válida (ej. https://www.tunegocio.com).",
+      "WEBSITE_TOO_LONG": "La dirección web no puede superar los 255 caracteres.",
       "GOOGLE_LABEL": "Perfil de Google Business / Enlace de Maps",
       "GOOGLE_PLACEHOLDER": "https://maps.google.com/?cid=…",
 

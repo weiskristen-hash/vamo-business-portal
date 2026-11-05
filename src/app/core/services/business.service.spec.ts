@@ -143,7 +143,7 @@ describe('BusinessService', () => {
       expect(fields.includes('logo.*')).toBe(false);
       expect(fields.includes('images.directus_files_id.*')).toBe(false);
       expect(fields.includes('id')).toBe(true);
-      expect(fields.includes('website')).toBe(false);
+      expect(fields.includes('website')).toBe(true);
       expect(fields.includes('name')).toBe(true);
       expect(fields.includes('business_type')).toBe(true);
       expect(fields.includes('description')).toBe(true);
@@ -159,6 +159,7 @@ describe('BusinessService', () => {
       const editable = service.editableProviderFields as readonly string[];
       expect(editable.includes('images')).toBe(false);
       expect(editable.includes('business_type')).toBe(true);
+      expect(editable.includes('website')).toBe(true);
       expect(editable.includes('name')).toBe(true);
       expect(editable.includes('logo')).toBe(true);
     });
@@ -212,7 +213,7 @@ describe('BusinessService', () => {
       // Verify editable fields were preserved according to canonical semantics
       expect(safePayload['name']).toBe('  Safe Beach Bar  ');
       expect(safePayload['business_type']).toBe('bar');
-      expect(safePayload['website']).toBeUndefined();
+      expect(safePayload['website']).toBe('https://bar.com');
       expect(safePayload['city']).toBe('Las Terrenas');
       expect(safePayload['facebook']).toBe('https://facebook.com/bar');
     });
@@ -268,6 +269,7 @@ describe('BusinessService', () => {
         city: '',
         email: '   ',
         wa_number: '   ',
+        website: '   ',
       };
 
       const payload = service.buildSafeProviderPayload(dataWithClearing);
@@ -277,7 +279,23 @@ describe('BusinessService', () => {
       expect(payload['city']).toBe('');
       expect(payload['email']).toBeNull();
       expect(payload['wa_number']).toBeNull();
-      expect(payload['website']).toBeUndefined();
+      expect(payload['website']).toBeNull();
+
+      const clearedEmpty = service.buildSafeProviderPayload({ website: '' });
+      expect(clearedEmpty['website']).toBeNull();
+
+      const validWebsite = service.buildSafeProviderPayload({ website: '  www.example.com  ' });
+      expect(validWebsite['website']).toBe('www.example.com');
+
+      expect(() => service.buildSafeProviderPayload({ website: 'javascript:alert(1)' })).toThrow(
+        'INVALID_WEBSITE_URL'
+      );
+      expect(() =>
+        service.buildSafeProviderPayload({ website: 'data:text/html,<script>alert(1)</script>' })
+      ).toThrow('INVALID_WEBSITE_URL');
+      expect(() =>
+        service.buildSafeProviderPayload({ website: 'https://example.com/' + 'a'.repeat(240) })
+      ).toThrow('INVALID_WEBSITE_URL');
     });
   });
 

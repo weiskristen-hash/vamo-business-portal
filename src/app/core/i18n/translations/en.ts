@@ -1041,6 +1041,10 @@ export const enTranslations: Record<string, any> = {
       "INSTAGRAM_PLACEHOLDER": "e.g. @yourbusiness or instagram.com/…",
       "FACEBOOK_LABEL": "Facebook Page",
       "FACEBOOK_PLACEHOLDER": "e.g. facebook.com/yourbusiness",
+      "WEBSITE_LABEL": "Website",
+      "WEBSITE_PLACEHOLDER": "https://www.yourbusiness.com",
+      "WEBSITE_INVALID": "Please enter a valid website URL (e.g. https://www.yourbusiness.com).",
+      "WEBSITE_TOO_LONG": "Website URL must be 255 characters or fewer.",
       "GOOGLE_LABEL": "Google Business / Maps Link",
       "GOOGLE_PLACEHOLDER": "https://maps.google.com/?cid=…",
 

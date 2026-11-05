@@ -16,6 +16,7 @@ import {
   extractDroppedFiles,
   validateImageUploadFiles,
 } from '../../core/utils/event-display.util';
+import { WEBSITE_MAX_LENGTH, isValidWebsiteUrl } from '../../core/utils/website-url.util';
 
 export interface BusinessTypeOption {
   value: string;
@@ -681,6 +682,30 @@ export interface OfferingOption {
                     (blur)="markDirty()"
                     [placeholder]="'PORTAL.PROFILE.FACEBOOK_PLACEHOLDER' | translate"
                   />
+                </div>
+
+                <!-- Website -->
+                <div class="form-group span-2">
+                  <label class="form-label" for="field-website">{{ 'PORTAL.PROFILE.WEBSITE_LABEL' | translate }}</label>
+                  <input
+                    id="field-website"
+                    type="text"
+                    inputmode="url"
+                    autocomplete="url"
+                    [attr.maxlength]="websiteMaxLength"
+                    class="form-control"
+                    [class.is-invalid]="touched.website && !!form().website.trim() && !isWebsiteValid(form().website)"
+                    [ngModel]="form().website"
+                    (ngModelChange)="onWebsiteChange($event)"
+                    (blur)="touched.website = true; markDirty()"
+                    [placeholder]="'PORTAL.PROFILE.WEBSITE_PLACEHOLDER' | translate"
+                  />
+                  <p *ngIf="touched.website && form().website.trim().length > websiteMaxLength" class="form-error">
+                    {{ 'PORTAL.PROFILE.WEBSITE_TOO_LONG' | translate }}
+                  </p>
+                  <p *ngIf="touched.website && form().website.trim() && form().website.trim().length <= websiteMaxLength && !isWebsiteValid(form().website)" class="form-error">
+                    {{ 'PORTAL.PROFILE.WEBSITE_INVALID' | translate }}
+                  </p>
                 </div>
 
                 <!-- Google Business Profile -->
@@ -2151,8 +2176,11 @@ export class BusinessProfileComponent implements OnInit, AfterViewInit, OnDestro
     address: false,
     phone: false,
     waNumber: false,
+    website: false,
     email: false,
   };
+
+  readonly websiteMaxLength = WEBSITE_MAX_LENGTH;
 
   waNumberSameAsPhone = false;
 
@@ -2463,6 +2491,11 @@ export class BusinessProfileComponent implements OnInit, AfterViewInit, OnDestro
       phone: newPhone,
       wa_number: this.waNumberSameAsPhone ? newPhone : f.wa_number,
     }));
+    this.markDirty();
+  }
+
+  onWebsiteChange(newWebsite: string): void {
+    this.form.update((f) => ({ ...f, website: newWebsite }));
     this.markDirty();
   }
 
@@ -3136,6 +3169,10 @@ export class BusinessProfileComponent implements OnInit, AfterViewInit, OnDestro
     return isValidPhone(phone);
   }
 
+  isWebsiteValid(website: string | null | undefined): boolean {
+    return isValidWebsiteUrl(website);
+  }
+
   isFormValid(): boolean {
     const f = this.form();
     return !!(
@@ -3145,7 +3182,8 @@ export class BusinessProfileComponent implements OnInit, AfterViewInit, OnDestro
       f.address?.trim() &&
       this.isEmailValid(f.email) &&
       this.isPhoneValid(f.phone) &&
-      (!f.wa_number?.trim() || isValidPhone(f.wa_number))
+      (!f.wa_number?.trim() || isValidPhone(f.wa_number)) &&
+      (!f.website?.trim() || this.isWebsiteValid(f.website))
     );
   }
 
@@ -3158,6 +3196,7 @@ export class BusinessProfileComponent implements OnInit, AfterViewInit, OnDestro
     this.touched.email = true;
     this.touched.phone = true;
     this.touched.waNumber = true;
+    this.touched.website = true;
 
     if (!this.isFormValid()) {
       this.saveError.set(this.i18n.t('PORTAL.PROFILE.VALIDATION_BANNER'));
@@ -3195,6 +3234,7 @@ export class BusinessProfileComponent implements OnInit, AfterViewInit, OnDestro
           email: f.email.trim(),
           facebook: f.facebook,
           instagram: f.instagram,
+          website: f.website.trim() || null,
           google_business_link: f.google_business_link,
           location: f.location,
           offerings: f.offerings,
