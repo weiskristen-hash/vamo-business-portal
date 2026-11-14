@@ -4496,6 +4496,515 @@ describe('BillingComponent', () => {
     });
   });
 
+  describe('Promotional Pricing Verification Safety (PR #84 Regression Suite)', () => {
+    const starterPlan = mockPlans[0]; // $29.00
+    const basicPlan = mockPlans[1]; // $49.00
+
+    const buildAuthoritativePreview = (
+      plan: StripePlan,
+      overrides: Partial<CheckoutPreviewResult> = {},
+    ): CheckoutPreviewResult => ({
+      verified: true,
+      verificationStatus: 'verified',
+      couponState: 'not_applied',
+      verificationReference: `vref_auth_${plan.tier}_${plan.amount}`,
+      priceId: plan.id,
+      planName: plan.name,
+      interval: plan.interval,
+      currency: plan.currency,
+      subtotal: plan.amount,
+      discountAmount: 0,
+      tax: 0,
+      amountDueToday: plan.amount,
+      renewalAmount: plan.amount,
+      renewalInterval: plan.interval,
+      promoCode: null,
+      promoCodeId: null,
+      promoCodeName: null,
+      couponDuration: null,
+      couponDurationInMonths: null,
+      expiresAt: Date.now() + 600_000,
+      errorCode: null,
+      message: null,
+      ...overrides,
+    });
+
+    beforeEach(async () => {
+      await fixture.whenStable();
+      clearSavedPromoCode();
+      component.subscription.set(null);
+      component.subscriptionLoadError.set(false);
+      component.savedMethods.set([]);
+      component.selectedSavedMethod.set(null);
+      component.selectedPlan.set(null);
+      component.couponCode.set('');
+      component.promoResult.set(null);
+      stripeServiceSpy.formatExactPrice = vi.fn((amount: number, currency: string) =>
+        StripeService.prototype.formatExactPrice(amount, currency),
+      );
+      stripeServiceSpy.recordPaymentOutcome = vi.fn();
+      stripeServiceSpy.previewSubscriptionCheckout = vi.fn().mockImplementation(async (req: any) => {
+        const matched = mockPlans.find((p) => p.id === req.priceId) ?? starterPlan;
+        return buildAuthoritativePreview(matched);
+      });
+      stripeServiceSpy.createVerifiedSubscription = vi.fn().mockResolvedValue({
+        subscriptionId: 'sub_reg_paid_1',
+        paymentIntentId: 'pi_reg_paid_1',
+        clientSecret: 'pi_reg_paid_1_secret_xyz',
+        requiresSetup: false,
+        invoiceId: 'in_reg_paid_1',
+        invoiceAmountDue: 4900,
+        invoiceSubtotal: 4900,
+        invoiceDiscountAmount: 0,
+        invoiceTax: 0,
+        invoiceCurrency: 'usd',
+        appliedPromotionCodeId: null,
+        verifiedByServer: true,
+      });
+      stripeServiceSpy.validatePromoCode.mockClear();
+      stripeServiceSpy.createSubscription.mockClear();
+      stripeServiceSpy.createVerifiedSubscription.mockClear();
+      stripeServiceSpy.createSubscriptionFromSetup.mockClear();
+      stripeServiceSpy.confirmPayment.mockClear();
+      stripeServiceSpy.confirmSetup.mockClear();
+      stripeServiceSpy.confirmWithSavedMethod.mockClear();
+      stripeServiceSpy.confirmSetupWithSavedMethod.mockClear();
+      stripeServiceSpy.mountDeferredPaymentElement.mockClear();
+      stripeServiceSpy.submitElements.mockClear();
+      stripeServiceSpy.cleanup.mockClear();
+      fixture.detectChanges();
+    });
+
+    it('1. mounts Stripe Elements in setup mode and displays $0.00 when a valid 100% promotion (Vamo_go) has an authoritative $0 backend preview', async () => {
+      const authoritativeZeroPreview = buildAuthoritativePreview(basicPlan, {
+        couponState: 'verified_applied',
+        subtotal: 4900,
+        discountAmount: 4900,
+        amountDueToday: 0,
+        renewalAmount: 4900,
+        promoCode: 'Vamo_go',
+        promoCodeId: 'promo_vamo_go_auth',
+        promoCodeName: 'Vamo_go',
+        couponDuration: 'once',
+        verificationReference: 'vref_vamo_go_zero_4900',
+      });
+
+      component.selectPlan(basicPlan);
+      await fixture.whenStable();
+      stripeServiceSpy.mountDeferredPaymentElement.mockClear();
+
+      component.onCouponCodeChange('Vamo_go');
+      stripeServiceSpy.previewSubscriptionCheckout.mockResolvedValueOnce(authoritativeZeroPreview);
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      // Backend-authoritative amounts & setup mode
+      expect(component.checkoutPreview()?.amountDueToday).toBe(0);
+      expect(component.checkoutPreview()?.discountAmount).toBe(4900);
+      expect(component.paymentRequiresSetup()).toBe(true);
+      expect(stripeServiceSpy.mountDeferredPaymentElement).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.mountDeferredPaymentElement).toHaveBeenCalledWith(
+        { mode: 'setup', amount: undefined, currency: 'usd' },
+        'portal-payment-element',
+        expect.any(Object),
+      );
+
+      // Displayed pricing & confirmation label
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="amount-due-today"]')?.textContent?.trim(),
+      ).toBe('$0.00');
+      expect(
+        fixture.nativeElement.querySelector('.summary-discount-amount')?.textContent?.trim(),
+      ).toBe('-$49.00');
+      expect(
+        fixture.nativeElement.querySelector('.promo-badge')?.textContent?.trim(),
+      ).toBe('100% Free Period');
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="free-intro-disclosure"]')?.textContent,
+      ).toContain('No charge today ($0.00)');
+
+      const confirmBtn: HTMLButtonElement = fixture.nativeElement.querySelector(
+        '[data-testid="confirm-subscription-btn"]',
+      );
+      expect(confirmBtn.disabled).toBe(false);
+      expect(confirmBtn.textContent?.trim()).toBe('Activate subscription — $0.00');
+    });
+
+    it('2. never locally converts a promotion claiming 100% off to $0 when the backend preview reports a nonzero amount (or is unavailable)', async () => {
+      // Part A: validatePromoCode claims percentOff: 100 before plan selection, then authoritative backend preview reports $29.00 due today ($20.00 cap discount on $49.00 Basic plan)
+      stripeServiceSpy.validatePromoCode.mockResolvedValueOnce({
+        valid: true,
+        name: 'CLAIM100',
+        percentOff: 100,
+        promoCodeId: 'promo_claim100',
+      });
+      component.couponCode.set('CLAIM100');
+      await component.applyPromoCode();
+      expect(component.promoResult()?.percentOff).toBe(100);
+
+      const nonzeroPromoPreview = buildAuthoritativePreview(basicPlan, {
+        couponState: 'verified_applied',
+        subtotal: 4900,
+        discountAmount: 2000,
+        amountDueToday: 2900,
+        renewalAmount: 4900,
+        promoCode: 'CLAIM100',
+        promoCodeId: 'promo_claim100',
+        promoCodeName: 'CLAIM100',
+        couponDuration: 'once',
+        verificationReference: 'vref_claim100_nonzero_2900',
+      });
+      stripeServiceSpy.previewSubscriptionCheckout.mockResolvedValueOnce(nonzeroPromoPreview);
+
+      component.selectPlan(basicPlan);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.checkoutPreview()?.amountDueToday).toBe(2900);
+      expect(component.checkoutPreview()?.discountAmount).toBe(2000);
+      expect(component.paymentRequiresSetup()).toBe(false);
+
+      // Displayed pricing must show $29.00 (never $0.00 or 100% Free Period)
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="amount-due-today"]')?.textContent?.trim(),
+      ).toBe('$29.00');
+      expect(
+        fixture.nativeElement.querySelector('.summary-discount-amount')?.textContent?.trim(),
+      ).toBe('-$20.00');
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="free-intro-disclosure"]'),
+      ).toBeNull();
+      expect(fixture.nativeElement.querySelector('.promo-badge')).toBeNull();
+      expect(
+        fixture.nativeElement
+          .querySelector('[data-testid="confirm-subscription-btn"]')
+          ?.textContent?.trim(),
+      ).toBe('Pay $29.00 and subscribe');
+
+      // Stripe Elements must mount in subscription mode for 2900 cents, NEVER setup mode or 0
+      expect(stripeServiceSpy.mountDeferredPaymentElement).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.mountDeferredPaymentElement).toHaveBeenCalledWith(
+        { mode: 'subscription', amount: 2900, currency: 'usd' },
+        'portal-payment-element',
+        expect.any(Object),
+      );
+
+      // Part B: Applying a code while a plan is selected when previewSubscriptionCheckout is unavailable must NEVER fall back to validatePromoCode(percentOff: 100) to synthesize $0
+      stripeServiceSpy.mountDeferredPaymentElement.mockClear();
+      stripeServiceSpy.validatePromoCode.mockClear();
+      stripeServiceSpy.validatePromoCode.mockResolvedValueOnce({
+        valid: true,
+        name: 'CLAIM100_FALLBACK',
+        percentOff: 100,
+        promoCodeId: 'promo_claim100_fb',
+      });
+      stripeServiceSpy.previewSubscriptionCheckout = undefined as any;
+
+      component.onCouponCodeChange('CLAIM100_FALLBACK');
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      expect(stripeServiceSpy.validatePromoCode).not.toHaveBeenCalled();
+      expect(component.checkoutPreview()).toBeNull();
+      expect(component.checkoutVerificationStatus()).toBe('unavailable');
+      expect(stripeServiceSpy.mountDeferredPaymentElement).not.toHaveBeenCalled();
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="amount-due-today"]')?.textContent?.trim(),
+      ).toBe('—');
+      const confirmBtn: HTMLButtonElement = fixture.nativeElement.querySelector(
+        '[data-testid="confirm-subscription-btn"]',
+      );
+      expect(confirmBtn.disabled).toBe(true);
+    });
+
+    it('3. blocks checkout, prevents Element mount, and disables confirmation when promotion identifier or plan priceId mismatches', async () => {
+      component.selectPlan(basicPlan);
+      await fixture.whenStable();
+      stripeServiceSpy.mountDeferredPaymentElement.mockClear();
+
+      // Case A: Backend preview returns a different promotion code than requested
+      component.onCouponCodeChange('Vamo_go');
+      stripeServiceSpy.previewSubscriptionCheckout.mockResolvedValueOnce(
+        buildAuthoritativePreview(basicPlan, {
+          couponState: 'verified_applied',
+          discountAmount: 4900,
+          amountDueToday: 0,
+          promoCode: 'WRONG_PROMO',
+          promoCodeId: 'promo_wrong_id',
+          verificationReference: 'vref_wrong_promo',
+        }),
+      );
+
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      expect(component.checkoutVerificationStatus()).toBe('mismatch_blocked');
+      expect(component.couponState()).toBe('expired_or_changed');
+      expect(component.promoResult()).toBeNull();
+      expect(component.checkoutPreview()).toBeNull();
+      expect(component.paymentActive()).toBe(false);
+      expect(stripeServiceSpy.mountDeferredPaymentElement).not.toHaveBeenCalled();
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="amount-due-today"]')?.textContent?.trim(),
+      ).toBe('—');
+      expect(
+        (
+          fixture.nativeElement.querySelector(
+            '[data-testid="confirm-subscription-btn"]',
+          ) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+      expect(fixture.nativeElement.querySelector('.reverify-price-btn')).toBeTruthy();
+
+      // Case B: Missing promoCodeId on a verified_applied preview also blocks checkout
+      stripeServiceSpy.previewSubscriptionCheckout.mockResolvedValueOnce(
+        buildAuthoritativePreview(basicPlan, {
+          couponState: 'verified_applied',
+          discountAmount: 4900,
+          amountDueToday: 0,
+          promoCode: 'Vamo_go',
+          promoCodeId: null,
+          verificationReference: 'vref_missing_promo_id',
+        }),
+      );
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      expect(component.checkoutVerificationStatus()).toBe('mismatch_blocked');
+      expect(stripeServiceSpy.mountDeferredPaymentElement).not.toHaveBeenCalled();
+      expect(component.canConfirmNewSubscriptionCheckout()).toBe(false);
+
+      // Case C: Mismatched promoCodeId or priceId after preview state is set blocks confirmation
+      const validZeroPreview = buildAuthoritativePreview(basicPlan, {
+        couponState: 'verified_applied',
+        discountAmount: 4900,
+        amountDueToday: 0,
+        promoCode: 'Vamo_go',
+        promoCodeId: 'promo_vamo_go_ok',
+        verificationReference: 'vref_vamo_go_ok',
+      });
+      stripeServiceSpy.previewSubscriptionCheckout.mockResolvedValueOnce(validZeroPreview);
+      await component.applyPromoCode();
+      fixture.detectChanges();
+      expect(component.canConfirmNewSubscriptionCheckout()).toBe(true);
+
+      // Simulate preview promoCodeId diverging from applied promoResult.promoCodeId
+      component.checkoutPreview.set({
+        ...validZeroPreview,
+        promoCodeId: 'promo_diverged_id',
+      });
+      fixture.detectChanges();
+
+      expect(component.canConfirmNewSubscriptionCheckout()).toBe(false);
+      expect(
+        (
+          fixture.nativeElement.querySelector(
+            '[data-testid="confirm-subscription-btn"]',
+          ) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="amount-due-today"]')?.textContent?.trim(),
+      ).toBe('—');
+    });
+
+    it('4. blocks checkout when the preview is expired or lacks a valid verification reference, and recovers on retry', async () => {
+      component.selectPlan(basicPlan);
+      await fixture.whenStable();
+      stripeServiceSpy.mountDeferredPaymentElement.mockClear();
+
+      // Case A: Expired preview returned during promo verification
+      component.onCouponCodeChange('Vamo_go');
+      stripeServiceSpy.previewSubscriptionCheckout.mockResolvedValueOnce(
+        buildAuthoritativePreview(basicPlan, {
+          couponState: 'verified_applied',
+          discountAmount: 4900,
+          amountDueToday: 0,
+          promoCode: 'Vamo_go',
+          promoCodeId: 'promo_vamo_go',
+          verificationReference: 'vref_expired_1',
+          expiresAt: Date.now() - 10_000,
+        }),
+      );
+
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      expect(component.checkoutVerificationStatus()).toBe('expired');
+      expect(component.checkoutPreview()).toBeNull();
+      expect(stripeServiceSpy.mountDeferredPaymentElement).not.toHaveBeenCalled();
+      expect(component.canConfirmNewSubscriptionCheckout()).toBe(false);
+      expect(
+        (
+          fixture.nativeElement.querySelector(
+            '[data-testid="confirm-subscription-btn"]',
+          ) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="amount-due-today"]')?.textContent?.trim(),
+      ).toBe('—');
+
+      // Case B: Preview missing verificationReference
+      stripeServiceSpy.previewSubscriptionCheckout.mockResolvedValueOnce(
+        buildAuthoritativePreview(basicPlan, {
+          couponState: 'verified_applied',
+          discountAmount: 4900,
+          amountDueToday: 0,
+          promoCode: 'Vamo_go',
+          promoCodeId: 'promo_vamo_go',
+          verificationReference: '',
+        }),
+      );
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      expect(component.checkoutVerificationStatus()).toBe('unavailable');
+      expect(component.checkoutPreview()).toBeNull();
+      expect(stripeServiceSpy.mountDeferredPaymentElement).not.toHaveBeenCalled();
+      expect(component.canConfirmNewSubscriptionCheckout()).toBe(false);
+
+      // Case C: Retry via Verify price with Stripe button recovers with a fresh valid $0 preview
+      const freshZeroPreview = buildAuthoritativePreview(basicPlan, {
+        couponState: 'verified_applied',
+        discountAmount: 4900,
+        amountDueToday: 0,
+        promoCode: 'Vamo_go',
+        promoCodeId: 'promo_vamo_go',
+        verificationReference: 'vref_fresh_zero_ok',
+        expiresAt: Date.now() + 600_000,
+      });
+      stripeServiceSpy.previewSubscriptionCheckout.mockResolvedValueOnce(freshZeroPreview);
+
+      const retryBtn: HTMLButtonElement = fixture.nativeElement.querySelector('.reverify-price-btn');
+      expect(retryBtn).toBeTruthy();
+      retryBtn.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.checkoutVerificationStatus()).toBe('verified');
+      expect(component.canConfirmNewSubscriptionCheckout()).toBe(true);
+      expect(stripeServiceSpy.mountDeferredPaymentElement).toHaveBeenCalledTimes(1);
+      expect(stripeServiceSpy.mountDeferredPaymentElement).toHaveBeenCalledWith(
+        { mode: 'setup', amount: undefined, currency: 'usd' },
+        'portal-payment-element',
+        expect.any(Object),
+      );
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="amount-due-today"]')?.textContent?.trim(),
+      ).toBe('$0.00');
+    });
+
+    it('5. leaves subscription confirmation disabled and does not mount Stripe Elements when checkout preview fails', async () => {
+      // Case A: Initial plan preview rejects due to network/backend outage
+      stripeServiceSpy.previewSubscriptionCheckout.mockRejectedValueOnce(
+        new Error('Preview endpoint unreachable'),
+      );
+
+      component.selectPlan(starterPlan);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.checkoutVerificationStatus()).toBe('unavailable');
+      expect(component.checkoutPreview()).toBeNull();
+      expect(component.paymentActive()).toBe(false);
+      expect(stripeServiceSpy.mountDeferredPaymentElement).not.toHaveBeenCalled();
+      expect(component.canConfirmNewSubscriptionCheckout()).toBe(false);
+      expect(
+        (
+          fixture.nativeElement.querySelector(
+            '[data-testid="confirm-subscription-btn"]',
+          ) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="amount-due-today"]')?.textContent?.trim(),
+      ).toBe('—');
+      expect(fixture.nativeElement.querySelector('.reverify-price-btn')).toBeTruthy();
+
+      // Case B: Base plan succeeds, then promotional preview fails -> tears down Element and disables confirmation
+      component.selectPlan(basicPlan);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(component.canConfirmNewSubscriptionCheckout()).toBe(true);
+      stripeServiceSpy.mountDeferredPaymentElement.mockClear();
+
+      component.onCouponCodeChange('Vamo_go');
+      stripeServiceSpy.previewSubscriptionCheckout.mockRejectedValueOnce(
+        new Error('Promo verification timeout'),
+      );
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      expect(component.checkoutVerificationStatus()).toBe('unavailable');
+      expect(component.couponState()).toBe('verification_unavailable');
+      expect(component.paymentActive()).toBe(false);
+      expect(stripeServiceSpy.mountDeferredPaymentElement).not.toHaveBeenCalled();
+      expect(component.canConfirmNewSubscriptionCheckout()).toBe(false);
+      expect(
+        (
+          fixture.nativeElement.querySelector(
+            '[data-testid="confirm-subscription-btn"]',
+          ) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+    });
+
+    it('6. creates no subscription and confirms no payment when checkout verification fails, expires, or mismatches', async () => {
+      // Mount a valid session first, then corrupt/expire verification state and attempt confirmPayment() & proceedToPayment()
+      const validPreview = buildAuthoritativePreview(basicPlan, {
+        couponState: 'verified_applied',
+        discountAmount: 4900,
+        amountDueToday: 0,
+        promoCode: 'Vamo_go',
+        promoCodeId: 'promo_vamo_go',
+        verificationReference: 'vref_vamo_go_guard',
+        expiresAt: Date.now() + 600_000,
+      });
+      component.selectPlan(basicPlan);
+      await fixture.whenStable();
+      component.onCouponCodeChange('Vamo_go');
+      stripeServiceSpy.previewSubscriptionCheckout.mockResolvedValueOnce(validPreview);
+      await component.applyPromoCode();
+      fixture.detectChanges();
+
+      // 6a. Preview expires before confirmation (new-card deferred Element flow)
+      component.checkoutPreview.set({
+        ...validPreview,
+        expiresAt: Date.now() - 1_000,
+      });
+      await component.confirmPayment();
+      expect(component.checkoutVerificationStatus()).toBe('expired');
+      expect(component.errorMessage()).toContain('Your verified checkout total has expired or changed');
+
+      // 6b. Mismatched plan priceId on preview
+      component.checkoutVerificationStatus.set('verified');
+      component.checkoutPreview.set({
+        ...validPreview,
+        priceId: starterPlan.id,
+      });
+      await component.confirmPayment();
+      expect(component.checkoutVerificationStatus()).toBe('mismatch_blocked');
+
+      // 6c. Saved-card flow when preview verification failed/unavailable
+      component.savedMethods.set(mockSavedMethods);
+      component.selectSavedMethod(mockSavedMethods[0]);
+      component.checkoutPreview.set(null);
+      component.checkoutVerificationStatus.set('unavailable');
+      await component.confirmPayment();
+      await component.proceedToPayment();
+
+      expect(stripeServiceSpy.submitElements).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.createVerifiedSubscription).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.createSubscription).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.createSubscriptionFromSetup).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.confirmPayment).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.confirmSetup).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.confirmWithSavedMethod).not.toHaveBeenCalled();
+      expect(stripeServiceSpy.confirmSetupWithSavedMethod).not.toHaveBeenCalled();
+    });
+  });
+
 });
 
 

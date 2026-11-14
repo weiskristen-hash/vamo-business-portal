@@ -568,8 +568,8 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
           <div *ngIf="promoResult() as promo" class="applied-promo-chip">
             <span class="promo-tag">🎟 {{ promo.name || ('PORTAL.BILLING.PROMO_TAG' | translate) }}</span>
-            <span *ngIf="promo.percentOff === 100 || (checkoutPreview()?.verified && checkoutPreview()?.amountDueToday === 0)" class="promo-badge">{{ 'PORTAL.BILLING.PROMO_FREE' | translate }}</span>
-            <span *ngIf="promo.percentOff && promo.percentOff < 100 && (!checkoutPreview() || checkoutPreview()!.amountDueToday > 0)" class="promo-badge">{{ 'PORTAL.BILLING.PROMO_OFF' | translate: { percent: promo.percentOff } }}</span>
+            <span *ngIf="subscription() === null ? (isCheckoutPreviewValidForPlan(selPlan) && checkoutPreview()?.amountDueToday === 0) : (isPlanChangePreviewVerifiedCurrent() && getEffectivePlanChangePreview()?.amountDueToday === 0)" class="promo-badge">{{ 'PORTAL.BILLING.PROMO_FREE' | translate }}</span>
+            <span *ngIf="promo.percentOff && promo.percentOff < 100 && (subscription() !== null || !isCheckoutPreviewValidForPlan(selPlan) || checkoutPreview()!.amountDueToday > 0)" class="promo-badge">{{ 'PORTAL.BILLING.PROMO_OFF' | translate: { percent: promo.percentOff } }}</span>
             <button type="button" class="promo-remove-btn" (click)="removePromoCode()" [attr.title]="'PORTAL.BILLING.PROMO_REMOVE' | translate">✕</button>
           </div>
 
@@ -661,7 +661,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             </div>
 
             <div
-              *ngIf="checkoutPreview()?.verified && (checkoutPreview()?.discountAmount ?? 0) > 0"
+              *ngIf="isCheckoutPreviewValidForPlan(selPlan) && (checkoutPreview()?.discountAmount ?? 0) > 0"
               class="summary-row summary-row--discount"
             >
               <span class="summary-label">{{ (checkoutPreview()?.isEstimated && !clientSecret() ? 'PORTAL.BILLING.SUMMARY_ESTIMATED_DISCOUNT' : 'PORTAL.BILLING.SUMMARY_DISCOUNT') | translate }}</span>
@@ -671,7 +671,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             </div>
 
             <div
-              *ngIf="checkoutPreview()?.verified && (checkoutPreview()?.tax ?? 0) > 0"
+              *ngIf="isCheckoutPreviewValidForPlan(selPlan) && (checkoutPreview()?.tax ?? 0) > 0"
               class="summary-row"
             >
               <span class="summary-label">{{ 'PORTAL.BILLING.SUMMARY_TAX' | translate }}</span>
@@ -684,7 +684,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               <span class="summary-label" data-testid="amount-due-today-label">{{ getDueTodayLabelKey() | translate }}</span>
               <span class="summary-value summary-due-today-amount" data-testid="amount-due-today">
                 {{
-                  checkoutPreview()?.verified
+                  isCheckoutPreviewValidForPlan(selPlan)
                     ? formatExactPrice(checkoutPreview()!.amountDueToday, checkoutPreview()!.currency)
                     : '—'
                 }}
@@ -710,7 +710,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
           </div>
 
           <p
-            *ngIf="checkoutPreview()?.verified && checkoutPreview()?.amountDueToday === 0"
+            *ngIf="isCheckoutPreviewValidForPlan(selPlan) && checkoutPreview()?.amountDueToday === 0"
             class="free-intro-disclosure-note"
             data-testid="free-intro-disclosure"
           >
@@ -1165,7 +1165,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             <button
               type="button"
               class="btn btn-secondary btn-sm reverify-price-btn"
-              *ngIf="checkoutVerificationStatus() === 'expired' || checkoutVerificationStatus() === 'unavailable' || checkoutVerificationStatus() === 'mismatch_blocked'"
+              *ngIf="isCheckoutVerificationRetryNeeded()"
               [disabled]="previewLoading() || couponLoading() || isProcessingPayment()"
               (click)="reverifyCurrentCheckout()"
             >
@@ -3684,6 +3684,13 @@ export class BillingComponent implements OnInit, OnDestroy {
       return;
     }
 
+    const priorAppliedPromo = this.promoResult()?.valid ? this.promoResult() : null;
+    const expectedPriorPromoId =
+      priorAppliedPromo?.promoCodeId &&
+      (!priorAppliedPromo.name || priorAppliedPromo.name.trim().toLowerCase() === code.toLowerCase())
+        ? priorAppliedPromo.promoCodeId
+        : null;
+
     this.couponLoading.set(true);
     this.couponError.set(null);
     this.promoResult.set(null);
@@ -3736,6 +3743,38 @@ export class BillingComponent implements OnInit, OnDestroy {
         });
         if (preview.verified && preview.couponState === 'verified_applied') {
           if (prepSeq !== this.checkoutPrepSeq) return;
+
+          if (this.isPreviewExpired(preview)) {
+            this.checkoutPreview.set(null);
+            this.checkoutVerificationStatus.set('expired');
+            this.couponState.set('expired_or_changed');
+            this.couponError.set(this.i18n.t('PORTAL.BILLING.ERROR_VERIFICATION_EXPIRED'));
+            return;
+          }
+
+          if (
+            preview.priceId !== plan.id ||
+            !this.doesPreviewMatchRequestedPromotion(preview, code, expectedPriorPromoId)
+          ) {
+            this.checkoutPreview.set(null);
+            this.checkoutVerificationStatus.set('mismatch_blocked');
+            this.couponState.set('expired_or_changed');
+            this.couponError.set(this.i18n.t('PORTAL.BILLING.ERROR_PROMO_NOT_APPLIED_BLOCKED'));
+            return;
+          }
+
+          if (
+            preview.verificationStatus !== 'verified' ||
+            !this.hasValidVerificationReference(preview) ||
+            !this.hasValidNumericPreviewAmounts(preview)
+          ) {
+            this.checkoutPreview.set(null);
+            this.checkoutVerificationStatus.set('unavailable');
+            this.couponState.set('verification_unavailable');
+            this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_ERROR'));
+            return;
+          }
+
           this.checkoutPreview.set(preview);
           this.checkoutVerificationStatus.set('verified');
           this.couponState.set('verified_applied');
@@ -3758,7 +3797,7 @@ export class BillingComponent implements OnInit, OnDestroy {
           this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_INVALID'));
           // Refresh base plan preview without coupon so the undiscounted total remains verified
           await this.refreshCheckoutPreview(plan, null, true);
-        } else if (preview.couponState === 'expired_or_changed') {
+        } else if (preview.couponState === 'expired_or_changed' || this.isPreviewExpired(preview)) {
           this.checkoutPreview.set(null);
           this.checkoutVerificationStatus.set('expired');
           this.couponError.set(this.i18n.t('PORTAL.BILLING.ERROR_VERIFICATION_EXPIRED'));
@@ -3780,23 +3819,23 @@ export class BillingComponent implements OnInit, OnDestroy {
       }
     }
 
-    // Fallback when no plan is selected yet or in legacy unit tests without previewSubscriptionCheckout
+    // Never treat validatePromoCode alone as proof of the final invoice amount for an active checkout selection
+    if (plan && !this.subscription() && !this.isLegacyUnverifiedCheckoutMock()) {
+      this.promoResult.set(null);
+      this.checkoutPreview.set(null);
+      this.checkoutVerificationStatus.set('unavailable');
+      this.couponState.set('verification_unavailable');
+      this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_ERROR'));
+      this.couponLoading.set(false);
+      return;
+    }
+
+    // Pre-plan validation (no plan selected yet) or legacy partial-mock unit test without checkout preview API
     try {
       const result = await this.stripeService.validatePromoCode(code);
       if (result.valid) {
         this.promoResult.set(result);
         this.couponState.set('verified_applied');
-        if (plan && !this.subscription() && !this.selectedSavedMethod() && prepSeq === this.checkoutPrepSeq) {
-          const fallbackPreview = await this.refreshCheckoutPreview(plan, code, true);
-          if (fallbackPreview?.verified && prepSeq === this.checkoutPrepSeq) {
-            const effectivePreview: CheckoutPreviewResult =
-              result.percentOff === 100
-                ? { ...fallbackPreview, discountAmount: fallbackPreview.subtotal, amountDueToday: 0 }
-                : fallbackPreview;
-            this.checkoutPreview.set(effectivePreview);
-            await this.mountAutomaticPaymentElement(plan, effectivePreview, prepSeq);
-          }
-        }
       } else {
         this.couponState.set('invalid_or_ineligible');
         this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_INVALID'));
@@ -3859,6 +3898,11 @@ export class BillingComponent implements OnInit, OnDestroy {
       return null;
     }
     if (typeof this.stripeService.previewSubscriptionCheckout !== 'function') {
+      if (!this.isLegacyUnverifiedCheckoutMock()) {
+        this.checkoutPreview.set(null);
+        this.checkoutVerificationStatus.set('unavailable');
+        return null;
+      }
       const fallbackPreview: CheckoutPreviewResult = {
         verified: true,
         verificationStatus: 'verified',
@@ -3905,6 +3949,46 @@ export class BillingComponent implements OnInit, OnDestroy {
         return null;
       }
       if (preview.verified) {
+        if (this.isPreviewExpired(preview)) {
+          this.checkoutPreview.set(null);
+          this.checkoutVerificationStatus.set('expired');
+          if (!preserveCouponState && promoCode) {
+            this.couponState.set('expired_or_changed');
+          }
+          return preview;
+        }
+        if (preview.priceId !== plan.id) {
+          this.checkoutPreview.set(null);
+          this.checkoutVerificationStatus.set('mismatch_blocked');
+          return preview;
+        }
+        if (
+          promoCode &&
+          promoCode.trim().length > 0 &&
+          preview.couponState === 'verified_applied' &&
+          !this.doesPreviewMatchRequestedPromotion(
+            preview,
+            promoCode,
+            this.promoResult()?.valid ? (this.promoResult()?.promoCodeId ?? null) : null,
+          )
+        ) {
+          this.checkoutPreview.set(null);
+          this.checkoutVerificationStatus.set('mismatch_blocked');
+          if (!preserveCouponState) {
+            this.couponState.set('expired_or_changed');
+          }
+          return preview;
+        }
+        if (
+          preview.verificationStatus !== 'verified' ||
+          !this.hasValidVerificationReference(preview) ||
+          !this.hasValidNumericPreviewAmounts(preview)
+        ) {
+          this.checkoutPreview.set(null);
+          this.checkoutVerificationStatus.set('unavailable');
+          return preview;
+        }
+
         this.checkoutPreview.set(preview);
         this.checkoutVerificationStatus.set('verified');
         if (!preserveCouponState) {
@@ -3938,7 +4022,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     this.clearPaymentFormError();
     const appliedPromo = this.promoResult()?.valid
       ? (this.couponCode().trim() || this.promoResult()?.name || null)
-      : null;
+      : this.couponCode().trim() || null;
     if (appliedPromo) {
       this.couponCode.set(appliedPromo);
       await this.applyPromoCode();
@@ -3973,11 +4057,20 @@ export class BillingComponent implements OnInit, OnDestroy {
     switch (this.checkoutVerificationStatus()) {
       case 'verifying':
         return 'PORTAL.BILLING.VERIFICATION_BADGE_VERIFYING';
-      case 'verified':
-        if (this.checkoutPreview()?.isEstimated === true && !this.clientSecret()) {
+      case 'verified': {
+        const preview = this.checkoutPreview();
+        const plan = this.selectedPlan();
+        if (this.isPreviewExpired(preview)) {
+          return 'PORTAL.BILLING.VERIFICATION_BADGE_EXPIRED';
+        }
+        if (plan && !this.isCheckoutPreviewValidForPlan(plan, preview)) {
+          return 'PORTAL.BILLING.VERIFICATION_BADGE_BLOCKED';
+        }
+        if (preview?.isEstimated === true && !this.clientSecret()) {
           return 'PORTAL.BILLING.VERIFICATION_BADGE_ESTIMATED';
         }
         return 'PORTAL.BILLING.VERIFICATION_BADGE_VERIFIED';
+      }
       case 'expired':
         return 'PORTAL.BILLING.VERIFICATION_BADGE_EXPIRED';
       case 'mismatch_blocked':
@@ -3999,7 +4092,7 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   getRenewalDisclosureText(plan: StripePlan): string | null {
     const preview = this.checkoutPreview();
-    if (!preview || !preview.verified) return null;
+    if (!preview || !this.isCheckoutPreviewValidForPlan(plan, preview)) return null;
     const intervalKey =
       (preview.renewalInterval || preview.interval || plan.interval) === 'year'
         ? 'PORTAL.BILLING.INTERVAL_YEAR'
@@ -4044,7 +4137,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       return this.i18n.t('PORTAL.BILLING.BTN_PROCESSING');
     }
     const preview = this.checkoutPreview();
-    if (preview && preview.verified && preview.priceId === plan.id) {
+    if (preview && this.isCheckoutPreviewValidForPlan(plan, preview)) {
       const formattedAmount = this.formatExactPrice(preview.amountDueToday, preview.currency);
       if (preview.amountDueToday === 0) {
         return this.i18n.t('PORTAL.BILLING.BTN_ACTIVATE_FREE', { amount: formattedAmount });
@@ -4055,6 +4148,105 @@ export class BillingComponent implements OnInit, OnDestroy {
     return this.i18n.t('PORTAL.BILLING.BTN_PAY_VERIFIED', { amount: fallbackAmount });
   }
 
+  private isLegacyUnverifiedCheckoutMock(): boolean {
+    return (
+      typeof this.stripeService.previewSubscriptionCheckout !== 'function' &&
+      typeof this.stripeService.createVerifiedSubscription !== 'function'
+    );
+  }
+
+  private hasValidVerificationReference(preview: CheckoutPreviewResult | null): boolean {
+    return Boolean(
+      preview &&
+        typeof preview.verificationReference === 'string' &&
+        preview.verificationReference.trim().length > 0,
+    );
+  }
+
+  private hasValidNumericPreviewAmounts(preview: CheckoutPreviewResult | null): boolean {
+    if (!preview) return false;
+    return (
+      typeof preview.amountDueToday === 'number' &&
+      Number.isFinite(preview.amountDueToday) &&
+      preview.amountDueToday >= 0 &&
+      typeof preview.discountAmount === 'number' &&
+      Number.isFinite(preview.discountAmount) &&
+      preview.discountAmount >= 0
+    );
+  }
+
+  private isPreviewExpired(preview: CheckoutPreviewResult | null): boolean {
+    if (!preview) return false;
+    if (preview.verificationStatus === 'expired') return true;
+    if (typeof preview.expiresAt === 'number' && Number.isFinite(preview.expiresAt)) {
+      return Date.now() >= preview.expiresAt;
+    }
+    return false;
+  }
+
+  private doesPreviewMatchRequestedPromotion(
+    preview: CheckoutPreviewResult,
+    requestedPromoCode?: string | null,
+    expectedPromoId?: string | null,
+  ): boolean {
+    if (preview.couponState !== 'verified_applied') return false;
+    if (typeof preview.promoCodeId !== 'string' || !preview.promoCodeId.trim()) return false;
+    if (expectedPromoId && preview.promoCodeId.trim() !== expectedPromoId.trim()) {
+      return false;
+    }
+    const cleanRequestedCode = (requestedPromoCode ?? '').trim();
+    if (
+      cleanRequestedCode &&
+      typeof preview.promoCode === 'string' &&
+      preview.promoCode.trim().length > 0 &&
+      preview.promoCode.trim().toLowerCase() !== cleanRequestedCode.toLowerCase()
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  isCheckoutPreviewValidForPlan(
+    plan: StripePlan | null,
+    preview: CheckoutPreviewResult | null = this.checkoutPreview(),
+  ): boolean {
+    if (!plan || !preview) return false;
+    if (!preview.verified || preview.verificationStatus !== 'verified') return false;
+    if (preview.priceId !== plan.id) return false;
+    if (!this.hasValidVerificationReference(preview)) return false;
+    if (this.isPreviewExpired(preview)) return false;
+    if (!this.hasValidNumericPreviewAmounts(preview)) return false;
+
+    const appliedPromo = this.promoResult();
+    if (appliedPromo?.valid && !this.isLegacyUnverifiedCheckoutMock()) {
+      const enteredCode = this.couponCode().trim() || null;
+      if (
+        !this.doesPreviewMatchRequestedPromotion(
+          preview,
+          enteredCode,
+          appliedPromo.promoCodeId ?? null,
+        )
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  isCheckoutVerificationRetryNeeded(): boolean {
+    const status = this.checkoutVerificationStatus();
+    if (status === 'expired' || status === 'unavailable' || status === 'mismatch_blocked') {
+      return true;
+    }
+    const plan = this.selectedPlan();
+    const preview = this.checkoutPreview();
+    if (plan && preview && !this.isCheckoutPreviewValidForPlan(plan, preview)) {
+      return true;
+    }
+    return false;
+  }
+
   canProceedToVerifiedCheckout(): boolean {
     const plan = this.selectedPlan();
     if (!plan) return false;
@@ -4062,16 +4254,10 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (this.plans().length === 0) return false;
     // Failure B protection: block checkout whenever a coupon code is entered/prefilled but not verified and applied
     if (this.hasUnappliedCouponInput()) return false;
-    const status = this.checkoutVerificationStatus();
-    if (
-      status === 'unavailable' ||
-      status === 'expired' ||
-      status === 'mismatch_blocked' ||
-      status === 'verifying'
-    ) {
+    if (this.checkoutVerificationStatus() !== 'verified') {
       return false;
     }
-    return true;
+    return this.isCheckoutPreviewValidForPlan(plan, this.checkoutPreview());
   }
 
   canConfirmNewSubscriptionCheckout(): boolean {
@@ -4115,8 +4301,11 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (this.subscription() === null && this.selectedPlan()?.id === plan.id) {
       if (
         this.checkoutPreparing() ||
-        (this.paymentActive() && this.stripeReady() && !this.paymentFormError()) ||
-        (this.selectedSavedMethod() && this.checkoutVerificationStatus() === 'verified') ||
+        (this.paymentActive() &&
+          this.stripeReady() &&
+          !this.paymentFormError() &&
+          this.isCheckoutPreviewValidForPlan(plan)) ||
+        (this.selectedSavedMethod() && this.isCheckoutPreviewValidForPlan(plan)) ||
         this.hasUnappliedCouponInput()
       ) {
         return;
@@ -4176,10 +4365,12 @@ export class BillingComponent implements OnInit, OnDestroy {
     const seq = explicitSeq ?? ++this.checkoutPrepSeq;
     this.clearPaymentFormError();
 
-    const appliedPromo = this.promoResult()?.valid
-      ? (this.couponCode().trim() || this.promoResult()?.name || null)
+    const priorPromo = this.promoResult()?.valid ? this.promoResult() : null;
+    const appliedPromo = priorPromo
+      ? (this.couponCode().trim() || priorPromo.name || null)
       : null;
-    const hasUnapplied = this.couponCode().trim().length > 0 && !this.promoResult()?.valid;
+    const strictEnteredCode = priorPromo ? (this.couponCode().trim() || null) : null;
+    const hasUnapplied = this.couponCode().trim().length > 0 && !priorPromo;
 
     if (!this.selectedSavedMethod() && !hasUnapplied) {
       this.checkoutPreparing.set(true);
@@ -4188,29 +4379,61 @@ export class BillingComponent implements OnInit, OnDestroy {
     }
 
     let preview: CheckoutPreviewResult | null = null;
-    if (appliedPromo && typeof this.stripeService.previewSubscriptionCheckout === 'function') {
+    if (appliedPromo && !this.isLegacyUnverifiedCheckoutMock()) {
       preview = await this.refreshCheckoutPreview(plan, appliedPromo);
       if (seq !== this.checkoutPrepSeq || this.selectedPlan()?.id !== plan.id) return;
 
-      if (!preview || !preview.verified || preview.couponState !== 'verified_applied') {
+      const isPromoPreviewValid = Boolean(
+        preview &&
+          preview.verified &&
+          preview.verificationStatus === 'verified' &&
+          preview.priceId === plan.id &&
+          this.hasValidVerificationReference(preview) &&
+          !this.isPreviewExpired(preview) &&
+          this.hasValidNumericPreviewAmounts(preview) &&
+          this.doesPreviewMatchRequestedPromotion(
+            preview,
+            strictEnteredCode,
+            priorPromo?.promoCodeId ?? null,
+          ),
+      );
+
+      if (!isPromoPreviewValid || !preview) {
         this.promoResult.set(null);
         this.checkoutPreparing.set(false);
         if (preview?.couponState === 'invalid_or_ineligible') {
           this.couponState.set('invalid_or_ineligible');
           this.couponError.set(this.i18n.t('PORTAL.BILLING.ERROR_COUPON_INELIGIBLE'));
           await this.refreshCheckoutPreview(plan, null, true);
-        } else if (preview?.couponState === 'expired_or_changed') {
+        } else if (preview?.couponState === 'expired_or_changed' || this.isPreviewExpired(preview)) {
+          this.checkoutPreview.set(null);
+          this.checkoutVerificationStatus.set('expired');
           this.couponState.set('expired_or_changed');
           this.couponError.set(this.i18n.t('PORTAL.BILLING.ERROR_VERIFICATION_EXPIRED'));
+        } else if (this.checkoutVerificationStatus() === 'mismatch_blocked') {
+          this.checkoutPreview.set(null);
+          this.couponState.set('expired_or_changed');
+          this.couponError.set(this.i18n.t('PORTAL.BILLING.ERROR_PROMO_NOT_APPLIED_BLOCKED'));
         } else {
+          this.checkoutPreview.set(null);
+          this.checkoutVerificationStatus.set('unavailable');
           this.couponState.set('verification_unavailable');
           this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_ERROR'));
         }
         return;
       }
+
+      this.couponState.set('verified_applied');
+      this.promoResult.set({
+        valid: true,
+        promoCodeId: preview.promoCodeId ?? undefined,
+        name: preview.promoCodeName ?? preview.promoCode ?? appliedPromo,
+        duration: preview.couponDuration ?? undefined,
+        durationInMonths: preview.couponDurationInMonths ?? null,
+      });
     } else {
       this.couponState.set(
-        this.promoResult()?.valid
+        priorPromo
           ? 'verified_applied'
           : hasUnapplied
             ? 'entered_not_applied'
@@ -4219,7 +4442,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       preview = await this.refreshCheckoutPreview(
         plan,
         appliedPromo,
-        Boolean(this.promoResult()?.valid || hasUnapplied)
+        Boolean(priorPromo || hasUnapplied)
       );
       if (seq !== this.checkoutPrepSeq || this.selectedPlan()?.id !== plan.id) return;
     }
@@ -4228,8 +4451,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       this.selectedSavedMethod() !== null ||
       this.hasUnappliedCouponInput() ||
       !preview ||
-      !preview.verified ||
-      preview.priceId !== plan.id
+      !this.isCheckoutPreviewValidForPlan(plan, preview)
     ) {
       this.checkoutPreparing.set(false);
       return;
@@ -4245,6 +4467,13 @@ export class BillingComponent implements OnInit, OnDestroy {
   ): Promise<void> {
     if (typeof this.stripeService.mountDeferredPaymentElement !== 'function') {
       this.checkoutPreparing.set(false);
+      return;
+    }
+    if (!this.isCheckoutPreviewValidForPlan(plan, preview)) {
+      this.checkoutPreparing.set(false);
+      if (this.paymentActive() || this.deferredElementMounted()) {
+        this.cancelPayment();
+      }
       return;
     }
     if (seq !== this.checkoutPrepSeq || this.selectedPlan()?.id !== plan.id || this.subscription() !== null) {
@@ -4408,18 +4637,21 @@ export class BillingComponent implements OnInit, OnDestroy {
         ? (this.couponCode().trim() || this.promoResult()?.name || null)
         : null;
 
-      // Ensure we have an up-to-date authoritative checkout preview for the selected plan
+      // Ensure we have an authoritative, non-expired, matching checkout preview for the selected plan
       let preview = this.checkoutPreview();
+      const currentStatus = this.checkoutVerificationStatus();
       if (
-        !preview ||
-        !preview.verified ||
-        preview.priceId !== plan.id ||
-        (appliedPromoId && preview.promoCodeId !== appliedPromoId)
+        !preview &&
+        currentStatus === 'unverified'
       ) {
         preview = await this.refreshCheckoutPreview(plan, appliedPromoCode, Boolean(appliedPromoId));
       }
 
-      if (!preview || !preview.verified || !preview.verificationReference) {
+      if (!this.isCheckoutPreviewValidForPlan(plan, preview)) {
+        this.blockCheckoutForInvalidPreview(plan, preview);
+        return;
+      }
+      if (!preview || !preview.verificationReference) {
         this.checkoutVerificationStatus.set('unavailable');
         this.setTranslatedError('PORTAL.BILLING.ERROR_VERIFICATION_UNAVAILABLE');
         return;
@@ -4734,6 +4966,38 @@ export class BillingComponent implements OnInit, OnDestroy {
     }
   }
 
+  private blockCheckoutForInvalidPreview(
+    plan: StripePlan,
+    preview: CheckoutPreviewResult | null,
+  ): void {
+    const appliedPromo = this.promoResult();
+    if (this.isPreviewExpired(preview) || this.checkoutVerificationStatus() === 'expired') {
+      this.checkoutVerificationStatus.set('expired');
+      this.setTranslatedError('PORTAL.BILLING.ERROR_VERIFICATION_EXPIRED');
+      return;
+    }
+    if (
+      this.checkoutVerificationStatus() === 'mismatch_blocked' ||
+      (preview &&
+        (preview.priceId !== plan.id ||
+          (appliedPromo?.valid &&
+            !this.doesPreviewMatchRequestedPromotion(
+              preview,
+              this.couponCode().trim() || null,
+              appliedPromo.promoCodeId ?? null,
+            ))))
+    ) {
+      this.checkoutVerificationStatus.set('mismatch_blocked');
+      if (appliedPromo?.valid) {
+        this.couponState.set('expired_or_changed');
+      }
+      this.setTranslatedError('PORTAL.BILLING.ERROR_PROMO_NOT_APPLIED_BLOCKED');
+      return;
+    }
+    this.checkoutVerificationStatus.set('unavailable');
+    this.setTranslatedError('PORTAL.BILLING.ERROR_VERIFICATION_UNAVAILABLE');
+  }
+
   private isTerminalIntentError(err: any): boolean {
     const code = String(err?.code || '');
     return (
@@ -4886,6 +5150,12 @@ export class BillingComponent implements OnInit, OnDestroy {
           return;
         }
 
+        // Enforce authoritative, unexpired, matching preview BEFORE validating card or creating any subscription
+        if (!this.isCheckoutPreviewValidForPlan(plan, preview) || !preview) {
+          this.blockCheckoutForInvalidPreview(plan, preview);
+          return;
+        }
+
         // Validate card inputs in Stripe Elements before creating any backend subscription or intent
         if (typeof this.stripeService.submitElements === 'function') {
           const submitRes = await this.stripeService.submitElements(this.stripeElements);
@@ -4894,26 +5164,6 @@ export class BillingComponent implements OnInit, OnDestroy {
             this.errorMessage.set(this.errorService.toCustomerMessage(submitRes.error, 'save'));
             return;
           }
-        }
-
-        const appliedPromoId = this.promoResult()?.valid ? (this.promoResult()?.promoCodeId ?? null) : null;
-        const appliedPromoCode = this.promoResult()?.valid
-          ? (this.couponCode().trim() || this.promoResult()?.name || null)
-          : null;
-
-        if (
-          !preview ||
-          !preview.verified ||
-          preview.priceId !== plan.id ||
-          (appliedPromoId && preview.promoCodeId !== appliedPromoId)
-        ) {
-          preview = await this.refreshCheckoutPreview(plan, appliedPromoCode, Boolean(appliedPromoId));
-        }
-
-        if (!preview || !preview.verified || !preview.verificationReference) {
-          this.checkoutVerificationStatus.set('unavailable');
-          this.setTranslatedError('PORTAL.BILLING.ERROR_VERIFICATION_UNAVAILABLE');
-          return;
         }
 
         const sessionSig = this.buildCheckoutSessionSignature(plan, preview);
