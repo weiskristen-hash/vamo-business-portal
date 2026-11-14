@@ -54,6 +54,12 @@ import { capturePromoCode, extractPromoFromUrl } from '../../../core/utils/promo
                   <p>{{ ('PORTAL.LOGIN.STEP_' + step + '_DESC') | translate }}</p>
                 </li>
               </ol>
+              <div class="login-trial-offer" role="note" style="margin-top: 18px; padding: 14px 16px; border: 1px solid rgba(254,57,127,.38); border-radius: 12px; background: linear-gradient(110deg, rgba(254,57,127,.12), rgba(0,190,220,.09));">
+                <strong style="display: block; color: #fff; font-size: 1rem; margin-bottom: 4px;">{{ 'PORTAL.LOGIN.TRIAL_TITLE' | translate }}</strong>
+                <span style="display: block; font-size: .88rem; line-height: 1.5; color: rgba(255,255,255,.85);">{{ 'PORTAL.LOGIN.TRIAL_DESC' | translate }}
+                  <strong style="display: inline-block; margin-left: 5px; padding: 2px 8px; border: 1px dashed #f86ba8; border-radius: 6px; color: #fff; white-space: nowrap; user-select: all;">Vamo_go</strong>
+                </span>
+              </div>
             </div>
           </div>
 

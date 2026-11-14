@@ -753,6 +753,8 @@ export const esTranslations: Record<string, any> = {
       "HERO_SUBTITLE": "Pon tu negocio, eventos, ofertas y experiencias frente a residentes y viajeros que buscan qué hacer en la República Dominicana.",
       "HOW_TITLE": "Cómo Funciona",
       "HOW_DESC": "Comienza a llegar a nuevos clientes en cuatro sencillos pasos.",
+      "TRIAL_TITLE": "¡Tu primer mes va por nuestra cuenta!",
+      "TRIAL_DESC": "Descubre lo que VAMO puede hacer por tu negocio. Usa el código",
       "STEP_LABEL": "PASO",
       "STEP_1_TITLE": "Crea tu perfil de negocio",
       "STEP_1_DESC": "Muestra a tus clientes quién eres, dónde estás y cómo contactarte.",

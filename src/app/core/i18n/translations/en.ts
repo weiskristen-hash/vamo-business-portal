@@ -753,6 +753,8 @@ export const enTranslations: Record<string, any> = {
       "HERO_SUBTITLE": "Put your business, events, offers, and experiences in front of locals and travelers looking for things to do in the Dominican Republic.",
       "HOW_TITLE": "How It Works",
       "HOW_DESC": "Start reaching customers in four simple steps.",
+      "TRIAL_TITLE": "Your first month is on us!",
+      "TRIAL_DESC": "Discover what VAMO can do for your business. Use code",
       "STEP_LABEL": "STEP",
       "STEP_1_TITLE": "Create your business profile",
       "STEP_1_DESC": "Show customers who you are, where you are, and how to reach you.",
