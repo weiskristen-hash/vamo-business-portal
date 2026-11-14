@@ -69,7 +69,7 @@ import { capturePromoCode, extractPromoFromUrl } from '../../../core/utils/promo
                        style="position: relative; padding: 16px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.045);">
                     <span *ngIf="plan.name === 'Basic'" style="display: inline-block; margin-bottom: 6px; font-size: .65rem; font-weight: 800; letter-spacing: .04em; color: #ff74b2;">{{ 'PORTAL.LOGIN.PRICING_POPULAR' | translate }}</span>
                     <h3 style="font-size: 1.05rem; color: #fff; margin: 0 0 8px;">{{ plan.name }}</h3>
-                    <p style="color: #f879bc; font-size: 1.55rem; font-weight: 800; margin: 0 0 12px;">${{ plan.price }}<span style="font-size: .82rem; color: rgba(255,255,255,.7); font-weight: 500;">{{ 'PORTAL.LOGIN.PRICING_MONTH' | translate }}</span></p>
+                    <p style="color: #f879bc; font-size: 1.55rem; font-weight: 800; margin: 0 0 12px;">&#36;{{ plan.price }}<span style="font-size: .82rem; color: rgba(255,255,255,.7); font-weight: 500;">{{ 'PORTAL.LOGIN.PRICING_MONTH' | translate }}</span></p>
                     <p style="color: #fff; font-size: .8rem; font-weight: 600; margin: 0 0 8px;">{{ plan.listings }} {{ 'PORTAL.LOGIN.PRICING_LISTINGS' | translate }}</p>
                     <p style="color: rgba(255,255,255,.75); font-size: .76rem; line-height: 1.55; margin: 0;">{{ 'PORTAL.LOGIN.PRICING_COMMON' | translate }}</p>
                     <p style="color: rgba(255,255,255,.85); font-size: .76rem; line-height: 1.5; margin: 8px 0 0;">{{ ('PORTAL.LOGIN.PRICING_' + plan.insight) | translate }}</p>
