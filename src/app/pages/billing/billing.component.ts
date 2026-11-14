@@ -543,7 +543,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             {{ (subscription() === null ? 'PORTAL.BILLING.CHECKOUT_TITLE_NEW' : 'PORTAL.BILLING.CHECKOUT_TITLE_CHANGE') | translate }}
           </h3>
           <p>
-            {{ 'PORTAL.BILLING.CHECKOUT_SUBTITLE' | translate: { name: (planTitleKey(selPlan.name) | translate), price: formatPrice(selPlan.amount, selPlan.currency), interval: ((selPlan.interval === 'year' ? 'PORTAL.BILLING.INTERVAL_YEAR' : 'PORTAL.BILLING.INTERVAL_MONTH') | translate) } }}
+            {{ (subscription() === null ? 'PORTAL.BILLING.CHECKOUT_SUBTITLE_NEW' : 'PORTAL.BILLING.CHECKOUT_SUBTITLE') | translate: { name: (planTitleKey(selPlan.name) | translate), price: formatPrice(selPlan.amount, selPlan.currency), interval: ((selPlan.interval === 'year' ? 'PORTAL.BILLING.INTERVAL_YEAR' : 'PORTAL.BILLING.INTERVAL_MONTH') | translate) } }}
           </p>
         </div>
 
@@ -664,7 +664,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               *ngIf="checkoutPreview()?.verified && (checkoutPreview()?.discountAmount ?? 0) > 0"
               class="summary-row summary-row--discount"
             >
-              <span class="summary-label">{{ (checkoutPreview()?.isEstimated && !paymentActive() ? 'PORTAL.BILLING.SUMMARY_ESTIMATED_DISCOUNT' : 'PORTAL.BILLING.SUMMARY_DISCOUNT') | translate }}</span>
+              <span class="summary-label">{{ (checkoutPreview()?.isEstimated && !clientSecret() ? 'PORTAL.BILLING.SUMMARY_ESTIMATED_DISCOUNT' : 'PORTAL.BILLING.SUMMARY_DISCOUNT') | translate }}</span>
               <span class="summary-value summary-discount-amount">
                 -{{ formatExactPrice(checkoutPreview()!.discountAmount, checkoutPreview()!.currency) }}
               </span>
@@ -692,7 +692,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             </div>
 
             <div
-              *ngIf="checkoutPreview()?.isEstimated && !paymentActive()"
+              *ngIf="checkoutPreview()?.isEstimated && !clientSecret()"
               class="summary-row summary-row--renewal"
               data-testid="estimated-preview-notice"
             >
@@ -708,6 +708,17 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
               </span>
             </div>
           </div>
+
+          <p
+            *ngIf="checkoutPreview()?.verified && checkoutPreview()?.amountDueToday === 0"
+            class="free-intro-disclosure-note"
+            data-testid="free-intro-disclosure"
+          >
+            {{ 'PORTAL.BILLING.FREE_INTRO_DISCLOSURE' | translate: {
+              amount: formatExactPrice(checkoutPreview()!.renewalAmount ?? checkoutPreview()!.subtotal, checkoutPreview()!.currency),
+              interval: (((checkoutPreview()!.renewalInterval || checkoutPreview()!.interval || selPlan.interval) === 'year' ? 'PORTAL.BILLING.INTERVAL_YEAR' : 'PORTAL.BILLING.INTERVAL_MONTH') | translate)
+            } }}
+          </p>
 
           <p class="charge-protection-note">
             🔒 {{ 'PORTAL.BILLING.CHARGE_PROTECTION_GUARANTEE' | translate }}
@@ -1018,7 +1029,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
         </div>
 
         <!-- Saved Payment Methods Selection (if available for new subscriptions) -->
-        <div *ngIf="!paymentActive() && subscription() === null && savedMethods().length > 0" class="saved-methods-selection">
+        <div *ngIf="subscription() === null && savedMethods().length > 0" class="saved-methods-selection">
           <label class="section-label">{{ 'PORTAL.BILLING.SELECT_PAYMENT_METHOD' | translate }}</label>
           <div class="saved-methods-radios">
             <div
@@ -1040,7 +1051,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             <div
               class="saved-card-radio-item"
               [class.saved-card-radio-item--selected]="!selectedSavedMethod()"
-              (click)="selectedSavedMethod.set(null)"
+              (click)="selectUseNewCard()"
             >
               <input type="radio" name="savedMethodChoice" [checked]="!selectedSavedMethod()" [attr.aria-label]="'PORTAL.BILLING.USE_NEW_CARD' | translate" />
               <span>{{ 'PORTAL.BILLING.USE_NEW_CARD' | translate }}</span>
@@ -1048,9 +1059,68 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
           </div>
         </div>
 
-        <!-- Stripe Elements Mount Container -->
-        <div *ngIf="paymentActive()" class="payment-elements-container">
-          <div id="portal-payment-element" class="stripe-mount-box"></div>
+        <!-- Secure Payment Section (Automatic Stripe Payment Element for New Subscriptions) -->
+        <div
+          *ngIf="(subscription() === null && !selectedSavedMethod()) || paymentActive()"
+          class="secure-payment-section"
+          data-testid="secure-payment-section"
+        >
+          <div class="secure-payment-header">
+            <h4 class="secure-payment-title">{{ 'PORTAL.BILLING.SECURE_PAYMENT_TITLE' | translate }}</h4>
+          </div>
+
+          <div
+            *ngIf="checkoutPreparing()"
+            class="checkout-preparing-indicator"
+            data-testid="checkout-preparing-indicator"
+            role="status"
+            aria-live="polite"
+          >
+            <div class="spinner-sm"></div>
+            <span>{{ 'PORTAL.BILLING.PREPARING_SECURE_CHECKOUT' | translate }}</span>
+          </div>
+
+          <p
+            *ngIf="!checkoutPreparing() && hasUnappliedCouponInput() && !paymentFormError() && !paymentActive()"
+            class="secure-payment-awaiting-promo"
+            data-testid="secure-payment-awaiting-promo"
+            role="note"
+          >
+            {{ 'PORTAL.BILLING.SECURE_PAYMENT_AWAITING_PROMO' | translate }}
+          </p>
+
+          <div
+            *ngIf="paymentFormError() as formErr"
+            class="alert alert-warning payment-form-error-alert"
+            data-testid="payment-form-error"
+            role="alert"
+          >
+            <span class="alert-icon">⚠️</span>
+            <div class="payment-form-error-content">
+              <span class="alert-text">{{ formErr }}</span>
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm retry-checkout-prep-btn"
+                data-testid="retry-checkout-prep-btn"
+                [disabled]="checkoutPreparing() || previewLoading() || isProcessingPayment()"
+                (click)="retryCheckoutPreparation()"
+              >
+                {{ 'PORTAL.BILLING.BTN_RETRY_CHECKOUT' | translate }}
+              </button>
+            </div>
+          </div>
+
+          <div
+            *ngIf="!paymentFormError() && (!hasUnappliedCouponInput() || paymentActive())"
+            class="payment-elements-container"
+            [class.payment-elements-container--preparing]="checkoutPreparing() && !stripeReady()"
+          >
+            <div
+              id="portal-payment-element"
+              class="stripe-mount-box"
+              [class.stripe-mount-box--loading]="checkoutPreparing() && !stripeReady()"
+            ></div>
+          </div>
         </div>
 
         <!-- Recurring Subscription Renewal Requirement & Future Purchase Consent (New Card Checkout) -->
@@ -1080,34 +1150,14 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
         <!-- Checkout Action Buttons -->
         <div class="checkout-actions">
-          <!-- When inline card element is mounted -->
-          <div *ngIf="paymentActive()" class="button-group">
+          <!-- New Subscription Confirmation Controls (Single Explicit Confirm Button) -->
+          <div *ngIf="subscription() === null" class="button-group">
             <button
               type="button"
               class="btn btn-primary checkout-submit-btn"
-              [disabled]="!stripeReady() || isProcessingPayment() || !canProceedToVerifiedCheckout()"
+              data-testid="confirm-subscription-btn"
+              [disabled]="!canConfirmNewSubscriptionCheckout()"
               (click)="confirmPayment()"
-            >
-              {{ getCheckoutButtonLabel(selPlan) }}
-            </button>
-            <button
-              type="button"
-              class="btn btn-secondary"
-              [disabled]="isProcessingPayment()"
-              (click)="cancelPayment()"
-            >
-              {{ 'PORTAL.COMMON.CANCEL' | translate }}
-            </button>
-          </div>
-
-          <!-- When choosing between saved card or initiating payment -->
-          <div *ngIf="!paymentActive()" class="button-group">
-            <button
-              type="button"
-              class="btn btn-primary checkout-submit-btn"
-              *ngIf="subscription() === null"
-              [disabled]="!canProceedToVerifiedCheckout()"
-              (click)="proceedToPayment()"
             >
               {{ getCheckoutButtonLabel(selPlan) }}
             </button>
@@ -1115,7 +1165,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
             <button
               type="button"
               class="btn btn-secondary btn-sm reverify-price-btn"
-              *ngIf="subscription() === null && (checkoutVerificationStatus() === 'expired' || checkoutVerificationStatus() === 'unavailable' || checkoutVerificationStatus() === 'mismatch_blocked')"
+              *ngIf="checkoutVerificationStatus() === 'expired' || checkoutVerificationStatus() === 'unavailable' || checkoutVerificationStatus() === 'mismatch_blocked'"
               [disabled]="previewLoading() || couponLoading() || isProcessingPayment()"
               (click)="reverifyCurrentCheckout()"
             >
@@ -1124,9 +1174,21 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 
             <button
               type="button"
+              class="btn btn-secondary"
+              [disabled]="isProcessingPayment()"
+              (click)="closeChangePlan()"
+            >
+              {{ 'PORTAL.COMMON.CANCEL' | translate }}
+            </button>
+          </div>
+
+          <!-- Existing Active Subscription Plan-Change Controls -->
+          <div *ngIf="subscription() !== null" class="button-group">
+            <button
+              type="button"
               class="btn btn-primary"
               data-testid="confirm-plan-change-btn"
-              *ngIf="subscription() !== null && !isPendingPlan(selPlan)"
+              *ngIf="!isPendingPlan(selPlan)"
               [disabled]="!canConfirmPlanChange()"
               (click)="confirmChangePlan()"
             >
@@ -2305,17 +2367,98 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
   }
 }
 
-/* Stripe Mount Box */
+/* Secure Payment Section & Stripe Mount Box */
+.free-intro-disclosure-note {
+  margin: 0.4rem 0 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+  font-size: 0.81rem;
+  line-height: 1.45;
+}
+
+.secure-payment-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-width: 520px;
+
+  .secure-payment-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+
+    .secure-payment-title {
+      margin: 0;
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: var(--vamo-text);
+    }
+  }
+
+  .checkout-preparing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--vamo-border);
+    border-radius: 10px;
+    background: var(--vamo-surface-subtle);
+    color: var(--vamo-text-muted);
+    font-size: 0.875rem;
+  }
+
+  .secure-payment-awaiting-promo {
+    margin: 0;
+    padding: 0.75rem 0.9rem;
+    border: 1px dashed var(--vamo-border);
+    border-radius: 10px;
+    background: var(--vamo-surface-subtle);
+    color: var(--vamo-text-muted);
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+
+  .payment-form-error-alert {
+    margin: 0;
+
+    .payment-form-error-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex: 1;
+      flex-wrap: wrap;
+    }
+  }
+}
+
 .payment-elements-container {
   max-width: 520px;
   background: #ffffff;
   border: 1px solid var(--vamo-border);
   padding: 1.25rem;
   border-radius: 12px;
+
+  &.payment-elements-container--preparing {
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+  }
 }
 
 .stripe-mount-box {
   min-height: 200px;
+
+  &.stripe-mount-box--loading {
+    min-height: 0;
+    height: 0;
+    overflow: hidden;
+    opacity: 0;
+  }
 }
 
 .checkout-actions {
@@ -3070,6 +3213,10 @@ export class BillingComponent implements OnInit, OnDestroy {
   setupConfirmed = signal(false);
   stripeReady = signal(false);
   paymentActive = signal(false);
+  checkoutPreparing = signal(false);
+  deferredElementMounted = signal(false);
+  paymentFormError = signal<string | null>(null);
+  activePaymentFormErrorPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
   paymentRequiresSetup = signal(false);
   isProcessingPayment = signal(false);
   saveSubscriptionCardForFuturePurchases = signal(false);
@@ -3077,6 +3224,9 @@ export class BillingComponent implements OnInit, OnDestroy {
   activeSubscriptionCardWarningPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
   activeSuccessPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
   activeErrorPayload = signal<{ key: string; params?: Record<string, any> } | null>(null);
+  private checkoutPrepSeq = 0;
+  private preparedPaymentSignature: string | null = null;
+  private preparedSessionSignature: string | null = null;
 
   // Single-Post Add-On (One-Time Purchase via Directus Flows)
   addonPrices = signal<StripeAddonPlan[]>([]);
@@ -3147,11 +3297,17 @@ export class BillingComponent implements OnInit, OnDestroy {
           this.i18n.t(addonCardWarnPayload.key, addonCardWarnPayload.params),
         );
       }
+      const paymentFormErrPayload = this.activePaymentFormErrorPayload();
+      if (paymentFormErrPayload) {
+        this.paymentFormError.set(
+          this.i18n.t(paymentFormErrPayload.key, paymentFormErrPayload.params),
+        );
+      }
     });
     effect(() => {
       const secret = this.clientSecret();
       const active = this.paymentActive();
-      if (active && secret) {
+      if (active && secret && !this.deferredElementMounted()) {
         setTimeout(() => this.mountPaymentElement(secret), 100);
       }
     });
@@ -3177,6 +3333,16 @@ export class BillingComponent implements OnInit, OnDestroy {
   private clearError(): void {
     this.activeErrorPayload.set(null);
     this.errorMessage.set(null);
+  }
+
+  private setTranslatedPaymentFormError(key: string, params?: Record<string, any>): void {
+    this.activePaymentFormErrorPayload.set({ key, params });
+    this.paymentFormError.set(this.i18n.t(key, params));
+  }
+
+  private clearPaymentFormError(): void {
+    this.activePaymentFormErrorPayload.set(null);
+    this.paymentFormError.set(null);
   }
 
   private setTranslatedCardSetupError(key: string, params?: Record<string, any>): void {
@@ -3440,10 +3606,14 @@ export class BillingComponent implements OnInit, OnDestroy {
   onCouponCodeChange(value: string): void {
     this.promoDismissedInCheckout = true;
     const nextVal = value ?? '';
-    const wasPaymentActive = Boolean(
-      this.paymentActive() || this.clientSecret() || this.pendingSetupIntentId()
+    const wasServerSessionActive = Boolean(this.clientSecret() || this.pendingSetupIntentId());
+    const wasAnyPaymentActive = Boolean(
+      this.paymentActive() || this.deferredElementMounted() || this.checkoutPreparing() || wasServerSessionActive
     );
-    if (wasPaymentActive) {
+    ++this.checkoutPrepSeq;
+    this.checkoutPreparing.set(false);
+    this.clearPaymentFormError();
+    if (wasAnyPaymentActive) {
       this.cancelPayment();
     }
     this.couponCode.set(nextVal);
@@ -3454,21 +3624,25 @@ export class BillingComponent implements OnInit, OnDestroy {
     if (this.promoResult() !== null) {
       this.promoResult.set(null);
     }
-    const nextCouponState: CouponVerificationState = wasPaymentActive
+    const nextCouponState: CouponVerificationState = wasServerSessionActive
       ? 'changed_after_init'
       : nextVal.trim().length > 0
         ? 'entered_not_applied'
         : 'not_applied';
     this.couponState.set(nextCouponState);
 
+    const plan = this.selectedPlan();
     const currentPreview = this.checkoutPreview();
-    if (
-      wasPaymentActive ||
+    if (plan && !this.subscription() && nextVal.trim().length === 0 && !wasServerSessionActive) {
+      this.checkoutPreview.set(null);
+      this.checkoutVerificationStatus.set('unverified');
+      void this.prepareCheckoutForCurrentSelection(plan);
+    } else if (
+      wasServerSessionActive ||
       (currentPreview && (currentPreview.promoCodeId || currentPreview.discountAmount > 0))
     ) {
       this.checkoutPreview.set(null);
       this.checkoutVerificationStatus.set('unverified');
-      const plan = this.selectedPlan();
       if (plan && !this.subscription()) {
         void this.refreshCheckoutPreview(plan, null, true);
       }
@@ -3480,7 +3654,6 @@ export class BillingComponent implements OnInit, OnDestroy {
       (currentPlanChangePreview.promoCodeId || currentPlanChangePreview.discountAmount > 0)
     ) {
       this.planChangePreview.set(null);
-      const plan = this.selectedPlan();
       if (plan && this.subscription()) {
         void this.refreshPlanChangePreview(plan, null);
       }
@@ -3490,8 +3663,11 @@ export class BillingComponent implements OnInit, OnDestroy {
   async applyPromoCode(): Promise<void> {
     const code = this.couponCode().trim();
     if (!code) return;
+    const prepSeq = ++this.checkoutPrepSeq;
+    this.checkoutPreparing.set(false);
+    this.clearPaymentFormError();
     // Failure A protection: applying a coupon after payment initialization immediately invalidates the active payment session
-    if (this.paymentActive() || this.clientSecret() || this.pendingSetupIntentId()) {
+    if (this.paymentActive() || this.deferredElementMounted() || this.clientSecret() || this.pendingSetupIntentId()) {
       this.cancelPayment();
     }
 
@@ -3559,6 +3735,7 @@ export class BillingComponent implements OnInit, OnDestroy {
           customerEmail: user.email,
         });
         if (preview.verified && preview.couponState === 'verified_applied') {
+          if (prepSeq !== this.checkoutPrepSeq) return;
           this.checkoutPreview.set(preview);
           this.checkoutVerificationStatus.set('verified');
           this.couponState.set('verified_applied');
@@ -3569,6 +3746,9 @@ export class BillingComponent implements OnInit, OnDestroy {
             duration: preview.couponDuration ?? undefined,
             durationInMonths: preview.couponDurationInMonths ?? null,
           });
+          if (!this.selectedSavedMethod()) {
+            await this.mountAutomaticPaymentElement(plan, preview, prepSeq);
+          }
           return;
         }
 
@@ -3606,6 +3786,17 @@ export class BillingComponent implements OnInit, OnDestroy {
       if (result.valid) {
         this.promoResult.set(result);
         this.couponState.set('verified_applied');
+        if (plan && !this.subscription() && !this.selectedSavedMethod() && prepSeq === this.checkoutPrepSeq) {
+          const fallbackPreview = await this.refreshCheckoutPreview(plan, code, true);
+          if (fallbackPreview?.verified && prepSeq === this.checkoutPrepSeq) {
+            const effectivePreview: CheckoutPreviewResult =
+              result.percentOff === 100
+                ? { ...fallbackPreview, discountAmount: fallbackPreview.subtotal, amountDueToday: 0 }
+                : fallbackPreview;
+            this.checkoutPreview.set(effectivePreview);
+            await this.mountAutomaticPaymentElement(plan, effectivePreview, prepSeq);
+          }
+        }
       } else {
         this.couponState.set('invalid_or_ineligible');
         this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_INVALID'));
@@ -3620,22 +3811,30 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   removePromoCode(): void {
     this.promoDismissedInCheckout = true;
-    const wasPaymentActive = Boolean(
-      this.paymentActive() || this.clientSecret() || this.pendingSetupIntentId()
+    const wasServerSessionActive = Boolean(this.clientSecret() || this.pendingSetupIntentId());
+    const wasAnyPaymentActive = Boolean(
+      this.paymentActive() || this.deferredElementMounted() || this.checkoutPreparing() || wasServerSessionActive
     );
-    if (wasPaymentActive) {
+    ++this.checkoutPrepSeq;
+    this.checkoutPreparing.set(false);
+    this.clearPaymentFormError();
+    if (wasAnyPaymentActive) {
       this.cancelPayment();
     }
     this.promoResult.set(null);
     this.couponCode.set('');
     this.couponError.set(null);
-    this.couponState.set(wasPaymentActive ? 'changed_after_init' : 'not_applied');
+    this.couponState.set(wasServerSessionActive ? 'changed_after_init' : 'not_applied');
     this.checkoutPreview.set(null);
     this.checkoutVerificationStatus.set('unverified');
     this.planChangePreview.set(null);
     const plan = this.selectedPlan();
     if (plan && !this.subscription()) {
-      void this.refreshCheckoutPreview(plan, null, wasPaymentActive);
+      if (wasServerSessionActive) {
+        void this.refreshCheckoutPreview(plan, null, true);
+      } else {
+        void this.prepareCheckoutForCurrentSelection(plan);
+      }
     } else if (plan && this.subscription()) {
       void this.refreshPlanChangePreview(plan, null);
     }
@@ -3736,6 +3935,7 @@ export class BillingComponent implements OnInit, OnDestroy {
     const plan = this.selectedPlan();
     if (!plan) return;
     this.clearError();
+    this.clearPaymentFormError();
     const appliedPromo = this.promoResult()?.valid
       ? (this.couponCode().trim() || this.promoResult()?.name || null)
       : null;
@@ -3743,7 +3943,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       this.couponCode.set(appliedPromo);
       await this.applyPromoCode();
     } else {
-      await this.refreshCheckoutPreview(plan, null);
+      await this.prepareCheckoutForCurrentSelection(plan);
     }
   }
 
@@ -3774,7 +3974,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       case 'verifying':
         return 'PORTAL.BILLING.VERIFICATION_BADGE_VERIFYING';
       case 'verified':
-        if (this.checkoutPreview()?.isEstimated === true && !this.paymentActive()) {
+        if (this.checkoutPreview()?.isEstimated === true && !this.clientSecret()) {
           return 'PORTAL.BILLING.VERIFICATION_BADGE_ESTIMATED';
         }
         return 'PORTAL.BILLING.VERIFICATION_BADGE_VERIFIED';
@@ -3791,7 +3991,7 @@ export class BillingComponent implements OnInit, OnDestroy {
   }
 
   getDueTodayLabelKey(): string {
-    if (this.checkoutPreview()?.isEstimated === true && !this.paymentActive()) {
+    if (this.checkoutPreview()?.isEstimated === true && !this.clientSecret()) {
       return 'PORTAL.BILLING.SUMMARY_ESTIMATED_DUE_TODAY';
     }
     return 'PORTAL.BILLING.SUMMARY_DUE_TODAY';
@@ -3874,6 +4074,13 @@ export class BillingComponent implements OnInit, OnDestroy {
     return true;
   }
 
+  canConfirmNewSubscriptionCheckout(): boolean {
+    if (!this.canProceedToVerifiedCheckout()) return false;
+    if (this.selectedSavedMethod()) return true;
+    if (this.checkoutPreparing() || this.paymentFormError()) return false;
+    return this.paymentActive() && this.stripeReady();
+  }
+
   formatExactPrice(amount: number, currency: string): string {
     if (typeof this.stripeService.formatExactPrice === 'function') {
       return this.stripeService.formatExactPrice(amount, currency);
@@ -3888,13 +4095,49 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   // ─── Plan Selection & Subscribe Flow ─────────────────────────────
 
+  private buildCheckoutElementSignature(plan: StripePlan, preview: CheckoutPreviewResult): string {
+    const mode = preview.amountDueToday === 0 ? 'setup' : 'subscription';
+    const amount = preview.amountDueToday === 0 ? 0 : preview.amountDueToday;
+    const currency = (preview.currency || plan.currency || 'usd').toLowerCase();
+    return `${mode}:${plan.id}:${preview.promoCodeId ?? ''}:${amount}:${currency}`;
+  }
+
+  private buildCheckoutSessionSignature(plan: StripePlan, preview: CheckoutPreviewResult): string {
+    const currency = (preview.currency || plan.currency || 'usd').toLowerCase();
+    return `${plan.id}:${preview.promoCodeId ?? ''}:${preview.amountDueToday}:${currency}`;
+  }
+
   selectPlan(plan: StripePlan): void {
     if (this.isCurrentPlan(plan) || this.isPendingPlan(plan)) return;
     if (this.planChangeUnverified() && this.selectedPlan()?.id === plan.id) return;
-    if (this.paymentActive() || this.clientSecret() || this.pendingSetupIntentId()) {
+
+    // Avoid duplicate Stripe initialization when repeatedly clicking the already-selected plan during new checkout
+    if (this.subscription() === null && this.selectedPlan()?.id === plan.id) {
+      if (
+        this.checkoutPreparing() ||
+        (this.paymentActive() && this.stripeReady() && !this.paymentFormError()) ||
+        (this.selectedSavedMethod() && this.checkoutVerificationStatus() === 'verified') ||
+        this.hasUnappliedCouponInput()
+      ) {
+        return;
+      }
+      void this.prepareCheckoutForCurrentSelection(plan);
+      return;
+    }
+
+    const prepSeq = ++this.checkoutPrepSeq;
+    this.checkoutPreparing.set(false);
+    this.clearPaymentFormError();
+    if (
+      this.paymentActive() ||
+      this.deferredElementMounted() ||
+      this.clientSecret() ||
+      this.pendingSetupIntentId()
+    ) {
       this.cancelPayment();
     }
-    const nextPlan = this.selectedPlan()?.id === plan.id ? null : plan;
+
+    const nextPlan = this.subscription() === null ? plan : (this.selectedPlan()?.id === plan.id ? null : plan);
     this.selectedPlan.set(nextPlan);
     this.planChangeUnverified.set(false);
     this.pendingPlanChangeTarget.set(null);
@@ -3914,26 +4157,7 @@ export class BillingComponent implements OnInit, OnDestroy {
       this.reviewSubscriptionSnapshot.set(null);
       this.reviewTargetPriceId.set(null);
       this.prefillPromoCodeIfEligible();
-      const appliedPromo = this.promoResult()?.valid
-        ? (this.couponCode().trim() || this.promoResult()?.name || null)
-        : null;
-      if (appliedPromo && typeof this.stripeService.previewSubscriptionCheckout === 'function') {
-        void this.refreshCheckoutPreview(nextPlan, appliedPromo);
-      } else {
-        const hasUnapplied = this.couponCode().trim().length > 0 && !this.promoResult()?.valid;
-        this.couponState.set(
-          this.promoResult()?.valid
-            ? 'verified_applied'
-            : hasUnapplied
-              ? 'entered_not_applied'
-              : 'not_applied'
-        );
-        void this.refreshCheckoutPreview(
-          nextPlan,
-          null,
-          Boolean(this.promoResult()?.valid || hasUnapplied)
-        );
-      }
+      void this.prepareCheckoutForCurrentSelection(nextPlan, prepSeq);
     } else if (nextPlan && this.subscription()) {
       this.capturePlanChangeReviewSnapshot(nextPlan);
       const appliedPromo =
@@ -3947,11 +4171,213 @@ export class BillingComponent implements OnInit, OnDestroy {
     }
   }
 
+  async prepareCheckoutForCurrentSelection(plan: StripePlan, explicitSeq?: number): Promise<void> {
+    if (this.subscription() !== null) return;
+    const seq = explicitSeq ?? ++this.checkoutPrepSeq;
+    this.clearPaymentFormError();
+
+    const appliedPromo = this.promoResult()?.valid
+      ? (this.couponCode().trim() || this.promoResult()?.name || null)
+      : null;
+    const hasUnapplied = this.couponCode().trim().length > 0 && !this.promoResult()?.valid;
+
+    if (!this.selectedSavedMethod() && !hasUnapplied) {
+      this.checkoutPreparing.set(true);
+    } else {
+      this.checkoutPreparing.set(false);
+    }
+
+    let preview: CheckoutPreviewResult | null = null;
+    if (appliedPromo && typeof this.stripeService.previewSubscriptionCheckout === 'function') {
+      preview = await this.refreshCheckoutPreview(plan, appliedPromo);
+      if (seq !== this.checkoutPrepSeq || this.selectedPlan()?.id !== plan.id) return;
+
+      if (!preview || !preview.verified || preview.couponState !== 'verified_applied') {
+        this.promoResult.set(null);
+        this.checkoutPreparing.set(false);
+        if (preview?.couponState === 'invalid_or_ineligible') {
+          this.couponState.set('invalid_or_ineligible');
+          this.couponError.set(this.i18n.t('PORTAL.BILLING.ERROR_COUPON_INELIGIBLE'));
+          await this.refreshCheckoutPreview(plan, null, true);
+        } else if (preview?.couponState === 'expired_or_changed') {
+          this.couponState.set('expired_or_changed');
+          this.couponError.set(this.i18n.t('PORTAL.BILLING.ERROR_VERIFICATION_EXPIRED'));
+        } else {
+          this.couponState.set('verification_unavailable');
+          this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_ERROR'));
+        }
+        return;
+      }
+    } else {
+      this.couponState.set(
+        this.promoResult()?.valid
+          ? 'verified_applied'
+          : hasUnapplied
+            ? 'entered_not_applied'
+            : 'not_applied'
+      );
+      preview = await this.refreshCheckoutPreview(
+        plan,
+        appliedPromo,
+        Boolean(this.promoResult()?.valid || hasUnapplied)
+      );
+      if (seq !== this.checkoutPrepSeq || this.selectedPlan()?.id !== plan.id) return;
+    }
+
+    if (
+      this.selectedSavedMethod() !== null ||
+      this.hasUnappliedCouponInput() ||
+      !preview ||
+      !preview.verified ||
+      preview.priceId !== plan.id
+    ) {
+      this.checkoutPreparing.set(false);
+      return;
+    }
+
+    await this.mountAutomaticPaymentElement(plan, preview, seq);
+  }
+
+  private async mountAutomaticPaymentElement(
+    plan: StripePlan,
+    preview: CheckoutPreviewResult,
+    seq: number,
+  ): Promise<void> {
+    if (typeof this.stripeService.mountDeferredPaymentElement !== 'function') {
+      this.checkoutPreparing.set(false);
+      return;
+    }
+    if (seq !== this.checkoutPrepSeq || this.selectedPlan()?.id !== plan.id || this.subscription() !== null) {
+      return;
+    }
+
+    const elementSig = this.buildCheckoutElementSignature(plan, preview);
+    if (
+      this.deferredElementMounted() &&
+      this.paymentActive() &&
+      this.stripeReady() &&
+      !this.paymentFormError() &&
+      this.preparedPaymentSignature === elementSig &&
+      this.stripeInstance &&
+      this.stripeElements
+    ) {
+      this.checkoutPreparing.set(false);
+      return;
+    }
+
+    this.checkoutPreparing.set(true);
+    this.clearPaymentFormError();
+    this.paymentRequiresSetup.set(preview.amountDueToday === 0);
+
+    const sessionSig = this.buildCheckoutSessionSignature(plan, preview);
+    if (this.preparedSessionSignature !== sessionSig) {
+      this.clientSecret.set(null);
+      this.pendingSetupIntentId.set(null);
+      this.setupConfirmed.set(false);
+      this.preparedSessionSignature = null;
+    }
+
+    try {
+      const { stripe, elements } = await this.stripeService.mountDeferredPaymentElement(
+        {
+          mode: preview.amountDueToday === 0 ? 'setup' : 'subscription',
+          amount: preview.amountDueToday > 0 ? preview.amountDueToday : undefined,
+          currency: preview.currency || plan.currency || 'usd',
+        },
+        'portal-payment-element',
+        {
+          shouldAbort: () =>
+            seq !== this.checkoutPrepSeq ||
+            this.selectedPlan()?.id !== plan.id ||
+            this.subscription() !== null ||
+            Boolean(this.selectedSavedMethod()),
+          onLoadError: (loadErr: any) => {
+            if (seq !== this.checkoutPrepSeq) return;
+            this.handlePaymentFormLoadError(loadErr);
+          },
+          onReady: () => {
+            if (seq !== this.checkoutPrepSeq) return;
+            this.stripeReady.set(true);
+            this.checkoutPreparing.set(false);
+          },
+        },
+      );
+
+      if (
+        seq !== this.checkoutPrepSeq ||
+        this.selectedPlan()?.id !== plan.id ||
+        this.subscription() !== null ||
+        this.selectedSavedMethod()
+      ) {
+        this.stripeService.cleanup();
+        return;
+      }
+
+      this.stripeInstance = stripe;
+      this.stripeElements = elements;
+      this.deferredElementMounted.set(true);
+      this.paymentActive.set(true);
+      this.stripeReady.set(true);
+      this.preparedPaymentSignature = elementSig;
+      this.checkoutPreparing.set(false);
+    } catch (err: any) {
+      if (err?.aborted || seq !== this.checkoutPrepSeq) {
+        return;
+      }
+      this.handlePaymentFormLoadError(err);
+    }
+  }
+
+  private handlePaymentFormLoadError(_err?: any): void {
+    this.checkoutPreparing.set(false);
+    this.paymentActive.set(false);
+    this.deferredElementMounted.set(false);
+    this.stripeReady.set(false);
+    this.preparedPaymentSignature = null;
+    this.stripeInstance = null;
+    this.stripeElements = null;
+    this.stripeService.cleanup();
+    this.setTranslatedPaymentFormError('PORTAL.BILLING.ERROR_PAYMENT_FORM_LOAD');
+  }
+
+  async retryCheckoutPreparation(): Promise<void> {
+    const plan = this.selectedPlan();
+    if (!plan || this.subscription() !== null) return;
+    this.clearError();
+    this.clearPaymentFormError();
+    await this.prepareCheckoutForCurrentSelection(plan);
+  }
+
   selectSavedMethod(pm: SavedPaymentMethod): void {
-    this.selectedSavedMethod.set(this.selectedSavedMethod()?.id === pm.id ? null : pm);
+    if (this.selectedSavedMethod()?.id === pm.id) {
+      this.selectUseNewCard();
+      return;
+    }
+    ++this.checkoutPrepSeq;
+    this.checkoutPreparing.set(false);
+    this.clearPaymentFormError();
+    if (this.paymentActive() || this.deferredElementMounted()) {
+      this.cancelPayment();
+    }
+    this.selectedSavedMethod.set(pm);
     if (this.setupConfirmed()) {
       this.setupConfirmed.set(false);
       this.pendingSetupIntentId.set(null);
+    }
+  }
+
+  selectUseNewCard(): void {
+    if (!this.selectedSavedMethod() && this.paymentActive() && !this.paymentFormError()) {
+      return;
+    }
+    this.selectedSavedMethod.set(null);
+    if (this.setupConfirmed()) {
+      this.setupConfirmed.set(false);
+      this.pendingSetupIntentId.set(null);
+    }
+    const plan = this.selectedPlan();
+    if (plan && this.subscription() === null) {
+      void this.prepareCheckoutForCurrentSelection(plan);
     }
   }
 
@@ -4156,6 +4582,9 @@ export class BillingComponent implements OnInit, OnDestroy {
             eligibilityVerified: true,
           });
         }
+        this.deferredElementMounted.set(false);
+        this.preparedPaymentSignature = null;
+        this.preparedSessionSignature = this.buildCheckoutSessionSignature(plan, preview);
         this.clientSecret.set(result.clientSecret);
         this.paymentRequiresSetup.set(result.requiresSetup);
         this.paymentActive.set(true);
@@ -4217,9 +4646,17 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   private handleChargeProtectionError(err: CheckoutChargeProtectionError, plan: StripePlan): void {
     this.paymentActive.set(false);
+    this.deferredElementMounted.set(false);
+    this.checkoutPreparing.set(false);
+    this.stripeReady.set(false);
+    this.preparedPaymentSignature = null;
+    this.preparedSessionSignature = null;
     this.clientSecret.set(null);
     this.pendingSetupIntentId.set(null);
     this.setupConfirmed.set(false);
+    this.stripeInstance = null;
+    this.stripeElements = null;
+    this.stripeService.cleanup();
     const currency = err.currency || plan.currency || 'usd';
     const actualAmountFormatted =
       typeof err.actualAmount === 'number'
@@ -4297,19 +4734,289 @@ export class BillingComponent implements OnInit, OnDestroy {
     }
   }
 
+  private isTerminalIntentError(err: any): boolean {
+    const code = String(err?.code || '');
+    return (
+      code === 'payment_intent_unexpected_state' ||
+      code === 'setup_intent_unexpected_state' ||
+      code === 'invalid_client_secret' ||
+      code === 'resource_missing'
+    );
+  }
+
+  private async initializeServerSessionForDeferredElement(
+    plan: StripePlan,
+    preview: CheckoutPreviewResult,
+    user: { email: string; first_name?: string | null; last_name?: string | null },
+  ): Promise<boolean> {
+    const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email;
+    const appliedPromoId = this.promoResult()?.valid ? (this.promoResult()?.promoCodeId ?? null) : null;
+
+    let result: {
+      clientSecret: string | null;
+      subscriptionId: string | null;
+      setupIntentId?: string | null;
+      requiresSetup: boolean;
+    };
+
+    if (typeof this.stripeService.createVerifiedSubscription === 'function') {
+      result = await this.stripeService.createVerifiedSubscription({
+        email: user.email,
+        name,
+        priceId: plan.id,
+        promotionCodeId: preview.promoCodeId ?? appliedPromoId ?? null,
+        approvedAmountDue: preview.amountDueToday,
+        approvedCurrency: preview.currency,
+        verificationReference: preview.verificationReference!,
+        paymentMethodId: null,
+        expiresAt: preview.expiresAt,
+      });
+    } else {
+      result = await this.stripeService.createSubscription(
+        user.email,
+        name,
+        plan.id,
+        appliedPromoId ?? undefined,
+      );
+    }
+
+    if (
+      preview.amountDueToday === 0 &&
+      ((result.clientSecret && result.clientSecret.startsWith('pi_')) || !result.requiresSetup) &&
+      typeof this.stripeService.createVerifiedSubscription === 'function'
+    ) {
+      this.checkoutVerificationStatus.set('mismatch_blocked');
+      this.couponState.set('expired_or_changed');
+      this.cancelPayment();
+      this.setTranslatedError('PORTAL.BILLING.ERROR_UNEXPECTED_CHARGE_FOR_FREE');
+      return false;
+    }
+
+    const resolvedSetupIntentId = result.requiresSetup
+      ? (result.setupIntentId ??
+          (result.clientSecret?.startsWith('seti_') && result.clientSecret.includes('_secret_')
+            ? result.clientSecret.split('_secret_')[0]
+            : null))
+      : null;
+
+    if (result.requiresSetup) {
+      if (
+        !result.clientSecret ||
+        !result.clientSecret.startsWith('seti_') ||
+        !resolvedSetupIntentId ||
+        !resolvedSetupIntentId.startsWith('seti_')
+      ) {
+        this.checkoutVerificationStatus.set('unavailable');
+        this.setTranslatedError('PORTAL.BILLING.ERROR_VERIFICATION_UNAVAILABLE');
+        return false;
+      }
+      this.pendingSetupIntentId.set(resolvedSetupIntentId);
+      this.setupConfirmed.set(false);
+    } else {
+      this.pendingSetupIntentId.set(null);
+      this.setupConfirmed.set(false);
+    }
+
+    if (!result.clientSecret) {
+      if (
+        typeof this.stripeService.createVerifiedSubscription !== 'function' &&
+        result.subscriptionId &&
+        !result.requiresSetup
+      ) {
+        await this.finalizeSubscriptionSuccess(plan);
+        return false;
+      }
+      this.checkoutVerificationStatus.set('unavailable');
+      this.setTranslatedError('PORTAL.BILLING.ERROR_VERIFICATION_UNAVAILABLE');
+      return false;
+    }
+
+    if (preview.isEstimated) {
+      this.checkoutPreview.set({
+        ...preview,
+        isEstimated: false,
+        amountSource: 'server_invoice_preview',
+        eligibilityVerified: true,
+      });
+    }
+
+    this.clientSecret.set(result.clientSecret);
+    this.paymentRequiresSetup.set(result.requiresSetup);
+    this.preparedSessionSignature = this.buildCheckoutSessionSignature(plan, preview);
+    return true;
+  }
+
   async confirmPayment(): Promise<void> {
     if (this.paymentSubmissionInFlight || this.isProcessingPayment()) return;
+    if (this.subscription() !== null) return;
+    if (this.plans().length === 0) {
+      this.setTranslatedError('PORTAL.BILLING.EMPTY_PLANS');
+      return;
+    }
     if (this.hasUnappliedCouponInput()) {
       this.couponError.set(this.i18n.t('PORTAL.BILLING.COUPON_UNAPPLIED_HINT'));
       return;
     }
+
+    // Saved payment method path delegates to the verified saved-card checkout flow
+    if (this.selectedSavedMethod()) {
+      await this.proceedToPayment();
+      return;
+    }
+
     if (!this.stripeInstance || !this.stripeElements) return;
+    const plan = this.selectedPlan();
+    const user = this.authService.currentUser;
+    if (!plan) return;
+
     this.paymentSubmissionInFlight = true;
     this.isProcessingPayment.set(true);
     this.clearError();
-    const plan = this.selectedPlan();
-    const preview = this.checkoutPreview();
+    let preview = this.checkoutPreview();
+
     try {
+      // Automatic Deferred Payment Element path: validate Element first, then create/reuse verified session and confirm
+      if (this.deferredElementMounted()) {
+        const customerEmail = user?.email;
+        if (!customerEmail) return;
+
+        // Safe retry when SetupIntent was already confirmed and only subscription creation from setup needs completion
+        if (this.setupConfirmed() && this.pendingSetupIntentId()) {
+          await this.completeSubscriptionFromConfirmedSetup(this.pendingSetupIntentId(), plan, preview);
+          return;
+        }
+
+        // Validate card inputs in Stripe Elements before creating any backend subscription or intent
+        if (typeof this.stripeService.submitElements === 'function') {
+          const submitRes = await this.stripeService.submitElements(this.stripeElements);
+          if (submitRes?.error) {
+            this.activeErrorPayload.set(null);
+            this.errorMessage.set(this.errorService.toCustomerMessage(submitRes.error, 'save'));
+            return;
+          }
+        }
+
+        const appliedPromoId = this.promoResult()?.valid ? (this.promoResult()?.promoCodeId ?? null) : null;
+        const appliedPromoCode = this.promoResult()?.valid
+          ? (this.couponCode().trim() || this.promoResult()?.name || null)
+          : null;
+
+        if (
+          !preview ||
+          !preview.verified ||
+          preview.priceId !== plan.id ||
+          (appliedPromoId && preview.promoCodeId !== appliedPromoId)
+        ) {
+          preview = await this.refreshCheckoutPreview(plan, appliedPromoCode, Boolean(appliedPromoId));
+        }
+
+        if (!preview || !preview.verified || !preview.verificationReference) {
+          this.checkoutVerificationStatus.set('unavailable');
+          this.setTranslatedError('PORTAL.BILLING.ERROR_VERIFICATION_UNAVAILABLE');
+          return;
+        }
+
+        const sessionSig = this.buildCheckoutSessionSignature(plan, preview);
+        if (!this.clientSecret() || this.preparedSessionSignature !== sessionSig) {
+          const sessionReady = await this.initializeServerSessionForDeferredElement(plan, preview, {
+            email: customerEmail,
+            first_name: user.first_name,
+            last_name: user.last_name,
+          });
+          if (!sessionReady) return;
+        }
+
+        const activeSecret = this.clientSecret();
+        if (!activeSecret) return;
+
+        if (this.paymentRequiresSetup()) {
+          const setupIntentId =
+            this.pendingSetupIntentId() ??
+            (activeSecret.startsWith('seti_') && activeSecret.includes('_secret_')
+              ? activeSecret.split('_secret_')[0]
+              : null);
+
+          if (!this.setupConfirmed()) {
+            const setupConfirmRes: any = await this.stripeService.confirmSetup(
+              this.stripeInstance,
+              this.stripeElements,
+              undefined,
+              activeSecret,
+            );
+            const setupErr = setupConfirmRes?.error;
+            const confirmedSetupStatus = setupConfirmRes?.setupIntent?.status;
+            if (setupErr || (confirmedSetupStatus && confirmedSetupStatus !== 'succeeded')) {
+              if (typeof this.stripeService.recordPaymentOutcome === 'function') {
+                this.stripeService.recordPaymentOutcome('failed', {
+                  priceId: plan.id,
+                  promotionCodeId: preview.promoCodeId ?? null,
+                  approvedAmount: preview.amountDueToday,
+                  currency: preview.currency,
+                  setupIntentId,
+                  reason: setupErr?.code || confirmedSetupStatus || 'setup_confirmation_failed',
+                });
+              }
+              if (this.isTerminalIntentError(setupErr)) {
+                this.clientSecret.set(null);
+                this.pendingSetupIntentId.set(null);
+                this.preparedSessionSignature = null;
+              }
+              this.activeErrorPayload.set(null);
+              this.errorMessage.set(
+                this.errorService.toCustomerMessage(
+                  setupErr || new Error('Card setup was not completed.'),
+                  'save',
+                ),
+              );
+              return;
+            }
+            this.setupConfirmed.set(true);
+          }
+
+          await this.completeSubscriptionFromConfirmedSetup(setupIntentId, plan, preview);
+          return;
+        }
+
+        const { error } = await this.stripeService.confirmPayment(
+          this.stripeInstance,
+          this.stripeElements,
+          undefined,
+          activeSecret,
+        );
+
+        if (error) {
+          if (typeof this.stripeService.recordPaymentOutcome === 'function') {
+            this.stripeService.recordPaymentOutcome('failed', {
+              priceId: plan.id,
+              promotionCodeId: preview.promoCodeId ?? null,
+              approvedAmount: preview.amountDueToday,
+              currency: preview.currency,
+              reason: error?.code || 'payment_confirmation_failed',
+            });
+          }
+          if (this.isTerminalIntentError(error)) {
+            this.clientSecret.set(null);
+            this.preparedSessionSignature = null;
+          }
+          this.activeErrorPayload.set(null);
+          this.errorMessage.set(this.errorService.toCustomerMessage(error, 'save'));
+          return;
+        }
+
+        if (typeof this.stripeService.recordPaymentOutcome === 'function') {
+          this.stripeService.recordPaymentOutcome('succeeded', {
+            priceId: plan.id,
+            promotionCodeId: preview.promoCodeId ?? null,
+            approvedAmount: preview.amountDueToday,
+            actualAmount: preview.amountDueToday,
+            currency: preview.currency,
+          });
+        }
+        await this.finalizeSubscriptionSuccess(plan);
+        return;
+      }
+
+      // Non-deferred Element path (e.g. session initialized beforehand via proceedToPayment)
       if (this.paymentRequiresSetup()) {
         const setupIntentId =
           this.pendingSetupIntentId() ??
@@ -4380,6 +5087,10 @@ export class BillingComponent implements OnInit, OnDestroy {
         }
       }
     } catch (err: any) {
+      if (err instanceof CheckoutChargeProtectionError || err?.name === 'CheckoutChargeProtectionError') {
+        this.handleChargeProtectionError(err as CheckoutChargeProtectionError, plan);
+        return;
+      }
       this.activeErrorPayload.set(null);
       this.errorMessage.set(this.errorService.toCustomerMessage(err, 'save'));
     } finally {
@@ -4390,12 +5101,17 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   cancelPayment(): void {
     this.paymentActive.set(false);
+    this.deferredElementMounted.set(false);
+    this.checkoutPreparing.set(false);
+    this.clearPaymentFormError();
     this.clientSecret.set(null);
     this.pendingSetupIntentId.set(null);
     this.setupConfirmed.set(false);
     this.paymentRequiresSetup.set(false);
     this.stripeReady.set(false);
     this.saveSubscriptionCardForFuturePurchases.set(false);
+    this.preparedPaymentSignature = null;
+    this.preparedSessionSignature = null;
     this.stripeInstance = null;
     this.stripeElements = null;
     this.stripeService.cleanup();
@@ -4403,11 +5119,19 @@ export class BillingComponent implements OnInit, OnDestroy {
 
   private async finalizeSubscriptionSuccess(plan: StripePlan): Promise<void> {
     this.paymentActive.set(false);
+    this.deferredElementMounted.set(false);
+    this.checkoutPreparing.set(false);
+    this.clearPaymentFormError();
+    this.preparedPaymentSignature = null;
+    this.preparedSessionSignature = null;
     this.clientSecret.set(null);
     this.pendingSetupIntentId.set(null);
     this.setupConfirmed.set(false);
     this.paymentRequiresSetup.set(false);
     this.stripeReady.set(false);
+    this.stripeInstance = null;
+    this.stripeElements = null;
+    this.stripeService.cleanup();
 
     this.clearSubscriptionCardWarning();
     const usedSavedCard = this.selectedSavedMethod();
@@ -4998,8 +5722,17 @@ export class BillingComponent implements OnInit, OnDestroy {
   }
 
   closeChangePlan(): void {
-    if (this.paymentActive()) {
+    ++this.checkoutPrepSeq;
+    if (
+      this.paymentActive() ||
+      this.deferredElementMounted() ||
+      this.checkoutPreparing() ||
+      this.clientSecret() ||
+      this.pendingSetupIntentId()
+    ) {
       this.cancelPayment();
+    } else {
+      this.clearPaymentFormError();
     }
     ++this.planChangePreviewSeq;
     this.planChangePreviewLoading.set(false);

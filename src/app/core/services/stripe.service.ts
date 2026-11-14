@@ -240,6 +240,12 @@ export interface SavedPaymentMethodsResult {
   verificationFailed?: boolean;
 }
 
+export interface DeferredPaymentElementConfig {
+  mode: 'subscription' | 'setup';
+  amount?: number;
+  currency: string;
+}
+
 export interface CardSetupIntentResult {
   setupIntentId: string;
   clientSecret: string;
@@ -2456,39 +2462,138 @@ export class StripeService {
     }
   }
 
+  private getElementsLocale(): 'es' | 'en' {
+    return this.i18n.lang() === 'es' ? 'es' : 'en';
+  }
+
+  private getElementsAppearance() {
+    return {
+      theme: 'stripe' as const,
+      variables: {
+        colorPrimary: '#8070C0',
+        colorBackground: '#ffffff',
+        colorText: '#0f172a',
+        colorTextSecondary: '#64748b',
+        colorDanger: '#ef4444',
+        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        borderRadius: '10px',
+        spacingUnit: '4px',
+      },
+      rules: {
+        '.Input': {
+          borderColor: '#e2e8f0',
+          boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+        },
+        '.Input:focus': {
+          borderColor: '#8070C0',
+          boxShadow: '0 0 0 2px rgba(128, 112, 192, 0.2)',
+        },
+        '.Label': {
+          color: '#334155',
+          fontWeight: '500',
+          fontSize: '13px',
+          marginBottom: '4px',
+        },
+      },
+    };
+  }
+
+  async mountDeferredPaymentElement(
+    config: DeferredPaymentElementConfig,
+    containerId: string,
+    options?: {
+      onLoadError?: (error: any) => void;
+      onReady?: () => void;
+      shouldAbort?: () => boolean;
+    },
+  ): Promise<{ stripe: Stripe; elements: StripeElements; paymentElement?: any }> {
+    const currency = (config.currency || 'usd').trim().toLowerCase();
+    if (
+      config.mode === 'subscription' &&
+      (typeof config.amount !== 'number' || !Number.isFinite(config.amount) || config.amount <= 0)
+    ) {
+      throw new Error('A positive amount is required to initialize subscription payment form.');
+    }
+
+    const stripe = await this.getStripe();
+    if (!stripe) throw new Error('Stripe failed to initialize.');
+
+    if (options?.shouldAbort?.()) {
+      const abortErr: any = new Error('Checkout preparation superseded.');
+      abortErr.aborted = true;
+      throw abortErr;
+    }
+
+    let container = document.getElementById(containerId);
+    for (let attempt = 0; attempt < 5 && !container; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 0 : 16));
+      if (options?.shouldAbort?.()) {
+        const abortErr: any = new Error('Checkout preparation superseded.');
+        abortErr.aborted = true;
+        throw abortErr;
+      }
+      container = document.getElementById(containerId);
+    }
+    if (!container) throw new Error(`Container #${containerId} not found.`);
+
+    this.cleanup();
+
+    const locale = this.getElementsLocale();
+    const appearance = this.getElementsAppearance();
+
+    this.activeElements =
+      config.mode === 'setup'
+        ? stripe.elements({
+            mode: 'setup',
+            currency,
+            setupFutureUsage: 'off_session',
+            paymentMethodTypes: ['card'],
+            locale,
+            appearance,
+          })
+        : stripe.elements({
+            mode: 'subscription',
+            amount: Math.round(config.amount!),
+            currency,
+            paymentMethodTypes: ['card'],
+            locale,
+            appearance,
+          });
+
+    const paymentElement: any = this.activeElements.create('payment');
+    container.innerHTML = '';
+
+    if (typeof paymentElement?.on === 'function') {
+      if (options?.onLoadError) {
+        paymentElement.on('loaderror', (ev: any) => {
+          options.onLoadError?.(ev?.error ?? ev ?? new Error('Payment form failed to load.'));
+        });
+      }
+      if (options?.onReady) {
+        paymentElement.on('ready', () => {
+          options.onReady?.();
+        });
+      }
+    }
+
+    paymentElement.mount(container);
+    this.activePaymentElement = paymentElement;
+
+    return { stripe, elements: this.activeElements, paymentElement };
+  }
+
+  async submitElements(elements: StripeElements): Promise<{ error?: any }> {
+    if (elements && typeof elements.submit === 'function') {
+      return await elements.submit();
+    }
+    return {};
+  }
+
   private createElementsInstance(stripe: Stripe, clientSecret: string): StripeElements {
     return stripe.elements({
       clientSecret,
-      locale: this.i18n.lang() === 'es' ? 'es' : 'en',
-      appearance: {
-        theme: 'stripe',
-        variables: {
-          colorPrimary: '#8070C0',
-          colorBackground: '#ffffff',
-          colorText: '#0f172a',
-          colorTextSecondary: '#64748b',
-          colorDanger: '#ef4444',
-          fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-          borderRadius: '10px',
-          spacingUnit: '4px',
-        },
-        rules: {
-          '.Input': {
-            borderColor: '#e2e8f0',
-            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-          },
-          '.Input:focus': {
-            borderColor: '#8070C0',
-            boxShadow: '0 0 0 2px rgba(128, 112, 192, 0.2)',
-          },
-          '.Label': {
-            color: '#334155',
-            fontWeight: '500',
-            fontSize: '13px',
-            marginBottom: '4px',
-          },
-        },
-      },
+      locale: this.getElementsLocale(),
+      appearance: this.getElementsAppearance(),
     });
   }
 
@@ -2569,7 +2674,17 @@ export class StripeService {
     stripe: Stripe,
     elements: StripeElements,
     returnUrl?: string,
+    clientSecret?: string,
   ): Promise<{ error?: any }> {
+    const cleanSecret = typeof clientSecret === 'string' ? clientSecret.trim() : '';
+    if (cleanSecret) {
+      return stripe.confirmPayment({
+        elements,
+        clientSecret: cleanSecret,
+        redirect: 'if_required',
+        confirmParams: returnUrl ? { return_url: returnUrl } : undefined,
+      });
+    }
     return stripe.confirmPayment({
       elements,
       redirect: 'if_required',
@@ -2581,7 +2696,17 @@ export class StripeService {
     stripe: Stripe,
     elements: StripeElements,
     returnUrl?: string,
+    clientSecret?: string,
   ): Promise<{ error?: any }> {
+    const cleanSecret = typeof clientSecret === 'string' ? clientSecret.trim() : '';
+    if (cleanSecret) {
+      return stripe.confirmSetup({
+        elements,
+        clientSecret: cleanSecret,
+        redirect: 'if_required',
+        confirmParams: returnUrl ? { return_url: returnUrl } : undefined,
+      });
+    }
     return stripe.confirmSetup({
       elements,
       redirect: 'if_required',
