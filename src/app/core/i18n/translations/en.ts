@@ -1392,7 +1392,14 @@ export const enTranslations: Record<string, any> = {
 
       "CHECKOUT_TITLE_NEW": "Complete Your Subscription",
       "CHECKOUT_TITLE_CHANGE": "Confirm Plan Change",
+      "CHECKOUT_SUBTITLE_NEW": "Selected plan: {{name}} ({{price}} / {{interval}}).",
       "CHECKOUT_SUBTITLE": "Upgrading or changing to {{name}} ({{price}} / {{interval}}).",
+      "SECURE_PAYMENT_TITLE": "Secure Payment",
+      "PREPARING_SECURE_CHECKOUT": "Preparing secure checkout…",
+      "SECURE_PAYMENT_AWAITING_PROMO": "Click Apply above to verify your promotion code and load the secure payment form.",
+      "ERROR_PAYMENT_FORM_LOAD": "We couldn’t load the secure payment form right now. Your card has not been charged — please try again.",
+      "BTN_RETRY_CHECKOUT": "Retry secure checkout",
+      "FREE_INTRO_DISCLOSURE": "No charge today ($0.00). Your payment method is saved securely for recurring renewals at {{amount}} / {{interval}} after the free introductory period until canceled.",
 
       "PROMO_TAG": "Promo Code",
       "PROMO_FREE": "100% Free Period",

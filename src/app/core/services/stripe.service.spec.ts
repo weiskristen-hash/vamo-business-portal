@@ -2648,6 +2648,174 @@ describe('StripeService', () => {
       expect(flowSpy).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('Deferred Payment Element & Deferred Confirmation (Automatic Checkout Form)', () => {
+    let container: HTMLDivElement;
+
+    beforeEach(() => {
+      container = document.createElement('div');
+      container.id = 'portal-payment-element';
+      document.body.appendChild(container);
+    });
+
+    afterEach(() => {
+      container.remove();
+    });
+
+    it('mounts deferred Payment Element in subscription mode with card paymentMethodTypes and zero Directus flow calls', async () => {
+      const flowSpy = vi.spyOn(service, 'flowPost');
+      const mountSpy = vi.fn();
+      const destroySpy = vi.fn();
+      const onSpy = vi.fn();
+      const createElementSpy = vi.fn().mockReturnValue({
+        mount: mountSpy,
+        destroy: destroySpy,
+        on: onSpy,
+      });
+      const elementsInstance = {
+        create: createElementSpy,
+        submit: vi.fn().mockResolvedValue({}),
+      };
+      const elementsFactorySpy = vi.fn().mockReturnValue(elementsInstance);
+      const mockStripe: any = {
+        elements: elementsFactorySpy,
+      };
+      vi.spyOn(service, 'getStripe').mockResolvedValue(mockStripe);
+
+      const res = await service.mountDeferredPaymentElement(
+        { mode: 'subscription', amount: 4900, currency: 'USD' },
+        'portal-payment-element',
+      );
+
+      expect(flowSpy).not.toHaveBeenCalled();
+      expect(elementsFactorySpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'subscription',
+          amount: 4900,
+          currency: 'usd',
+          paymentMethodTypes: ['card'],
+          locale: 'en',
+        }),
+      );
+      expect(createElementSpy).toHaveBeenCalledWith('payment');
+      expect(mountSpy).toHaveBeenCalledWith(container);
+      expect(res.stripe).toBe(mockStripe);
+      expect(res.elements).toBe(elementsInstance);
+
+      service.cleanup();
+      expect(destroySpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('mounts deferred Payment Element in setup mode with off_session usage for $0 first-month-free subscriptions', async () => {
+      const i18n = TestBed.inject(I18nService);
+      i18n.setLang('es');
+      const mountSpy = vi.fn();
+      const createElementSpy = vi.fn().mockReturnValue({
+        mount: mountSpy,
+        destroy: vi.fn(),
+        on: vi.fn(),
+      });
+      const elementsFactorySpy = vi.fn().mockReturnValue({
+        create: createElementSpy,
+        submit: vi.fn().mockResolvedValue({}),
+      });
+      vi.spyOn(service, 'getStripe').mockResolvedValue({ elements: elementsFactorySpy } as any);
+
+      await service.mountDeferredPaymentElement(
+        { mode: 'setup', currency: 'usd' },
+        'portal-payment-element',
+      );
+
+      expect(elementsFactorySpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'setup',
+          currency: 'usd',
+          setupFutureUsage: 'off_session',
+          paymentMethodTypes: ['card'],
+          locale: 'es',
+        }),
+      );
+      expect(mountSpy).toHaveBeenCalledWith(container);
+      i18n.setLang('en');
+    });
+
+    it('aborts stale deferred mount before cleaning up active elements when shouldAbort returns true', async () => {
+      const cleanupSpy = vi.spyOn(service, 'cleanup');
+      const elementsFactorySpy = vi.fn();
+      vi.spyOn(service, 'getStripe').mockResolvedValue({ elements: elementsFactorySpy } as any);
+
+      await expect(
+        service.mountDeferredPaymentElement(
+          { mode: 'subscription', amount: 2900, currency: 'usd' },
+          'portal-payment-element',
+          { shouldAbort: () => true },
+        ),
+      ).rejects.toMatchObject({ aborted: true });
+
+      expect(cleanupSpy).not.toHaveBeenCalled();
+      expect(elementsFactorySpy).not.toHaveBeenCalled();
+    });
+
+    it('forwards loaderror events and validates elements via submitElements()', async () => {
+      const handlers: Record<string, (ev?: any) => void> = {};
+      const submitSpy = vi.fn().mockResolvedValue({
+        error: { type: 'validation_error', message: 'Your card number is incomplete.' },
+      });
+      const elementsInstance: any = {
+        create: vi.fn().mockReturnValue({
+          mount: vi.fn(),
+          destroy: vi.fn(),
+          on: vi.fn((event: string, cb: (ev?: any) => void) => {
+            handlers[event] = cb;
+          }),
+        }),
+        submit: submitSpy,
+      };
+      vi.spyOn(service, 'getStripe').mockResolvedValue({
+        elements: vi.fn().mockReturnValue(elementsInstance),
+      } as any);
+
+      const loadErrorCb = vi.fn();
+      await service.mountDeferredPaymentElement(
+        { mode: 'subscription', amount: 2900, currency: 'usd' },
+        'portal-payment-element',
+        { onLoadError: loadErrorCb },
+      );
+
+      handlers['loaderror']?.({ error: new Error('Element iframe failed') });
+      expect(loadErrorCb).toHaveBeenCalledTimes(1);
+
+      const submitRes = await service.submitElements(elementsInstance);
+      expect(submitSpy).toHaveBeenCalledTimes(1);
+      expect(submitRes.error?.message).toContain('incomplete');
+    });
+
+    it('passes clientSecret to stripe.confirmPayment and stripe.confirmSetup when confirming a deferred Element', async () => {
+      const confirmPaymentSpy = vi.fn().mockResolvedValue({});
+      const confirmSetupSpy = vi.fn().mockResolvedValue({});
+      const mockStripe: any = {
+        confirmPayment: confirmPaymentSpy,
+        confirmSetup: confirmSetupSpy,
+      };
+      const mockElements: any = {};
+
+      await service.confirmPayment(mockStripe, mockElements, undefined, 'pi_123_secret_xyz');
+      expect(confirmPaymentSpy).toHaveBeenCalledWith({
+        elements: mockElements,
+        clientSecret: 'pi_123_secret_xyz',
+        redirect: 'if_required',
+        confirmParams: undefined,
+      });
+
+      await service.confirmSetup(mockStripe, mockElements, undefined, 'seti_123_secret_xyz');
+      expect(confirmSetupSpy).toHaveBeenCalledWith({
+        elements: mockElements,
+        clientSecret: 'seti_123_secret_xyz',
+        redirect: 'if_required',
+        confirmParams: undefined,
+      });
+    });
+  });
 });
 
 

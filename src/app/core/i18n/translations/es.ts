@@ -1392,7 +1392,14 @@ export const esTranslations: Record<string, any> = {
 
       "CHECKOUT_TITLE_NEW": "Completa tu suscripción",
       "CHECKOUT_TITLE_CHANGE": "Confirmar cambio de plan",
+      "CHECKOUT_SUBTITLE_NEW": "Plan seleccionado: {{name}} ({{price}} / {{interval}}).",
       "CHECKOUT_SUBTITLE": "Cambiando a {{name}} ({{price}} / {{interval}}).",
+      "SECURE_PAYMENT_TITLE": "Pago seguro",
+      "PREPARING_SECURE_CHECKOUT": "Preparando pago seguro…",
+      "SECURE_PAYMENT_AWAITING_PROMO": "Haz clic en Aplicar arriba para verificar tu código promocional y cargar el formulario de pago seguro.",
+      "ERROR_PAYMENT_FORM_LOAD": "No pudimos cargar el formulario de pago seguro en este momento. No se ha realizado ningún cargo a tu tarjeta — por favor inténtalo de nuevo.",
+      "BTN_RETRY_CHECKOUT": "Reintentar pago seguro",
+      "FREE_INTRO_DISCLOSURE": "Sin cargo hoy ($0.00). Tu método de pago se guardará de forma segura para renovaciones recurrentes por {{amount}} / {{interval}} después del período introductorio gratuito hasta que canceles.",
 
       "PROMO_TAG": "Código promocional",
       "PROMO_FREE": "Período 100% gratis",
