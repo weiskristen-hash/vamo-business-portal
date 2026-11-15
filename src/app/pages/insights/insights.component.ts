@@ -1,4 +1,5 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { I18nService } from '../../core/i18n/i18n.service';
@@ -7,14 +8,24 @@ import { BusinessService } from '../../core/services/business.service';
 import { CustomerErrorService } from '../../core/services/customer-error.service';
 import {
   AnalyticsDailyRow,
+  CALENDAR_TYPES,
+  ELIGIBLE_ENGAGEMENT_TYPES,
+  EVENT_VIEW_TYPES,
   InsightsMetric,
   InsightsRange,
   InsightsService,
   METRIC_TYPES,
+  PHONE_CLICK_TYPES,
+  PROFILE_VIEW_TYPES,
+  PROMO_REVEAL_TYPES,
+  RESERVATION_REQUEST_TYPES,
+  SHARE_TYPES,
   WHATSAPP_TYPES,
   aggregateByDate,
   calcTrend,
+  computePlatformBreakdown,
   getRangeDates,
+  getReportingFreshnessDate,
   getTopEvents,
   sumTypes,
 } from '../../core/services/insights.service';
@@ -25,12 +36,30 @@ interface MessageDescriptor {
   params?: Record<string, string | number>;
 }
 
+export type KpiId =
+  | 'profile-views'
+  | 'event-views'
+  | 'whatsapp'
+  | 'promo-reveals'
+  | 'phone-clicks'
+  | 'shares'
+  | 'reservations'
+  | 'bookmarks'
+  | 'calendar';
+
 interface KpiCard {
-  id: 'views' | 'shares' | 'bookmarks' | 'calendar' | 'whatsapp';
+  id: KpiId;
   labelKey: string;
   hintKey: string;
   value: number | null;
   trend: number | null;
+}
+
+interface PlatformRowView {
+  id: 'website' | 'mobile-app' | 'unattributed';
+  labelKey: string;
+  count: number;
+  pct: number;
 }
 
 interface TopListingView {
@@ -39,6 +68,8 @@ interface TopListingView {
   imageUrl: string | null;
   initial: string;
   views: number;
+  whatsapp: number;
+  promoReveals: number;
   shares: number;
   calendar: number;
 }
@@ -60,9 +91,12 @@ interface ChartModel {
 }
 
 /**
- * Business Insights (Phase 1D.1) — canonical parity with VAMO app InsightsPage.
- * Metrics: Views, Shares, Bookmarks (total), Calendar, WhatsApp (provider only),
- * daily chart (Views / Shares / Calendar) and Top 5 listings.
+ * Business Insights (Phase 3 — Business Performance & Engagement Reporting).
+ * Surfaces complete, accurately attributed engagement across VAMO's app and public website:
+ * Profile Views, Event Views, WhatsApp Clicks (profile + event), Promotion Reveals,
+ * Phone Clicks, Shares (profile + event), Reservation Requests, Bookmarks, and Calendar,
+ * plus daily trend chart, verified Website vs Mobile App breakdown, Top 5 Posts, and
+ * daily rollup freshness indicator.
  */
 @Component({
   selector: 'app-insights',
@@ -71,9 +105,13 @@ interface ChartModel {
   template: `
     <div class="insights-page">
       <header class="ins-header">
-        <div>
+        <div class="ins-header-copy">
           <h1 class="ins-title">{{ 'PORTAL.INSIGHTS.TITLE' | translate }}</h1>
           <p class="ins-subtitle">{{ 'PORTAL.INSIGHTS.SUBTITLE' | translate }}</p>
+          <p class="ins-freshness" data-freshness="daily">
+            <span class="ins-freshness-dot" aria-hidden="true"></span>
+            <span>{{ freshnessText() }}</span>
+          </p>
         </div>
 
         <div class="ins-range" role="group" [attr.aria-label]="'PORTAL.INSIGHTS.RANGE_LABEL' | translate">
@@ -114,30 +152,33 @@ interface ChartModel {
           </div>
         }
 
-        <section class="ins-kpi-grid">
-          @for (k of kpis(); track k.id) {
-            <article class="kpi-card card" [attr.data-kpi]="k.id">
-              <p class="kpi-label">{{ k.labelKey | translate }}</p>
-              @if (k.value === null) {
-                <p class="kpi-value kpi-value--na" aria-hidden="true">—</p>
-                <p class="kpi-unavailable">{{ 'PORTAL.INSIGHTS.BOOKMARKS_UNAVAILABLE' | translate }}</p>
-              } @else {
-                <p class="kpi-value">{{ formatNumber(k.value) }}</p>
-              }
-              @if (k.trend !== null) {
-                <p
-                  class="kpi-trend"
-                  [class.up]="k.trend >= 0"
-                  [class.down]="k.trend < 0"
-                  [attr.aria-label]="trendLabel(k.trend)"
-                  [attr.title]="trendLabel(k.trend)"
-                >
-                  <span aria-hidden="true">{{ k.trend >= 0 ? '▲' : '▼' }} {{ formatNumber(abs(k.trend)) }}%</span>
-                </p>
-              }
-              <p class="kpi-hint">{{ k.hintKey | translate }}</p>
-            </article>
-          }
+        <section class="ins-perf-block" [attr.aria-label]="'PORTAL.INSIGHTS.BUSINESS_PERFORMANCE_TITLE' | translate">
+          <h2 class="ins-group-heading">{{ 'PORTAL.INSIGHTS.BUSINESS_PERFORMANCE_TITLE' | translate }}</h2>
+          <div class="ins-kpi-grid">
+            @for (k of kpis(); track k.id) {
+              <article class="kpi-card card" [attr.data-kpi]="k.id">
+                <p class="kpi-label">{{ k.labelKey | translate }}</p>
+                @if (k.value === null) {
+                  <p class="kpi-value kpi-value--na" aria-hidden="true">—</p>
+                  <p class="kpi-unavailable">{{ 'PORTAL.INSIGHTS.BOOKMARKS_UNAVAILABLE' | translate }}</p>
+                } @else {
+                  <p class="kpi-value">{{ formatNumber(k.value) }}</p>
+                }
+                @if (k.trend !== null) {
+                  <p
+                    class="kpi-trend"
+                    [class.up]="k.trend >= 0"
+                    [class.down]="k.trend < 0"
+                    [attr.aria-label]="trendLabel(k.trend)"
+                    [attr.title]="trendLabel(k.trend)"
+                  >
+                    <span aria-hidden="true">{{ k.trend >= 0 ? '▲' : '▼' }} {{ formatNumber(abs(k.trend)) }}%</span>
+                  </p>
+                }
+                <p class="kpi-hint">{{ k.hintKey | translate }}</p>
+              </article>
+            }
+          </div>
         </section>
 
         <section class="ins-section card">
@@ -209,6 +250,38 @@ interface ChartModel {
           }
         </section>
 
+        @if (platformRows().length > 0) {
+          <section class="ins-section card ins-platform-section" data-section="platform-breakdown">
+            <div class="ins-platform-head">
+              <h2 class="ins-section-title">{{ 'PORTAL.INSIGHTS.PLATFORM_TITLE' | translate }}</h2>
+              <p class="ins-platform-sub">{{ 'PORTAL.INSIGHTS.PLATFORM_SUBTITLE' | translate }}</p>
+            </div>
+
+            <div class="ins-platform-list">
+              @for (item of platformRows(); track item.id) {
+                <div class="ins-platform-row" [attr.data-platform]="item.id">
+                  <div class="ins-platform-meta">
+                    <span class="ins-platform-name">{{ item.labelKey | translate }}</span>
+                    <span class="ins-platform-values">
+                      <strong>{{ formatNumber(item.count) }}</strong>
+                      <span class="ins-platform-pct">({{ formatNumber(item.pct) }}%)</span>
+                    </span>
+                  </div>
+                  <div class="ins-platform-bar-track" aria-hidden="true">
+                    <div
+                      class="ins-platform-bar-fill"
+                      [attr.data-platform]="item.id"
+                      [style.width.%]="item.pct"
+                    ></div>
+                  </div>
+                </div>
+              }
+            </div>
+
+            <p class="ins-platform-note">{{ 'PORTAL.INSIGHTS.PLATFORM_NOTE' | translate }}</p>
+          </section>
+        }
+
         <section class="ins-section card">
           <h2 class="ins-section-title">{{ 'PORTAL.INSIGHTS.TOP_LISTINGS_TITLE' | translate }}</h2>
           @if (topListings().length === 0) {
@@ -233,6 +306,8 @@ interface ChartModel {
                     <p class="ins-top-name">{{ ev.name }}</p>
                     <div class="ins-top-stats">
                       <span class="stat" data-stat="views">{{ 'INSIGHTS.VIEWS' | translate }}: <strong>{{ formatNumber(ev.views) }}</strong></span>
+                      <span class="stat" data-stat="whatsapp">{{ 'PORTAL.INSIGHTS.WHATSAPP_LABEL' | translate }}: <strong>{{ formatNumber(ev.whatsapp) }}</strong></span>
+                      <span class="stat" data-stat="promo-reveals">{{ 'PORTAL.INSIGHTS.PROMO_REVEALS_LABEL' | translate }}: <strong>{{ formatNumber(ev.promoReveals) }}</strong></span>
                       <span class="stat" data-stat="shares">{{ 'INSIGHTS.SHARES' | translate }}: <strong>{{ formatNumber(ev.shares) }}</strong></span>
                       <span class="stat" data-stat="calendar">{{ 'INSIGHTS.CALENDAR' | translate }}: <strong>{{ formatNumber(ev.calendar) }}</strong></span>
                     </div>
@@ -248,11 +323,19 @@ interface ChartModel {
   styles: [`
     .insights-page { display: flex; flex-direction: column; gap: 24px; max-width: 1100px; }
     .ins-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 16px; }
+    .ins-header-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
     .ins-title { font-size: 1.8rem; font-weight: 800; color: var(--vamo-text); letter-spacing: -0.02em; margin: 0; }
-    .ins-subtitle { color: var(--vamo-text-muted); margin: 6px 0 0; line-height: 1.5; }
+    .ins-subtitle { color: var(--vamo-text-muted); margin: 2px 0 0; line-height: 1.5; }
+    .ins-freshness {
+      display: inline-flex; align-items: center; gap: 7px;
+      margin: 4px 0 0; font-size: 0.78rem; font-weight: 600; color: var(--vamo-text-muted);
+    }
+    .ins-freshness-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: #16a34a; flex-shrink: 0; opacity: 0.85;
+    }
 
     .ins-range, .ins-metric {
-      display: inline-flex; gap: 4px; padding: 4px;
+      display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px;
       background: var(--vamo-surface); border: 1px solid var(--vamo-border); border-radius: 999px;
     }
     .ins-range-btn, .ins-metric-btn {
@@ -282,7 +365,10 @@ interface ChartModel {
     .ins-empty h2 { font-size: 1.05rem; margin: 0 0 6px; color: var(--vamo-text); }
     .ins-empty p { margin: 0; color: var(--vamo-text-muted); }
 
-    .ins-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+    .ins-perf-block { display: flex; flex-direction: column; gap: 12px; }
+    .ins-group-heading { font-size: 1rem; font-weight: 700; color: var(--vamo-text); margin: 0; }
+
+    .ins-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 14px; }
     .kpi-card { padding: 16px; display: flex; flex-direction: column; gap: 4px; }
     .kpi-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--vamo-text-muted); margin: 0; }
     .kpi-value { font-size: 1.7rem; font-weight: 800; color: var(--vamo-text); margin: 0; line-height: 1.15; }
@@ -291,7 +377,7 @@ interface ChartModel {
     .kpi-trend { font-size: 0.8rem; font-weight: 700; margin: 0; }
     .kpi-trend.up { color: #16a34a; }
     .kpi-trend.down { color: #dc2626; }
-    .kpi-hint { font-size: 0.78rem; color: var(--vamo-text-muted); margin: 4px 0 0; }
+    .kpi-hint { font-size: 0.78rem; color: var(--vamo-text-muted); margin: 4px 0 0; line-height: 1.35; }
 
     .ins-section { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
     .ins-section-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
@@ -305,6 +391,8 @@ interface ChartModel {
     .ins-chart-svg .area { fill: var(--chart-color); opacity: 0.12; }
     .ins-chart-svg .pt { fill: var(--chart-color); }
     .ins-chart[data-metric='views'] { --chart-color: #16a34a; }
+    .ins-chart[data-metric='whatsapp'] { --chart-color: #15803d; }
+    .ins-chart[data-metric='promotions'] { --chart-color: #db2777; }
     .ins-chart[data-metric='shares'] { --chart-color: #2563eb; }
     .ins-chart[data-metric='calendar'] { --chart-color: #ea580c; }
     .ins-y-labels {
@@ -315,6 +403,24 @@ interface ChartModel {
     .ins-x-labels { position: relative; height: 20px; margin-top: 6px; font-size: 0.72rem; color: var(--vamo-text-muted); }
     .ins-x-labels span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
     .ins-no-data, .ins-top-empty { color: var(--vamo-text-muted); padding: 24px 0; text-align: center; margin: 0; }
+
+    .ins-platform-head { display: flex; flex-direction: column; gap: 4px; }
+    .ins-platform-sub { margin: 0; font-size: 0.84rem; color: var(--vamo-text-muted); }
+    .ins-platform-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    .ins-platform-row { display: flex; flex-direction: column; gap: 6px; }
+    .ins-platform-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 0.88rem; }
+    .ins-platform-name { font-weight: 600; color: var(--vamo-text); }
+    .ins-platform-values { color: var(--vamo-text); display: inline-flex; gap: 6px; align-items: baseline; }
+    .ins-platform-pct { font-size: 0.8rem; color: var(--vamo-text-muted); }
+    .ins-platform-bar-track {
+      height: 8px; width: 100%; border-radius: 999px;
+      background: var(--vamo-border); overflow: hidden;
+    }
+    .ins-platform-bar-fill { height: 100%; border-radius: 999px; min-width: 0; transition: width 0.2s ease; }
+    .ins-platform-bar-fill[data-platform='website'] { background: #2563eb; }
+    .ins-platform-bar-fill[data-platform='mobile-app'] { background: #16a34a; }
+    .ins-platform-bar-fill[data-platform='unattributed'] { background: #64748b; }
+    .ins-platform-note { margin: 0; font-size: 0.76rem; color: var(--vamo-text-muted); line-height: 1.45; }
 
     .ins-top-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
     .ins-top-row { display: flex; align-items: center; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--vamo-border); }
@@ -338,7 +444,10 @@ interface ChartModel {
     @media (max-width: 640px) {
       .ins-header { align-items: stretch; }
       .ins-range { justify-content: space-between; }
+      .ins-metric { border-radius: 14px; }
+      .ins-kpi-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
       .ins-section { padding: 16px; }
+      .ins-platform-list { grid-template-columns: 1fr; }
     }
   `],
 })
@@ -347,6 +456,7 @@ export class InsightsComponent implements OnInit {
   private businessService = inject(BusinessService);
   private insightsService = inject(InsightsService);
   private errorService = inject(CustomerErrorService);
+  private destroyRef = inject(DestroyRef);
   readonly i18n = inject(I18nService);
 
   readonly ranges: { value: InsightsRange; labelKey: string; ariaKey: string }[] = [
@@ -358,6 +468,8 @@ export class InsightsComponent implements OnInit {
 
   readonly metrics: { value: InsightsMetric; labelKey: string }[] = [
     { value: 'views', labelKey: 'INSIGHTS.VIEWS' },
+    { value: 'whatsapp', labelKey: 'PORTAL.INSIGHTS.WHATSAPP_LABEL' },
+    { value: 'promotions', labelKey: 'PORTAL.INSIGHTS.PROMO_REVEALS_LABEL' },
     { value: 'shares', labelKey: 'INSIGHTS.SHARES' },
     { value: 'calendar', labelKey: 'INSIGHTS.CALENDAR' },
   ];
@@ -376,6 +488,7 @@ export class InsightsComponent implements OnInit {
   readonly bookmarks = signal<number | null>(0);
   readonly failedImageIds = signal<Set<string>>(new Set());
   readonly dates = signal(getRangeDates('30d'));
+  readonly referenceNow = signal<Date>(new Date());
 
   private providerId: string | null = null;
   private loadSeq = 0;
@@ -387,37 +500,80 @@ export class InsightsComponent implements OnInit {
     return this.i18n.t(d.key, d.params);
   });
 
+  readonly freshnessDate = computed(() =>
+    getReportingFreshnessDate(this.referenceNow(), this.current())
+  );
+
+  readonly freshnessText = computed(() => {
+    this.i18n.lang();
+    return this.i18n.t('PORTAL.INSIGHTS.FRESHNESS_DAILY', {
+      date: this.formatDate(this.freshnessDate()),
+    });
+  });
+
   readonly kpis = computed<KpiCard[]>(() => {
     const cur = this.current();
     const prev = this.previous();
-    const viewsTypes = METRIC_TYPES.views;
-    const sharesTypes = METRIC_TYPES.shares;
-    const calTypes = METRIC_TYPES.calendar;
+    const card = (
+      id: KpiId,
+      labelKey: string,
+      hintKey: string,
+      types: readonly string[]
+    ): KpiCard => {
+      const curVal = sumTypes(cur, types);
+      const prevVal = sumTypes(prev, types);
+      return {
+        id,
+        labelKey,
+        hintKey,
+        value: curVal,
+        trend: calcTrend(curVal, prevVal),
+      };
+    };
+
     return [
+      card('profile-views', 'PORTAL.INSIGHTS.PROFILE_VIEWS_LABEL', 'PORTAL.INSIGHTS.PROFILE_VIEWS_HINT', PROFILE_VIEW_TYPES),
+      card('event-views', 'PORTAL.INSIGHTS.EVENT_VIEWS_LABEL', 'PORTAL.INSIGHTS.EVENT_VIEWS_HINT', EVENT_VIEW_TYPES),
+      card('whatsapp', 'PORTAL.INSIGHTS.WHATSAPP_LABEL', 'PORTAL.INSIGHTS.WHATSAPP_HINT', WHATSAPP_TYPES),
+      card('promo-reveals', 'PORTAL.INSIGHTS.PROMO_REVEALS_LABEL', 'PORTAL.INSIGHTS.PROMO_REVEALS_HINT', PROMO_REVEAL_TYPES),
+      card('phone-clicks', 'PORTAL.INSIGHTS.PHONE_CLICKS_LABEL', 'PORTAL.INSIGHTS.PHONE_CLICKS_HINT', PHONE_CLICK_TYPES),
+      card('shares', 'INSIGHTS.SHARES', 'PORTAL.INSIGHTS.SHARES_HINT', SHARE_TYPES),
+      card('reservations', 'PORTAL.INSIGHTS.RESERVATIONS_LABEL', 'PORTAL.INSIGHTS.RESERVATIONS_HINT', RESERVATION_REQUEST_TYPES),
       {
-        id: 'views', labelKey: 'INSIGHTS.VIEWS', hintKey: 'PORTAL.INSIGHTS.VIEWS_HINT',
-        value: sumTypes(cur, viewsTypes), trend: calcTrend(sumTypes(cur, viewsTypes), sumTypes(prev, viewsTypes)),
+        id: 'bookmarks',
+        labelKey: 'INSIGHTS.BOOKMARKS',
+        hintKey: 'PORTAL.INSIGHTS.BOOKMARKS_HINT',
+        value: this.bookmarks(),
+        trend: null,
       },
-      {
-        id: 'shares', labelKey: 'INSIGHTS.SHARES', hintKey: 'PORTAL.INSIGHTS.SHARES_HINT',
-        value: sumTypes(cur, sharesTypes), trend: calcTrend(sumTypes(cur, sharesTypes), sumTypes(prev, sharesTypes)),
-      },
-      {
-        id: 'bookmarks', labelKey: 'INSIGHTS.BOOKMARKS', hintKey: 'PORTAL.INSIGHTS.BOOKMARKS_HINT',
-        value: this.bookmarks(), trend: null,
-      },
-      {
-        id: 'calendar', labelKey: 'INSIGHTS.CALENDAR', hintKey: 'PORTAL.INSIGHTS.CALENDAR_HINT',
-        value: sumTypes(cur, calTypes), trend: calcTrend(sumTypes(cur, calTypes), sumTypes(prev, calTypes)),
-      },
-      {
-        id: 'whatsapp', labelKey: 'INSIGHTS.WHATSAPP', hintKey: 'PORTAL.INSIGHTS.WHATSAPP_HINT',
-        value: sumTypes(cur, WHATSAPP_TYPES), trend: calcTrend(sumTypes(cur, WHATSAPP_TYPES), sumTypes(prev, WHATSAPP_TYPES)),
-      },
+      card('calendar', 'INSIGHTS.CALENDAR', 'PORTAL.INSIGHTS.CALENDAR_HINT', CALENDAR_TYPES),
     ];
   });
 
-  readonly isEmpty = computed(() => this.current().every((r) => !r.count) && !this.bookmarks());
+  readonly platformBreakdown = computed(() => computePlatformBreakdown(this.current()));
+
+  readonly platformRows = computed<PlatformRowView[]>(() => {
+    const b = this.platformBreakdown();
+    if (!b.hasVerifiedSplit || b.total <= 0) return [];
+    const pct = (n: number) => Math.round((n / b.total) * 100);
+    const items: PlatformRowView[] = [
+      { id: 'website', labelKey: 'PORTAL.INSIGHTS.PLATFORM_WEBSITE', count: b.website, pct: pct(b.website) },
+      { id: 'mobile-app', labelKey: 'PORTAL.INSIGHTS.PLATFORM_MOBILE_APP', count: b.mobileApp, pct: pct(b.mobileApp) },
+    ];
+    if (b.unattributed > 0) {
+      items.push({
+        id: 'unattributed',
+        labelKey: 'PORTAL.INSIGHTS.PLATFORM_UNATTRIBUTED',
+        count: b.unattributed,
+        pct: pct(b.unattributed),
+      });
+    }
+    return items;
+  });
+
+  readonly isEmpty = computed(
+    () => sumTypes(this.current(), ELIGIBLE_ENGAGEMENT_TYPES) === 0 && !this.bookmarks()
+  );
 
   readonly series = computed(() => aggregateByDate(this.current(), METRIC_TYPES[this.metric()]));
 
@@ -506,6 +662,8 @@ export class InsightsComponent implements OnInit {
         imageUrl,
         initial: (rawName.charAt(0) || '•').toUpperCase(),
         views: t.views,
+        whatsapp: t.whatsapp,
+        promoReveals: t.promoReveals,
         shares: t.shares,
         calendar: t.calendar,
       };
@@ -513,7 +671,28 @@ export class InsightsComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    const userStream = (this.authService as Partial<AuthService>).user$;
+    if (userStream && typeof userStream.subscribe === 'function') {
+      userStream.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((user) => {
+        if (user === undefined) return;
+        const nextProviderId = user?.provider_link?.id ?? null;
+        if (this.providerId !== null && nextProviderId !== this.providerId) {
+          this.resetBusinessState();
+          void this.loadAll();
+        }
+      });
+    }
     void this.loadAll();
+  }
+
+  private resetBusinessState(): void {
+    this.loadSeq++;
+    this.providerId = null;
+    this.current.set([]);
+    this.previous.set([]);
+    this.events.set([]);
+    this.bookmarks.set(0);
+    this.failedImageIds.set(new Set());
   }
 
   /** Initial load: owned events + bookmarks + analytics for the current range. */
@@ -522,9 +701,21 @@ export class InsightsComponent implements OnInit {
     this.loading.set(true);
     this.errorDescriptor.set(null);
 
-    const providerId = this.authService.currentUser?.provider_link?.id ?? null;
+    const rawProviderId = this.authService.currentUser?.provider_link?.id ?? null;
+    const providerId = typeof rawProviderId === 'string' ? rawProviderId.trim() || null : null;
+    if (this.providerId !== null && this.providerId !== providerId) {
+      this.current.set([]);
+      this.previous.set([]);
+      this.events.set([]);
+      this.bookmarks.set(0);
+      this.failedImageIds.set(new Set());
+    }
     this.providerId = providerId;
     if (!providerId) {
+      this.current.set([]);
+      this.previous.set([]);
+      this.events.set([]);
+      this.bookmarks.set(0);
       this.errorDescriptor.set({ key: 'PORTAL.INSIGHTS.ERROR_LOAD' });
       this.loading.set(false);
       return;
@@ -555,7 +746,8 @@ export class InsightsComponent implements OnInit {
   async onRangeChange(r: InsightsRange): Promise<void> {
     if (r === this.range() && !this.errorDescriptor()) return;
     this.range.set(r);
-    if (!this.providerId) {
+    const activeProviderId = this.authService.currentUser?.provider_link?.id?.trim() || null;
+    if (!this.providerId || activeProviderId !== this.providerId) {
       await this.loadAll();
       return;
     }
@@ -639,7 +831,8 @@ export class InsightsComponent implements OnInit {
   }
 
   private async fetchRange(seq: number, providerId: string, r: InsightsRange): Promise<void> {
-    const dates = getRangeDates(r);
+    const now = new Date();
+    const dates = getRangeDates(r, now);
     const ownedIds = this.events().map((e) => e.id).filter((id): id is string => !!id);
     const [cur, prev] = await Promise.all([
       this.insightsService.getAnalyticsInRange(providerId, ownedIds, dates.from, dates.to),
@@ -649,6 +842,7 @@ export class InsightsComponent implements OnInit {
         : this.insightsService.getAnalyticsInRange(providerId, ownedIds, dates.prevFrom, dates.prevTo),
     ]);
     if (seq !== this.loadSeq) return;
+    this.referenceNow.set(now);
     this.dates.set(dates);
     this.current.set(cur);
     this.previous.set(prev);
