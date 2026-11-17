@@ -601,8 +601,41 @@ export class BusinessService {
     areaIds: string[] = []
   ): Promise<VamoEvent> {
     return this.authService.safeRequest(async () => {
+      const isAllDay = Boolean(data.allDay);
+      const isOpenEnd = !isAllDay && Boolean(data.openEnd);
+      const normalizedStartDate = data.startDate !== undefined
+        ? (data.startDate ? (normalizeDateStr(data.startDate) ?? null) : null)
+        : undefined;
+      const normalizedEndDate = data.endDate !== undefined
+        ? (data.endDate ? (normalizeDateStr(data.endDate) ?? null) : null)
+        : undefined;
+      const normalizedFrom = isAllDay
+        ? null
+        : (data.from !== undefined
+            ? (data.from ? (this.extractTime(data.from) ?? null) : null)
+            : undefined);
+      const normalizedTo = (isAllDay || isOpenEnd)
+        ? null
+        : (data.to !== undefined
+            ? (data.to ? (this.extractTime(data.to) ?? null) : null)
+            : undefined);
+      const normalizedAllDay = isAllDay
+        ? true
+        : (isOpenEnd || data.allDay !== undefined ? false : undefined);
+
       if (data.status === 'published') {
-        const validation = validateEventForPublish(data, { hasImages: files.length > 0, areaIds });
+        const validation = validateEventForPublish(
+          {
+            ...data,
+            startDate: normalizedStartDate,
+            endDate: normalizedEndDate,
+            allDay: normalizedAllDay,
+            openEnd: isOpenEnd,
+            from: normalizedFrom,
+            to: normalizedTo,
+          },
+          { hasImages: files.length > 0, areaIds }
+        );
         if (!validation.valid) throw new Error(validation.errorCode || 'INCOMPLETE_EVENT_DRAFT');
       }
       // 1. Build canonical payload matching create-event.page.ts buildPayload()
@@ -614,15 +647,15 @@ export class BusinessService {
           : (data.description ?? undefined),
         location_point: data.location_point ?? null,
         address: data.address ?? null,
-        startDate: data.startDate ? (normalizeDateStr(data.startDate) ?? undefined) : undefined,
-        endDate: data.endDate ? (normalizeDateStr(data.endDate) ?? undefined) : undefined,
-        allDay: data.allDay,
+        startDate: normalizedStartDate,
+        endDate: normalizedEndDate,
+        allDay: normalizedAllDay,
         mode: data.mode!,
         recurring: typeof data.recurring === 'object' && data.recurring !== null
           ? JSON.stringify(data.recurring)
           : (typeof data.recurring === 'string' ? data.recurring : JSON.stringify({ days: [] })),
-        from: data.from ? this.extractTime(data.from) : undefined,
-        to: data.allDay || data.openEnd || !data.to ? undefined : this.extractTime(data.to),
+        from: normalizedFrom,
+        to: normalizedTo,
         promotionStart: data.promotionStart !== undefined
           ? data.promotionStart
           : new Date().toISOString(),
@@ -698,7 +731,11 @@ export class BusinessService {
   ): Promise<VamoEvent> {
     if (!eventId) throw new Error('Event ID is required');
 
-    if (_deprecatedExistingEvent && (this.isEventPast(_deprecatedExistingEvent) || _deprecatedExistingEvent.status === 'archived')) {
+    if (
+      _deprecatedExistingEvent &&
+      (_deprecatedExistingEvent.status === 'archived' ||
+        (_deprecatedExistingEvent.status !== 'draft' && this.isEventPast(_deprecatedExistingEvent)))
+    ) {
       throw new Error('PAST_EVENT_READ_ONLY');
     }
 
@@ -716,16 +753,35 @@ export class BusinessService {
         forbiddenErr.status = 403;
         throw forbiddenErr;
       }
-      if (this.isEventPast(persisted) || persisted.status === 'archived') {
+      if (persisted.status === 'archived' || (persisted.status !== 'draft' && this.isEventPast(persisted))) {
         throw new Error('PAST_EVENT_READ_ONLY');
       }
+
+      const effectiveAllDay = data.allDay !== undefined
+        ? Boolean(data.allDay)
+        : Boolean(persisted.allDay);
+      const effectiveOpenEnd = !effectiveAllDay && Boolean(
+        data.openEnd !== undefined ? data.openEnd : persisted.openEnd
+      );
 
       const targetStatus = data.status || persisted.status;
       if (targetStatus === 'published') {
         const retainedImages = persisted.images?.filter(image =>
           !removedImageJunctionIds.some(id => String(id) === String(image.id))
         ) || [];
-        const validation = validateEventForPublish({ ...persisted, ...data, images: retainedImages }, {
+        const candidateForValidation: Partial<VamoEvent> = {
+          ...persisted,
+          ...data,
+          allDay: effectiveAllDay,
+          openEnd: effectiveOpenEnd,
+          from: effectiveAllDay ? null : (data.from !== undefined ? data.from : persisted.from),
+          to: (effectiveAllDay || effectiveOpenEnd)
+            ? null
+            : (data.to !== undefined ? data.to : persisted.to),
+          endDate: data.endDate !== undefined ? data.endDate : persisted.endDate,
+          images: retainedImages,
+        };
+        const validation = validateEventForPublish(candidateForValidation, {
           originalEvent: persisted,
           hasImages: files.length > 0 || retainedImages.some(image => {
             const file = image.directus_files_id;
@@ -748,23 +804,33 @@ export class BusinessService {
       if (data.location_point !== undefined) payload['location_point'] = data.location_point ?? null;
       if (data.address !== undefined) payload['address'] = data.address ?? null;
       if (data.startDate !== undefined) {
-        payload['startDate'] = data.startDate ? (normalizeDateStr(data.startDate) ?? undefined) : undefined;
+        payload['startDate'] = data.startDate ? (normalizeDateStr(data.startDate) ?? null) : null;
       }
       if (data.endDate !== undefined) {
-        payload['endDate'] = data.endDate ? (normalizeDateStr(data.endDate) ?? undefined) : undefined;
+        payload['endDate'] = data.endDate ? (normalizeDateStr(data.endDate) ?? null) : null;
       }
-      if (data.allDay !== undefined) payload['allDay'] = data.allDay;
       if (data.mode !== undefined) payload['mode'] = data.mode;
       if (data.recurring !== undefined) {
         payload['recurring'] = typeof data.recurring === 'object' && data.recurring !== null
           ? JSON.stringify(data.recurring)
           : (typeof data.recurring === 'string' ? data.recurring : JSON.stringify({ days: [] }));
       }
-      if (data.from !== undefined) {
-        payload['from'] = data.from ? this.extractTime(data.from) : undefined;
-      }
-      if (data.openEnd !== undefined || data.to !== undefined) {
-        payload['to'] = data.openEnd ? undefined : (data.to ? this.extractTime(data.to) : undefined);
+      if (effectiveAllDay) {
+        payload['allDay'] = true;
+        payload['from'] = null;
+        payload['to'] = null;
+      } else {
+        if (data.allDay !== undefined || data.openEnd) {
+          payload['allDay'] = false;
+        }
+        if (data.from !== undefined) {
+          payload['from'] = data.from ? (this.extractTime(data.from) ?? null) : null;
+        }
+        if (data.openEnd) {
+          payload['to'] = null;
+        } else if (data.to !== undefined || data.openEnd === false) {
+          payload['to'] = data.to ? (this.extractTime(data.to) ?? null) : null;
+        }
       }
       if (data.hasPromotion !== undefined) payload['hasPromotion'] = data.hasPromotion;
       if (data.promoText !== undefined) payload['promoText'] = data.promoText;
@@ -816,8 +882,10 @@ export class BusinessService {
       } catch (readErr) {
         console.warn('[BusinessService] Post-update getEventById failed, returning synthesized event record:', readErr);
         return this.normalizeEvent({
-          id: eventId,
+          ...persisted,
           ...data,
+          ...payload,
+          id: eventId,
           date_updated: new Date().toISOString(),
         } as VamoEvent);
       }
@@ -861,13 +929,16 @@ export class BusinessService {
 
     return this.authService.safeRequest(async () => {
       const event = await this.getEventById(eventId);
-      const validation = validateEventForPublish(event);
+      const validation = validateEventForPublish(
+        event.allDay ? { ...event, allDay: true, from: null, to: null } : event
+      );
       if (!validation.valid) {
         throw new Error(validation.errorCode || 'INCOMPLETE_EVENT_DRAFT');
       }
 
       await directusClient.request(updateItem('events', eventId, {
         status: 'published',
+        ...(event.allDay ? { allDay: true, from: null, to: null } : {}),
         ...(addonExpiresAt !== undefined ? { addon_expires_at: addonExpiresAt } : {}),
       } as any));
     });
@@ -878,6 +949,8 @@ export class BusinessService {
    */
   async duplicateEventAsDraft(event: VamoEvent): Promise<string> {
     return this.authService.safeRequest(async () => {
+      const isAllDay = Boolean(event.allDay);
+      const isOpenEnd = !isAllDay && Boolean(event.openEnd);
       const payload: Record<string, any> = {
         status: 'draft',
         name: event.name ? `${event.name} (Copy)` : 'Untitled Copy',
@@ -888,11 +961,11 @@ export class BusinessService {
         address: event.address ?? null,
         category: event.category,
         mode: event.mode,
-        startDate: null,
-        endDate: null,
-        from: event.from,
-        to: event.to,
-        allDay: event.allDay,
+        startDate: event.startDate ? (normalizeDateStr(event.startDate) ?? null) : null,
+        endDate: event.endDate ? (normalizeDateStr(event.endDate) ?? null) : null,
+        from: isAllDay ? null : (event.from ? (this.extractTime(event.from) ?? null) : null),
+        to: (isAllDay || isOpenEnd) ? null : (event.to ? (this.extractTime(event.to) ?? null) : null),
+        allDay: isAllDay,
         recurring: typeof event.recurring === 'object' && event.recurring !== null
           ? JSON.stringify(event.recurring)
           : (typeof event.recurring === 'string' ? event.recurring : JSON.stringify({ days: [] })),

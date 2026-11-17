@@ -2528,6 +2528,8 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   };
 
   multiDay = false;
+  private savedTimedFrom: string | null = null;
+  private savedTimedTo: string | null = null;
   lat: number | null = null;
   lng: number | null = null;
 
@@ -2674,8 +2676,16 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       this.originalStartDate = event.startDate || null;
 
       // Check if event is past (canonical rule in Dominican Republic time: America/Santo_Domingo)
-      this.isPastEvent = isEventPast(event, this.businessService);
+      // Drafts remain editable even if copied from or carrying an earlier date.
+      this.isPastEvent = event.status !== 'draft' && isEventPast(event, this.businessService);
       this.datesLocked = this.isPastEvent;
+
+      const loadedAllDay = Boolean(event.allDay);
+      const loadedOpenEnd = !loadedAllDay && Boolean(event.openEnd);
+      const rawFrom = event.from ? event.from.substring(0, 5) : null;
+      const rawTo = event.to ? event.to.substring(0, 5) : null;
+      this.savedTimedFrom = !loadedAllDay ? (rawFrom || '19:00') : null;
+      this.savedTimedTo = !loadedAllDay ? (rawTo || '22:00') : null;
 
       this.draft = {
         id: event.id,
@@ -2685,10 +2695,10 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         mode: event.mode || 'single',
         startDate: event.startDate ? String(event.startDate).split('T')[0] : '',
         endDate: event.endDate ? String(event.endDate).split('T')[0] : null,
-        allDay: !!event.allDay,
-        openEnd: !!event.openEnd,
-        from: event.from ? event.from.substring(0, 5) : '19:00',
-        to: event.to ? event.to.substring(0, 5) : '22:00',
+        allDay: loadedAllDay,
+        openEnd: loadedOpenEnd,
+        from: loadedAllDay ? null : (rawFrom || '19:00'),
+        to: (loadedAllDay || loadedOpenEnd) ? null : (rawTo || '22:00'),
         promotionStart: event.promotionStart ?? new Date().toISOString(),
         isFree: event.isFree !== undefined ? !!event.isFree : true,
         contactForPrice: !!event.contactForPrice,
@@ -2803,18 +2813,49 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       if (data.description && !this.draft.description) {
         this.draft.description = normalizeEventDescription(data.description);
       }
-      if (data.mode) this.draft.mode = data.mode;
-      if (data.startDate && !this.draft.startDate) this.draft.startDate = data.startDate;
-      if (data.endDate && !this.draft.endDate) this.draft.endDate = data.endDate;
-      if (data.from && !this.draft.from) this.draft.from = data.from;
-      if (data.to && !this.draft.to) this.draft.to = data.to;
+      if (data.mode === 'single' || data.mode === 'recurring') this.draft.mode = data.mode;
+      if (typeof data.startDate === 'string' && data.startDate) this.draft.startDate = data.startDate;
+      if (typeof data.multiDay === 'boolean') {
+        this.multiDay = data.multiDay;
+        this.draft.endDate = this.multiDay ? (data.endDate || this.draft.endDate || null) : null;
+      } else if (data.endDate !== undefined) {
+        this.draft.endDate = data.endDate || null;
+        this.multiDay = Boolean(this.draft.endDate);
+      }
+      if (typeof data.allDay === 'boolean') {
+        this.draft.allDay = data.allDay;
+      }
+      if (typeof data.openEnd === 'boolean') {
+        this.draft.openEnd = data.openEnd;
+      }
+      if (this.draft.allDay) {
+        this.draft.openEnd = false;
+        this.draft.from = null;
+        this.draft.to = null;
+      } else {
+        if (typeof data.from === 'string' && data.from) {
+          this.draft.from = data.from;
+          this.savedTimedFrom = data.from;
+        } else if (!this.draft.from) {
+          this.draft.from = this.savedTimedFrom || '19:00';
+        }
+        if (this.draft.openEnd) {
+          this.draft.to = null;
+        } else if (typeof data.to === 'string' && data.to) {
+          this.draft.to = data.to;
+          this.savedTimedTo = data.to;
+        } else if (!this.draft.to) {
+          this.draft.to = this.savedTimedTo || '22:00';
+        }
+      }
       if (data.address && !this.draft.address) this.draft.address = data.address;
       if (data.selectedAreaId && !this.selectedAreaId) this.selectedAreaId = data.selectedAreaId;
       if (data.lat !== undefined && this.lat === null) this.lat = data.lat;
       if (data.lng !== undefined && this.lng === null) this.lng = data.lng;
-      if (data.multiDay !== undefined) this.multiDay = data.multiDay;
       if (data.price_unit) this.draft.price_unit = data.price_unit;
-      if (data.recurring && this.draft.mode === 'recurring') this.draft.recurring = data.recurring;
+      if (data.recurring && typeof data.recurring === 'object' && Array.isArray(data.recurring.days)) {
+        this.draft.recurring = data.recurring;
+      }
       this.isDirty = true;
     } catch {}
   }
@@ -2876,9 +2917,15 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   validateCurrentSchedule(isPublish = false): boolean {
+    const isAllDay = Boolean(this.draft.allDay);
+    const isOpenEnd = !isAllDay && Boolean(this.draft.openEnd);
     const res = validateEventSchedule({
       ...this.draft,
-      endDate: this.multiDay ? this.draft.endDate : undefined,
+      allDay: isAllDay,
+      openEnd: isOpenEnd,
+      from: isAllDay ? null : (this.draft.from || null),
+      to: (isAllDay || isOpenEnd) ? null : (this.draft.to || null),
+      endDate: this.multiDay ? (this.draft.endDate || null) : null,
     }, isPublish, {
       originalEvent: this.isEditMode ? this.originalEvent : undefined,
       todayStr: this.businessService.drTodayStr(),
@@ -2936,6 +2983,12 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
   onTimeChange(): void {
     if (this.datesLocked || this.isPastEvent) return;
+    if (this.draft.from) {
+      this.savedTimedFrom = this.draft.from;
+    }
+    if (this.draft.to) {
+      this.savedTimedTo = this.draft.to;
+    }
     this.markDirty();
     this.validateCurrentSchedule(false);
   }
@@ -2953,15 +3006,36 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   toggleAllDay(): void {
     if (this.datesLocked || this.isPastEvent) return;
     this.draft.allDay = !this.draft.allDay;
+    if (this.draft.allDay) {
+      if (this.draft.from) {
+        this.savedTimedFrom = this.draft.from;
+      }
+      if (this.draft.to) {
+        this.savedTimedTo = this.draft.to;
+      }
+      this.draft.openEnd = false;
+      this.draft.from = null;
+      this.draft.to = null;
+    } else {
+      this.draft.from = this.draft.from || this.savedTimedFrom || '19:00';
+      if (!this.draft.openEnd) {
+        this.draft.to = this.draft.to || this.savedTimedTo || '22:00';
+      }
+    }
     this.markDirty();
     this.validateCurrentSchedule(false);
   }
 
   toggleOpenEnd(): void {
-    if (this.datesLocked || this.isPastEvent) return;
+    if (this.datesLocked || this.isPastEvent || this.draft.allDay) return;
     this.draft.openEnd = !this.draft.openEnd;
     if (this.draft.openEnd) {
+      if (this.draft.to) {
+        this.savedTimedTo = this.draft.to;
+      }
       this.draft.to = null;
+    } else if (!this.draft.to) {
+      this.draft.to = this.savedTimedTo || '22:00';
     }
     this.markDirty();
     this.validateCurrentSchedule(false);
@@ -3363,9 +3437,15 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       return false;
     }
 
+    const isAllDay = Boolean(this.draft.allDay);
+    const isOpenEnd = !isAllDay && Boolean(this.draft.openEnd);
     const validation = validateEventForPublish({
       ...this.draft,
-      endDate: this.multiDay ? this.draft.endDate : undefined,
+      allDay: isAllDay,
+      openEnd: isOpenEnd,
+      from: isAllDay ? null : (this.draft.from || null),
+      to: (isAllDay || isOpenEnd) ? null : (this.draft.to || null),
+      endDate: this.multiDay ? (this.draft.endDate || null) : null,
     }, {
       originalEvent: this.isEditMode ? this.originalEvent : undefined,
       hasImages: this.existingImages.length > 0 || this.selectedNewFiles.length > 0,
@@ -3431,7 +3511,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
           return;
         }
         alreadyPublished = fresh.status === 'published';
-        if (isEventPast(fresh, this.businessService)) {
+        if (fresh.status !== 'draft' && isEventPast(fresh, this.businessService)) {
           this.isPastEvent = true;
           this.datesLocked = true;
           this.errorMessage = this.i18n.t('PORTAL.LISTINGS.ERRORS.PAST_EVENT_NO_EDIT');
@@ -3468,6 +3548,8 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         : (this.draft.description ?? undefined);
       this.draft.description = normalizedDesc ?? '';
 
+      const isAllDay = Boolean(this.draft.allDay);
+      const isOpenEnd = !isAllDay && Boolean(this.draft.openEnd);
       const payload: Partial<VamoEvent> = {
         name: this.draft.name ?? undefined,
         category: this.draft.category ?? undefined,
@@ -3475,12 +3557,12 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         mode: this.draft.mode!,
         status,
         ...(addonExpiry !== undefined ? { addon_expires_at: addonExpiry } : {}),
-        startDate: this.draft.startDate || undefined,
-        endDate: this.multiDay ? (this.draft.endDate || undefined) : undefined,
-        allDay: this.draft.allDay,
-        openEnd: this.draft.openEnd,
-        from: this.draft.allDay ? undefined : (this.draft.from || undefined),
-        to: this.draft.openEnd ? undefined : (this.draft.to || undefined),
+        startDate: this.draft.startDate || null,
+        endDate: this.multiDay ? (this.draft.endDate || null) : null,
+        allDay: isAllDay,
+        openEnd: isOpenEnd,
+        from: isAllDay ? null : (this.draft.from || null),
+        to: (isAllDay || isOpenEnd) ? null : (this.draft.to || null),
         recurring: this.draft.mode === 'recurring' ? this.draft.recurring : { days: [] },
         ...(this.isEditMode ? {} : {
           promotionStart: this.draft.promotionStart || new Date().toISOString(),

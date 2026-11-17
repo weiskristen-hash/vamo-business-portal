@@ -243,6 +243,7 @@ export function isEventPast(
   options?: ScheduleClassificationOptions
 ): boolean {
   if (event.status === 'archived') return true;
+  if (event.status === 'draft') return false;
   if (event.mode === 'recurring') return false;
 
   const opt: ScheduleClassificationOptions | undefined =
