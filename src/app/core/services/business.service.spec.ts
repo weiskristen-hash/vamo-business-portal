@@ -497,6 +497,331 @@ describe('BusinessService', () => {
     });
   });
 
+  describe('All-Day, Open-End, Multiday & Duplicate Serialization Regressions', () => {
+    const basePersisted: VamoEvent = {
+      id: 'ev-base-1',
+      status: 'published',
+      name: 'Playa Jackson Boat Adventure',
+      category: 'excursions',
+      description: 'Full-day boat excursion to Playa Jackson with lunch.',
+      address: 'Playa Las Ballenas',
+      areas: [{ id: 11, areas_id: 'area-lt' }],
+      images: [{ id: 22, directus_files_id: 'file-boat' }],
+      mode: 'single',
+      startDate: '2026-11-20',
+      endDate: null,
+      from: '09:00:00',
+      to: '17:00:00',
+      allDay: false,
+      openEnd: false,
+      isFree: false,
+      contactForPrice: false,
+      price: 85,
+      currency: 'USD',
+      price_unit: 'per_person',
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-11-17T18:00:00Z')); // 14:00 DR time
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    function readRawJsonBody(requestSpy: any, callIndex = 0): { rawBody: string; parsed: Record<string, any>; method?: string } {
+      const cmd = requestSpy.mock.calls[callIndex][0] as () => { body: string; method?: string };
+      const built = cmd();
+      return {
+        rawBody: built.body,
+        parsed: JSON.parse(built.body),
+        method: built.method,
+      };
+    }
+
+    it('1. New All-Day event creation serializes allDay: true, from: null, to: null in POST JSON body', async () => {
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({ id: 'ev-new-allday' } as any);
+      vi.spyOn(service, 'uploadEventImages').mockResolvedValue(['file-boat']);
+      vi.spyOn(service, 'getEventById').mockResolvedValue({
+        ...basePersisted,
+        id: 'ev-new-allday',
+        allDay: true,
+        from: null,
+        to: null,
+      });
+
+      await service.createEvent(
+        {
+          ...basePersisted,
+          allDay: true,
+          from: '19:00', // even if fallback times are passed, service must null them
+          to: '22:00',
+          endDate: null,
+          status: 'published',
+        },
+        [new File(['poster'], 'poster.jpg', { type: 'image/jpeg' })],
+        ['area-lt']
+      );
+
+      const { rawBody, parsed, method } = readRawJsonBody(request, 0);
+      expect(method).toBe('POST');
+      expect(rawBody).toContain('"allDay":true');
+      expect(rawBody).toContain('"from":null');
+      expect(rawBody).toContain('"to":null');
+      expect(parsed['allDay']).toBe(true);
+      expect(parsed['from']).toBeNull();
+      expect(parsed['to']).toBeNull();
+      expect(parsed['startDate']).toBe('2026-11-20');
+      expect(parsed['endDate']).toBeNull();
+    });
+
+    it('2. All-Day draft -> published (updateEvent & publishEvent) preserves allDay: true, from: null, to: null', async () => {
+      const allDayDraft: VamoEvent = {
+        ...basePersisted,
+        id: 'ev-allday-draft',
+        status: 'draft',
+        allDay: true,
+        from: null,
+        to: '22:00:00', // legacy stale time on draft
+      };
+      vi.spyOn(service, 'getEventById').mockResolvedValue(allDayDraft);
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({ id: 'ev-allday-draft' } as any);
+
+      // Editor publish path (updateEvent)
+      await service.updateEvent('ev-allday-draft', {
+        status: 'published',
+        allDay: true,
+        startDate: '2026-11-20',
+        endDate: null,
+      });
+
+      const editorPatch = readRawJsonBody(request, 0);
+      expect(editorPatch.method).toBe('PATCH');
+      expect(editorPatch.parsed).toMatchObject({
+        status: 'published',
+        allDay: true,
+        from: null,
+        to: null,
+      });
+
+      // Quick-publish path from Listings table (publishEvent)
+      request.mockClear();
+      await service.publishEvent('ev-allday-draft');
+      const quickPublishPatch = readRawJsonBody(request, 0);
+      expect(quickPublishPatch.method).toBe('PATCH');
+      expect(quickPublishPatch.parsed).toEqual({
+        status: 'published',
+        allDay: true,
+        from: null,
+        to: null,
+      });
+    });
+
+    it('3 & 11. Timed -> All Day sends explicit JSON null values for from and to in PATCH request', async () => {
+      vi.spyOn(service, 'getEventById').mockResolvedValue(basePersisted);
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({ id: basePersisted.id } as any);
+
+      await service.updateEvent(basePersisted.id, {
+        allDay: true,
+        from: '09:00',
+        to: '17:00',
+        status: 'published',
+      });
+
+      const { rawBody, parsed, method } = readRawJsonBody(request, 0);
+      expect(method).toBe('PATCH');
+      expect(Object.prototype.hasOwnProperty.call(parsed, 'from')).toBe(true);
+      expect(Object.prototype.hasOwnProperty.call(parsed, 'to')).toBe(true);
+      expect(parsed['allDay']).toBe(true);
+      expect(parsed['from']).toBeNull();
+      expect(parsed['to']).toBeNull();
+      expect(rawBody).toContain('"from":null');
+      expect(rawBody).toContain('"to":null');
+    });
+
+    it('4 & 5. All Day -> Timed and All Day -> Timed with Open End serialize exact times or explicit to: null', async () => {
+      const persistedAllDay: VamoEvent = {
+        ...basePersisted,
+        allDay: true,
+        from: null,
+        to: null,
+      };
+      vi.spyOn(service, 'getEventById').mockResolvedValue(persistedAllDay);
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({ id: basePersisted.id } as any);
+
+      // All Day -> Timed
+      await service.updateEvent(basePersisted.id, {
+        allDay: false,
+        openEnd: false,
+        from: '18:30',
+        to: '21:30',
+        status: 'published',
+      });
+      const timedPatch = readRawJsonBody(request, 0);
+      expect(timedPatch.parsed).toMatchObject({
+        allDay: false,
+        from: '18:30:00',
+        to: '21:30:00',
+      });
+
+      // All Day -> Timed with Open End
+      request.mockClear();
+      await service.updateEvent(basePersisted.id, {
+        allDay: false,
+        openEnd: true,
+        from: '19:00',
+        to: '22:00',
+        status: 'published',
+      });
+      const openEndPatch = readRawJsonBody(request, 0);
+      expect(openEndPatch.rawBody).toContain('"allDay":false');
+      expect(openEndPatch.rawBody).toContain('"to":null');
+      expect(openEndPatch.parsed).toMatchObject({
+        allDay: false,
+        from: '19:00:00',
+        to: null,
+      });
+    });
+
+    it('6. Editing unrelated fields on an All-Day event preserves allDay: true and explicitly nulls stale times', async () => {
+      const persistedAllDayWithStaleTo: VamoEvent = {
+        ...basePersisted,
+        allDay: true,
+        from: null,
+        to: '22:00:00',
+      };
+      vi.spyOn(service, 'getEventById').mockResolvedValue(persistedAllDayWithStaleTo);
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({ id: basePersisted.id } as any);
+
+      await service.updateEvent(basePersisted.id, {
+        description: 'Updated description without touching schedule controls.',
+      });
+
+      const { parsed } = readRawJsonBody(request, 0);
+      expect(parsed['description']).toBe('Updated description without touching schedule controls.');
+      expect(parsed['allDay']).toBe(true);
+      expect(parsed['from']).toBeNull();
+      expect(parsed['to']).toBeNull();
+    });
+
+    it('7 & 8. Multiday All-Day creation and Multiday -> single-day explicit endDate: null clearing', async () => {
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({ id: 'ev-multi' } as any);
+      const persistedMultiday: VamoEvent = {
+        ...basePersisted,
+        id: 'ev-multi',
+        startDate: '2026-12-01',
+        endDate: '2026-12-03',
+        allDay: true,
+        from: null,
+        to: null,
+      };
+      vi.spyOn(service, 'getEventById').mockResolvedValue(persistedMultiday);
+      vi.spyOn(service, 'uploadEventImages').mockResolvedValue(['file-boat']);
+
+      // Multiday All-Day create
+      await service.createEvent(
+        {
+          ...persistedMultiday,
+          status: 'published',
+        },
+        [new File(['poster'], 'poster.jpg', { type: 'image/jpeg' })],
+        ['area-lt']
+      );
+      const createRes = readRawJsonBody(request, 0);
+      expect(createRes.parsed).toMatchObject({
+        startDate: '2026-12-01',
+        endDate: '2026-12-03',
+        allDay: true,
+        from: null,
+        to: null,
+      });
+
+      // Multiday -> Single-Day update clears endDate with explicit JSON null
+      request.mockClear();
+      await service.updateEvent('ev-multi', {
+        startDate: '2026-12-01',
+        endDate: null,
+        allDay: true,
+        status: 'published',
+      });
+      const updateRes = readRawJsonBody(request, 0);
+      expect(Object.prototype.hasOwnProperty.call(updateRes.parsed, 'endDate')).toBe(true);
+      expect(updateRes.parsed['endDate']).toBeNull();
+      expect(updateRes.rawBody).toContain('"endDate":null');
+    });
+
+    it('10. Duplicating an All-Day event clears stale times while preserving dates, mode, and recurrence', async () => {
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({ id: 'ev-dup-allday' } as any);
+
+      const legacyCorruptedAllDay: VamoEvent = {
+        ...basePersisted,
+        id: 'ev-corrupted',
+        mode: 'recurring',
+        recurring: { days: ['fri', 'sat'] },
+        startDate: '2026-11-20',
+        endDate: '2026-12-20',
+        allDay: true,
+        from: '09:00:00',
+        to: '22:00:00',
+        images: [],
+        areas: [],
+      };
+
+      const dupId = await service.duplicateEventAsDraft(legacyCorruptedAllDay);
+      expect(dupId).toBe('ev-dup-allday');
+
+      const { rawBody, parsed } = readRawJsonBody(request, 0);
+      expect(rawBody).toContain('"allDay":true');
+      expect(rawBody).toContain('"from":null');
+      expect(rawBody).toContain('"to":null');
+      expect(parsed).toMatchObject({
+        status: 'draft',
+        name: 'Playa Jackson Boat Adventure (Copy)',
+        mode: 'recurring',
+        recurring: JSON.stringify({ days: ['fri', 'sat'] }),
+        startDate: '2026-11-20',
+        endDate: '2026-12-20',
+        allDay: true,
+        from: null,
+        to: null,
+      });
+    });
+
+    it('12. Dominican Republic timezone boundary (23:30 DR = 03:30Z next UTC day) keeps All-Day event active and editable', async () => {
+      // 2026-11-18T03:30:00Z is 2026-11-17 23:30:00 in Dominican Republic (UTC-4)
+      vi.setSystemTime(new Date('2026-11-18T03:30:00Z'));
+      expect(service.drTodayStr()).toBe('2026-11-17');
+
+      const todayAllDay: VamoEvent = {
+        ...basePersisted,
+        id: 'ev-dr-today',
+        startDate: '2026-11-17',
+        endDate: null,
+        allDay: true,
+        from: null,
+        to: null,
+      };
+      vi.spyOn(service, 'getEventById').mockResolvedValue(todayAllDay);
+      const request = vi.spyOn(directusClient, 'request').mockResolvedValue({ id: 'ev-dr-today' } as any);
+
+      await service.updateEvent('ev-dr-today', {
+        name: 'Late Night Edit Before DR Midnight',
+        startDate: '2026-11-17',
+        endDate: null,
+        allDay: true,
+        status: 'published',
+      });
+
+      const { parsed } = readRawJsonBody(request, 0);
+      expect(parsed['startDate']).toBe('2026-11-17');
+      expect(parsed['allDay']).toBe(true);
+      expect(parsed['from']).toBeNull();
+      expect(parsed['to']).toBeNull();
+    });
+  });
+
 });
 
 

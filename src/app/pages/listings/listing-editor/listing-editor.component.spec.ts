@@ -2283,6 +2283,257 @@ describe('ListingEditorComponent', () => {
     });
   });
 
+  describe('All-Day, Open-End, Multiday Clearing & Draft Recovery Regressions', () => {
+    it('submits allDay: true, from: null, to: null when creating a new All-Day event without leaking 19:00/22:00 defaults', async () => {
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      component.draft.name = 'All-Day Catamaran Tour';
+      component.draft.category = 'excursions';
+      component.draft.description = 'Full-day catamaran adventure around Samaná Bay.';
+      component.draft.startDate = '2026-10-20';
+      component.existingImages = [{ junctionId: 10, url: 'https://api.vamo-app.com/assets/img-1' }];
+
+      // Enable Open End first, then switch All Day ON -> openEnd must become inactive and times null
+      component.toggleOpenEnd();
+      expect(component.draft.openEnd).toBe(true);
+
+      component.toggleAllDay();
+      expect(component.draft.allDay).toBe(true);
+      expect(component.draft.openEnd).toBe(false);
+      expect(component.draft.from).toBeNull();
+      expect(component.draft.to).toBeNull();
+
+      await component.publishListing();
+
+      expect(businessServiceSpy.createEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'All-Day Catamaran Tour',
+          status: 'published',
+          startDate: '2026-10-20',
+          endDate: null,
+          allDay: true,
+          openEnd: false,
+          from: null,
+          to: null,
+        }),
+        [],
+        ['area-1']
+      );
+    });
+
+    it('loads an existing All-Day event without injecting hidden 19:00/22:00 times and preserves from: null, to: null on unrelated edits or draft->publish', async () => {
+      mockParamId = 'ev-allday-draft-1';
+      businessServiceSpy.getEventById.mockResolvedValue({
+        ...mockExistingEvent,
+        id: 'ev-allday-draft-1',
+        status: 'draft',
+        mode: 'single',
+        startDate: '2026-10-25',
+        endDate: null,
+        allDay: true,
+        openEnd: false,
+        from: null,
+        to: null,
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+
+      expect(component.draft.allDay).toBe(true);
+      expect(component.draft.openEnd).toBe(false);
+      expect(component.draft.from).toBeNull();
+      expect(component.draft.to).toBeNull();
+
+      // Edit an unrelated field and publish the draft
+      component.draft.price = 35;
+      await component.publishListing();
+
+      expect(businessServiceSpy.updateEvent).toHaveBeenCalledWith(
+        'ev-allday-draft-1',
+        expect.objectContaining({
+          status: 'published',
+          price: 35,
+          allDay: true,
+          openEnd: false,
+          from: null,
+          to: null,
+          endDate: null,
+        }),
+        [],
+        [],
+        ['area-1'],
+        [201],
+        expect.anything()
+      );
+    });
+
+    it('preserves user-entered times across All-Day toggle on/off and restores sensible defaults when switching an All-Day event to Timed or Open-End', async () => {
+      mockParamId = 'ev-allday-existing';
+      businessServiceSpy.getEventById.mockResolvedValue({
+        ...mockExistingEvent,
+        id: 'ev-allday-existing',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-25',
+        endDate: null,
+        allDay: true,
+        openEnd: false,
+        from: null,
+        to: '22:00:00', // legacy stale time on record must not leak
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      expect(component.draft.from).toBeNull();
+      expect(component.draft.to).toBeNull();
+
+      // Switch All Day OFF -> restores clean defaults 19:00 - 22:00
+      component.toggleAllDay();
+      expect(component.draft.allDay).toBe(false);
+      expect(component.draft.from).toBe('19:00');
+      expect(component.draft.to).toBe('22:00');
+
+      // User customizes times, toggles All Day ON then OFF -> custom times preserved
+      component.draft.from = '16:30';
+      component.draft.to = '20:45';
+      component.onTimeChange();
+      component.toggleAllDay();
+      expect(component.draft.from).toBeNull();
+      expect(component.draft.to).toBeNull();
+      component.toggleAllDay();
+      expect(component.draft.from).toBe('16:30');
+      expect(component.draft.to).toBe('20:45');
+
+      // Enable Open End -> submits allDay: false, openEnd: true, to: null
+      component.toggleOpenEnd();
+      expect(component.draft.openEnd).toBe(true);
+      expect(component.draft.to).toBeNull();
+
+      await component.publishListing();
+      expect(businessServiceSpy.updateEvent).toHaveBeenCalledWith(
+        'ev-allday-existing',
+        expect.objectContaining({
+          allDay: false,
+          openEnd: true,
+          from: '16:30',
+          to: null,
+        }),
+        [],
+        [],
+        ['area-1'],
+        [201],
+        expect.anything()
+      );
+    });
+
+    it('clears endDate with explicit null when converting a multiday event to single-day', async () => {
+      mockParamId = 'ev-multiday-1';
+      businessServiceSpy.getEventById.mockResolvedValue({
+        ...mockExistingEvent,
+        id: 'ev-multiday-1',
+        status: 'published',
+        mode: 'single',
+        startDate: '2026-10-20',
+        endDate: '2026-10-22',
+        allDay: true,
+        openEnd: false,
+        from: null,
+        to: null,
+      });
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      expect(component.multiDay).toBe(true);
+      expect(component.draft.endDate).toBe('2026-10-22');
+
+      component.toggleMultiDay();
+      expect(component.multiDay).toBe(false);
+      expect(component.draft.endDate).toBeNull();
+
+      await component.publishListing();
+      expect(businessServiceSpy.updateEvent).toHaveBeenCalledWith(
+        'ev-multiday-1',
+        expect.objectContaining({
+          startDate: '2026-10-20',
+          endDate: null,
+          allDay: true,
+          from: null,
+          to: null,
+        }),
+        [],
+        [],
+        ['area-1'],
+        [201],
+        expect.anything()
+      );
+    });
+
+    it('restores allDay and openEnd from sessionStorage draft recovery with All Day taking precedence over Open End', async () => {
+      sessionStorage.setItem('vamo_editor_recovery_new', JSON.stringify({
+        name: 'Recovered All-Day Surf Jam',
+        category: 'sports',
+        description: 'Recovered full-day surf competition on Cabarete beach.',
+        mode: 'single',
+        startDate: '2026-10-28',
+        endDate: '2026-10-29',
+        multiDay: true,
+        allDay: true,
+        openEnd: true, // All Day must take precedence and deactivate openEnd
+        from: '19:00',
+        to: '22:00',
+        address: 'Playa Encuentro',
+      }));
+
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      expect(component.draft.name).toBe('Recovered All-Day Surf Jam');
+      expect(component.draft.startDate).toBe('2026-10-28');
+      expect(component.draft.endDate).toBe('2026-10-29');
+      expect(component.multiDay).toBe(true);
+      expect(component.draft.allDay).toBe(true);
+      expect(component.draft.openEnd).toBe(false);
+      expect(component.draft.from).toBeNull();
+      expect(component.draft.to).toBeNull();
+
+      component.existingImages = [{ junctionId: 88, url: 'https://api.vamo-app.com/assets/surf.jpg' }];
+      expect(component.validateForm(true)).toBe(true);
+
+      // Also verify Open-End timed recovery when allDay is false
+      sessionStorage.setItem('vamo_editor_recovery_new', JSON.stringify({
+        name: 'Recovered Open-End Jam',
+        mode: 'single',
+        startDate: '2026-10-28',
+        multiDay: false,
+        allDay: false,
+        openEnd: true,
+        from: '20:30',
+        to: null,
+      }));
+
+      const fixture2 = TestBed.createComponent(ListingEditorComponent);
+      const comp2 = fixture2.componentInstance;
+      await comp2.ngOnInit();
+      expect(comp2.draft.allDay).toBe(false);
+      expect(comp2.draft.openEnd).toBe(true);
+      expect(comp2.draft.from).toBe('20:30');
+      expect(comp2.draft.to).toBeNull();
+      sessionStorage.clear();
+    });
+  });
+
   describe('Category Example Tooltips & Personalized Services Label', () => {
     beforeEach(async () => {
       fixture = TestBed.createComponent(ListingEditorComponent);
