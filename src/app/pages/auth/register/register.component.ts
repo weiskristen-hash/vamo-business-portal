@@ -189,11 +189,15 @@ import { environment } from '../../../../environments/environment';
                 email
                 (blur)="touch('email')"
                 class="form-input"
-                placeholder="operator@yourbusiness.com"
+                [placeholder]="'ONBOARDING.PERSONAL_EMAIL_PLACEHOLDER' | translate"
+                aria-describedby="reg-personal-email-hint"
                 autocomplete="email"
                 inputmode="email"
                 [disabled]="loading"
               />
+              <p id="reg-personal-email-hint" class="field-helper">
+                {{ 'ONBOARDING.PERSONAL_EMAIL_HINT' | translate }}
+              </p>
               <p *ngIf="touched.email && !email.trim()" class="field-error">
                 {{ 'ONBOARDING.ERROR_EMAIL_REQUIRED' | translate }}
               </p>
@@ -651,7 +655,22 @@ import { environment } from '../../../../environments/environment';
     }
 
     .form-input::placeholder {
-      color: #94a3b8;
+      color: var(--vamo-placeholder-blue, #1d6fa5);
+      font-style: italic;
+      opacity: 0.9;
+    }
+
+    .password-input::placeholder {
+      color: #64748b;
+      font-style: normal;
+    }
+
+    .field-helper {
+      font-size: 0.8rem;
+      color: var(--vamo-helper-blue, #0369a1);
+      margin: 2px 0 0;
+      line-height: 1.45;
+      font-weight: 500;
     }
 
     .form-input:disabled {

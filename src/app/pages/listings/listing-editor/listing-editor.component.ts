@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../../core/services/auth.service';
 import { BusinessService } from '../../../core/services/business.service';
 import { CustomerErrorService } from '../../../core/services/customer-error.service';
-import { VamoEvent, Area, EVENT_CATEGORIES, EventCategory, PRICE_UNITS, PriceUnit } from '../../../core/models/event.model';
+import { VamoEvent, Area, EVENT_CATEGORIES, EventCategory, PRICE_UNITS, PriceUnit, OrderedEventImage } from '../../../core/models/event.model';
 import { I18nService } from '../../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../../core/i18n/translate.pipe';
 import {
@@ -24,16 +24,25 @@ import {
 import { getDrCurrentDateTime } from '../../../core/utils/date-validation.util';
 import { PublishingAccessService } from '../../../core/services/publishing-access.service';
 import { FitImageComponent } from '../../../shared/components/fit-image/fit-image.component';
+import { InfoPopoverComponent } from '../../../shared/components/info-popover/info-popover.component';
 
 export interface ExistingImage {
   junctionId: number | string;
   url: string;
 }
 
+export interface EditorGalleryItem {
+  key: string;
+  kind: 'existing' | 'new';
+  url: string;
+  junctionId?: number | string;
+  file?: File;
+}
+
 @Component({
   selector: 'app-listing-editor',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, TranslatePipe, FitImageComponent],
+  imports: [CommonModule, RouterModule, FormsModule, TranslatePipe, FitImageComponent, InfoPopoverComponent],
   template: `
     <div class="editor-page">
       <!-- Top Navigation & Action Header -->
@@ -47,7 +56,20 @@ export interface ExistingImage {
             <span>{{ 'PORTAL.EVENT_EDITOR.BACK_TO_LISTINGS' | translate }}</span>
           </button>
           <div class="title-meta">
-            <h1 class="page-title">{{ (isEditMode ? 'PORTAL.EVENT_EDITOR.TITLE_EDIT' : 'PORTAL.EVENT_EDITOR.TITLE_CREATE') | translate }}</h1>
+            <div class="page-title-row">
+              <h1 class="page-title">{{ (isEditMode ? 'PORTAL.EVENT_EDITOR.TITLE_EDIT' : 'PORTAL.EVENT_EDITOR.TITLE_CREATE') | translate }}</h1>
+              <app-info-popover
+                class="post-def-info"
+                [ariaLabel]="'PORTAL.EVENT_EDITOR.INFO.POST_DEF_ARIA' | translate"
+                [title]="'PORTAL.EVENT_EDITOR.INFO.POST_DEF_TITLE' | translate"
+                [paragraphs]="[
+                  'PORTAL.EVENT_EDITOR.INFO.POST_DEF_P1' | translate,
+                  'PORTAL.EVENT_EDITOR.INFO.POST_DEF_P2' | translate,
+                  'PORTAL.EVENT_EDITOR.INFO.POST_DEF_P3' | translate,
+                  'PORTAL.EVENT_EDITOR.INFO.POST_DEF_P4' | translate
+                ]"
+              ></app-info-popover>
+            </div>
             <span class="status-indicator-badge" [ngClass]="isEditMode ? 'badge-primary' : 'badge-neutral'">
               {{ (isEditMode ? (isDraft ? 'PORTAL.EVENT_EDITOR.STATUS_EDITING_DRAFT' : 'PORTAL.EVENT_EDITOR.STATUS_EDITING_PUBLISHED') : 'PORTAL.EVENT_EDITOR.STATUS_NEW') | translate }}
             </span>
@@ -134,7 +156,19 @@ export interface ExistingImage {
             <div class="form-body">
               <!-- Title -->
               <div class="form-group">
-                <label for="event-name" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.NAME_LABEL' | translate }}</label>
+                <div class="field-label-row">
+                  <label for="event-name" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.NAME_LABEL' | translate }}</label>
+                  <app-info-popover
+                    class="post-title-info"
+                    [ariaLabel]="'PORTAL.EVENT_EDITOR.INFO.TITLE_ARIA' | translate"
+                    [title]="'PORTAL.EVENT_EDITOR.INFO.TITLE_HEADING' | translate"
+                    [paragraphs]="[
+                      'PORTAL.EVENT_EDITOR.INFO.TITLE_P1' | translate,
+                      'PORTAL.EVENT_EDITOR.INFO.TITLE_P2' | translate,
+                      'PORTAL.EVENT_EDITOR.INFO.TITLE_P3' | translate
+                    ]"
+                  ></app-info-popover>
+                </div>
                 <input
                   id="event-name"
                   type="text"
@@ -199,7 +233,19 @@ export interface ExistingImage {
 
               <!-- Description -->
               <div class="form-group">
-                <label for="event-desc" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.DESC_LABEL' | translate }}</label>
+                <div class="field-label-row">
+                  <label for="event-desc" class="form-label required">{{ 'PORTAL.EVENT_EDITOR.DESC_LABEL' | translate }}</label>
+                  <app-info-popover
+                    class="post-desc-info"
+                    [ariaLabel]="'PORTAL.EVENT_EDITOR.INFO.DESC_ARIA' | translate"
+                    [title]="'PORTAL.EVENT_EDITOR.INFO.DESC_HEADING' | translate"
+                    [paragraphs]="[
+                      'PORTAL.EVENT_EDITOR.INFO.DESC_P1' | translate,
+                      'PORTAL.EVENT_EDITOR.INFO.DESC_P2' | translate,
+                      'PORTAL.EVENT_EDITOR.INFO.DESC_P3' | translate
+                    ]"
+                  ></app-info-popover>
+                </div>
                 <textarea
                   id="event-desc"
                   rows="4"
@@ -237,38 +283,66 @@ export interface ExistingImage {
                 <p class="photo-guidance-safe-area">{{ 'PORTAL.EVENT_EDITOR.PHOTO_GUIDANCE_SAFE_AREA' | translate }}</p>
               </div>
 
-              <!-- Gallery Preview Grid -->
-              <div class="gallery-preview-grid">
-                <!-- Existing Images -->
-                <div
-                  *ngFor="let img of existingImages; let idx = index"
-                  class="photo-preview-card"
-                  [class.selected-for-preview]="isPreviewImageSelected(img.url)"
-                  (click)="selectPreviewImage(img.url)"
-                >
-                  <app-fit-image
-                    [src]="img.url"
-                    [alt]="'PORTAL.EVENT_EDITOR.ALT_EXISTING' | translate"
-                    imgClass="preview-img"
-                  ></app-fit-image>
-                  <span *ngIf="idx === 0 && selectedNewFiles.length === 0" class="cover-badge">{{ 'PORTAL.EVENT_EDITOR.COVER_BADGE' | translate }}</span>
-                  <button type="button" class="remove-photo-btn" (click)="$event.stopPropagation(); removeExistingImage(img)" [disabled]="isPastEvent" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
-                </div>
+              <!-- VAMO Photo Tip (Requirement 7) -->
+              <div class="vamo-tip-box photo-attention-tip" role="note">
+                <strong>{{ 'PORTAL.EVENT_EDITOR.PHOTO_TIP_TITLE' | translate }}</strong>
+                <span>{{ 'PORTAL.EVENT_EDITOR.PHOTO_TIP_BODY' | translate }}</span>
+              </div>
 
-                <!-- Newly Selected Local Files -->
+              <!-- Reorder Helper Copy (Requirement 8) -->
+              <p class="photo-reorder-hint">
+                {{ 'PORTAL.EVENT_EDITOR.PHOTO_REORDER_HINT' | translate }}
+              </p>
+
+              <!-- Unified Reorderable Gallery Preview Grid -->
+              <div class="gallery-preview-grid" role="list">
                 <div
-                  *ngFor="let preview of newFilePreviews; let idx = index"
+                  *ngFor="let item of galleryItems; let idx = index; trackBy: trackByGalleryKey"
                   class="photo-preview-card"
-                  [class.selected-for-preview]="isPreviewImageSelected(preview)"
-                  (click)="selectPreviewImage(preview)"
+                  role="listitem"
+                  [attr.data-gallery-index]="idx"
+                  [attr.tabindex]="isPastEvent ? -1 : 0"
+                  [attr.draggable]="!isPastEvent && !submitting && galleryItems.length > 1"
+                  [attr.aria-label]="getGalleryItemAriaLabel(idx)"
+                  [class.selected-for-preview]="isPreviewImageSelected(item.url)"
+                  [class.is-dragging]="draggingGalleryIndex === idx"
+                  [class.is-drag-target]="dragOverGalleryIndex === idx && draggingGalleryIndex !== null && draggingGalleryIndex !== idx"
+                  (click)="selectPreviewImage(item.url)"
+                  (keydown)="onGalleryItemKeydown($event, idx, item)"
+                  (dragstart)="onGalleryItemDragStart($event, idx)"
+                  (dragover)="onGalleryItemDragOver($event, idx)"
+                  (drop)="onGalleryItemDrop($event, idx)"
+                  (dragend)="onGalleryItemDragEnd()"
+                  (touchstart)="onGalleryTouchStart($event, idx)"
+                  (touchmove)="onGalleryTouchMove($event)"
+                  (touchend)="onGalleryTouchEnd()"
+                  (touchcancel)="onGalleryTouchCancel()"
                 >
                   <app-fit-image
-                    [src]="preview"
-                    [alt]="'PORTAL.EVENT_EDITOR.ALT_NEW' | translate"
+                    [src]="item.url"
+                    [alt]="(item.kind === 'existing' ? 'PORTAL.EVENT_EDITOR.ALT_EXISTING' : 'PORTAL.EVENT_EDITOR.ALT_NEW') | translate"
                     imgClass="preview-img"
                   ></app-fit-image>
-                  <span *ngIf="existingImages.length === 0 && idx === 0" class="cover-badge">{{ 'PORTAL.EVENT_EDITOR.COVER_BADGE' | translate }}</span>
-                  <button type="button" class="remove-photo-btn" (click)="$event.stopPropagation(); removeNewFile(idx)" [disabled]="isPastEvent" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
+                  <span *ngIf="idx === 0" class="cover-badge">{{ 'PORTAL.EVENT_EDITOR.COVER_BADGE' | translate }}</span>
+                  <div *ngIf="galleryItems.length > 1 && !isPastEvent" class="photo-reorder-controls">
+                    <button
+                      type="button"
+                      class="reorder-photo-btn"
+                      [disabled]="idx === 0 || submitting"
+                      [attr.aria-label]="'PORTAL.EVENT_EDITOR.MOVE_PHOTO_LEFT' | translate"
+                      [title]="'PORTAL.EVENT_EDITOR.MOVE_PHOTO_LEFT' | translate"
+                      (click)="$event.stopPropagation(); moveGalleryItem(idx, idx - 1)"
+                    >‹</button>
+                    <button
+                      type="button"
+                      class="reorder-photo-btn"
+                      [disabled]="idx === galleryItems.length - 1 || submitting"
+                      [attr.aria-label]="'PORTAL.EVENT_EDITOR.MOVE_PHOTO_RIGHT' | translate"
+                      [title]="'PORTAL.EVENT_EDITOR.MOVE_PHOTO_RIGHT' | translate"
+                      (click)="$event.stopPropagation(); moveGalleryItem(idx, idx + 1)"
+                    >›</button>
+                  </div>
+                  <button type="button" class="remove-photo-btn" (click)="$event.stopPropagation(); removeGalleryItem(idx)" [disabled]="isPastEvent" [attr.aria-label]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
                 </div>
 
                 <!-- Upload Dropzone Button -->
@@ -341,15 +415,28 @@ export interface ExistingImage {
                   >
                     {{ 'PORTAL.EVENT_EDITOR.MODE_SINGLE_TAB' | translate }}
                   </button>
-                  <button
-                    type="button"
-                    class="type-tab-btn"
-                    [class.active]="draft.mode === 'recurring'"
-                    [disabled]="datesLocked || isPastEvent"
-                    (click)="setMode('recurring')"
-                  >
-                    {{ 'PORTAL.EVENT_EDITOR.MODE_RECURRING_TAB' | translate }}
-                  </button>
+                  <div class="type-tab-with-info" [class.active]="draft.mode === 'recurring'">
+                    <button
+                      type="button"
+                      class="type-tab-btn"
+                      [class.active]="draft.mode === 'recurring'"
+                      [disabled]="datesLocked || isPastEvent"
+                      (click)="setMode('recurring')"
+                    >
+                      {{ 'PORTAL.EVENT_EDITOR.MODE_RECURRING_TAB' | translate }}
+                    </button>
+                    <app-info-popover
+                      class="recurring-info"
+                      align="end"
+                      [ariaLabel]="'PORTAL.EVENT_EDITOR.INFO.RECURRING_ARIA' | translate"
+                      [title]="'PORTAL.EVENT_EDITOR.INFO.RECURRING_TITLE' | translate"
+                      [paragraphs]="[
+                        'PORTAL.EVENT_EDITOR.INFO.RECURRING_P1' | translate,
+                        'PORTAL.EVENT_EDITOR.INFO.RECURRING_P2' | translate,
+                        'PORTAL.EVENT_EDITOR.INFO.RECURRING_P3' | translate
+                      ]"
+                    ></app-info-popover>
+                  </div>
                 </div>
               </div>
 
@@ -1302,6 +1389,24 @@ export interface ExistingImage {
       display: flex;
       align-items: center;
       gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .page-title-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .field-label-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .field-label-row .form-label {
+      margin-bottom: 0;
     }
 
     .page-title {
@@ -1627,9 +1732,76 @@ export interface ExistingImage {
       transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
 
+    .photo-reorder-hint {
+      margin: 0;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--vamo-helper-blue, #0369a1);
+      line-height: 1.4;
+    }
+
+    .photo-preview-card[draggable="true"] {
+      cursor: grab;
+    }
+
+    .photo-preview-card[draggable="true"]:active {
+      cursor: grabbing;
+    }
+
     .photo-preview-card.selected-for-preview {
       border-color: var(--vamo-primary);
       box-shadow: 0 0 0 2px rgba(128, 112, 192, 0.28);
+    }
+
+    .photo-preview-card.is-dragging {
+      opacity: 0.48;
+      transform: scale(0.97);
+    }
+
+    .photo-preview-card.is-drag-target {
+      border-color: var(--vamo-info, #0AB2DC);
+      box-shadow: 0 0 0 3px rgba(10, 178, 220, 0.35);
+    }
+
+    .photo-preview-card:focus-visible {
+      outline: 2px solid var(--vamo-info, #0AB2DC);
+      outline-offset: 2px;
+    }
+
+    .photo-reorder-controls {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      display: inline-flex;
+      gap: 3px;
+      z-index: 3;
+    }
+
+    .reorder-photo-btn {
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      background: rgba(15, 23, 42, 0.78);
+      color: #ffffff;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.15s ease, opacity 0.15s ease;
+    }
+
+    .reorder-photo-btn:hover:not(:disabled) {
+      background: rgba(3, 105, 161, 0.92);
+    }
+
+    .reorder-photo-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
     }
 
     .preview-img {
@@ -1756,6 +1928,29 @@ export interface ExistingImage {
       background: var(--vamo-surface);
       color: var(--vamo-primary);
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+
+    .type-tab-with-info {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      border-radius: calc(var(--vamo-radius-md) - 2px);
+      padding-right: 8px;
+      transition: background 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .type-tab-with-info.active {
+      background: var(--vamo-surface);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+
+    .type-tab-with-info .type-tab-btn {
+      padding-right: 6px;
+    }
+
+    .type-tab-with-info.active .type-tab-btn {
+      background: transparent;
+      box-shadow: none;
     }
 
     .weekday-pill-grid {
@@ -2543,10 +2738,84 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   private mapInitialized = false;
 
   // Images & Mobile Preview Placement State
-  existingImages: ExistingImage[] = [];
+  private _existingImages: ExistingImage[] = [];
+  private _selectedNewFiles: File[] = [];
+  private _newFilePreviews: string[] = [];
+  private _galleryItems: EditorGalleryItem[] = [];
+  private nextGalleryKeySeq = 0;
+  imageOrderModified = false;
+  draggingGalleryIndex: number | null = null;
+  dragOverGalleryIndex: number | null = null;
+  private touchDragTimer: ReturnType<typeof setTimeout> | null = null;
+  private touchDragActive = false;
+  private touchStartX = 0;
+  private touchStartY = 0;
+
+  get existingImages(): ExistingImage[] {
+    return this._existingImages;
+  }
+
+  set existingImages(items: ExistingImage[]) {
+    this._existingImages = Array.isArray(items) ? [...items] : [];
+    const newItems = this._galleryItems.filter((g) => g.kind === 'new');
+    this._galleryItems = [
+      ...this._existingImages.map((img) => ({
+        key: `existing-${String(img.junctionId)}`,
+        kind: 'existing' as const,
+        junctionId: img.junctionId,
+        url: img.url,
+      })),
+      ...newItems,
+    ];
+  }
+
+  get selectedNewFiles(): File[] {
+    return this._selectedNewFiles;
+  }
+
+  set selectedNewFiles(files: File[]) {
+    this._selectedNewFiles = Array.isArray(files) ? [...files] : [];
+    const existingItems = this._galleryItems.filter((g) => g.kind === 'existing');
+    const newItems: EditorGalleryItem[] = this._selectedNewFiles.map((file, i) => {
+      const previewUrl =
+        this._newFilePreviews[i] ||
+        (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+          ? URL.createObjectURL(file)
+          : `blob:new-${i}`);
+      this._newFilePreviews[i] = previewUrl;
+      return {
+        key: `new-${++this.nextGalleryKeySeq}`,
+        kind: 'new' as const,
+        file,
+        url: previewUrl,
+      };
+    });
+    if (this._newFilePreviews.length > this._selectedNewFiles.length) {
+      this._newFilePreviews = this._newFilePreviews.slice(0, this._selectedNewFiles.length);
+    }
+    this._galleryItems = [...existingItems, ...newItems];
+  }
+
+  get newFilePreviews(): string[] {
+    return this._newFilePreviews;
+  }
+
+  set newFilePreviews(urls: string[]) {
+    this._newFilePreviews = Array.isArray(urls) ? [...urls] : [];
+    let newIdx = 0;
+    this._galleryItems = this._galleryItems.map((g) => {
+      if (g.kind === 'new' && newIdx < this._newFilePreviews.length) {
+        return { ...g, url: this._newFilePreviews[newIdx++] };
+      }
+      return g;
+    });
+  }
+
+  get galleryItems(): EditorGalleryItem[] {
+    return this._galleryItems;
+  }
+
   removedImageJunctionIds: (number | string)[] = [];
-  selectedNewFiles: File[] = [];
-  newFilePreviews: string[] = [];
   isPhotoDragOver = false;
   private photoDragDepth = 0;
 
@@ -2618,6 +2887,10 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   ngOnDestroy(): void {
+    if (this.touchDragTimer) {
+      clearTimeout(this.touchDragTimer);
+      this.touchDragTimer = null;
+    }
     if (typeof window !== 'undefined') {
       window.removeEventListener('resize', this.onWindowResizeBound);
     }
@@ -2725,7 +2998,11 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         this.selectedAreaId = typeof firstArea === 'string' ? firstArea : firstArea?.id || '';
       }
 
-      // Existing Images
+      // Existing Images (in persisted Directus sort order)
+      this.imageOrderModified = false;
+      this._selectedNewFiles = [];
+      this._newFilePreviews = [];
+      this._galleryItems = [];
       this.existingImages = (event.images || [])
         .map((img: any) => {
           const fileId = typeof img.directus_files_id === 'string'
@@ -2785,6 +3062,11 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         lng: this.lng,
         selectedAreaId: this.selectedAreaId,
         multiDay: this.multiDay,
+        existingImageOrder: this.imageOrderModified
+          ? this._galleryItems
+              .filter((g) => g.kind === 'existing' && g.junctionId != null)
+              .map((g) => g.junctionId)
+          : undefined,
       };
       window.sessionStorage.setItem(this.getDraftRecoveryKey(), JSON.stringify(data));
     } catch {}
@@ -2855,6 +3137,22 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       if (data.price_unit) this.draft.price_unit = data.price_unit;
       if (data.recurring && typeof data.recurring === 'object' && Array.isArray(data.recurring.days)) {
         this.draft.recurring = data.recurring;
+      }
+      if (Array.isArray(data.existingImageOrder) && data.existingImageOrder.length > 0 && this._existingImages.length > 1) {
+        const byId = new Map(this._existingImages.map((img) => [String(img.junctionId), img]));
+        const reordered: ExistingImage[] = [];
+        for (const jid of data.existingImageOrder) {
+          const found = byId.get(String(jid));
+          if (found) {
+            reordered.push(found);
+            byId.delete(String(jid));
+          }
+        }
+        for (const leftover of byId.values()) {
+          reordered.push(leftover);
+        }
+        this.existingImages = reordered;
+        this.imageOrderModified = true;
       }
       this.isDirty = true;
     } catch {}
@@ -3376,31 +3674,268 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
     this.errorMessage = null;
     for (const file of files) {
-      this.selectedNewFiles.push(file);
-      this.newFilePreviews.push(URL.createObjectURL(file));
+      const previewUrl = URL.createObjectURL(file);
+      this._galleryItems.push({
+        key: `new-${++this.nextGalleryKeySeq}`,
+        kind: 'new',
+        file,
+        url: previewUrl,
+      });
+    }
+    this.syncArraysFromGallery();
+    this.markDirty();
+    this.cdr.markForCheck();
+  }
+
+  private syncArraysFromGallery(): void {
+    this._existingImages = this._galleryItems
+      .filter((g) => g.kind === 'existing' && g.junctionId != null)
+      .map((g) => ({ junctionId: g.junctionId!, url: g.url }));
+    this._selectedNewFiles = this._galleryItems
+      .filter((g) => g.kind === 'new' && g.file)
+      .map((g) => g.file!);
+    this._newFilePreviews = this._galleryItems
+      .filter((g) => g.kind === 'new')
+      .map((g) => g.url);
+  }
+
+  trackByGalleryKey(_index: number, item: EditorGalleryItem): string {
+    return item.key;
+  }
+
+  getGalleryItemAriaLabel(index: number): string {
+    const key = index === 0
+      ? 'PORTAL.EVENT_EDITOR.PHOTO_CARD_COVER_ARIA'
+      : 'PORTAL.EVENT_EDITOR.PHOTO_CARD_ARIA';
+    return this.i18n.t(key, { position: index + 1, total: this._galleryItems.length });
+  }
+
+  moveGalleryItem(fromIndex: number, toIndex: number, focusMovedCard = false): void {
+    if (this.isPastEvent || this.submitting) return;
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= this._galleryItems.length ||
+      toIndex >= this._galleryItems.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+    const next = [...this._galleryItems];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    this._galleryItems = next;
+    this.syncArraysFromGallery();
+    this.imageOrderModified = true;
+    this.selectedPreviewImageUrl = null;
+    this.markDirty();
+    this.cdr.markForCheck();
+
+    if (focusMovedCard && typeof document !== 'undefined') {
+      setTimeout(() => {
+        const card = document.querySelector(`.photo-preview-card[data-gallery-index="${toIndex}"]`) as HTMLElement | null;
+        card?.focus();
+      }, 0);
+    }
+  }
+
+  onGalleryItemKeydown(event: KeyboardEvent, index: number, item: EditorGalleryItem): void {
+    if (this.isPastEvent || this.submitting) return;
+    const target = event.target as HTMLElement | null;
+    if (target && target.tagName === 'BUTTON') return;
+
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.moveGalleryItem(index, index - 1, true);
+    } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.moveGalleryItem(index, index + 1, true);
+    } else if (event.key === 'Home' && index > 0) {
+      event.preventDefault();
+      this.moveGalleryItem(index, 0, true);
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      this.selectPreviewImage(item.url);
+    }
+  }
+
+  onGalleryItemDragStart(event: DragEvent, index: number): void {
+    if (this.isPastEvent || this.submitting || this._galleryItems.length <= 1) {
+      event.preventDefault();
+      return;
+    }
+    this.draggingGalleryIndex = index;
+    this.dragOverGalleryIndex = index;
+    if (event.dataTransfer) {
+      try {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('application/x-vamo-gallery-index', String(index));
+      } catch {}
+    }
+    this.cdr.markForCheck();
+  }
+
+  onGalleryItemDragOver(event: DragEvent, index: number): void {
+    if (this.draggingGalleryIndex === null || isFileDragEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) {
+      try {
+        event.dataTransfer.dropEffect = 'move';
+      } catch {}
+    }
+    if (this.dragOverGalleryIndex !== index) {
+      this.dragOverGalleryIndex = index;
+      this.cdr.markForCheck();
+    }
+  }
+
+  onGalleryItemDrop(event: DragEvent, targetIndex: number): void {
+    if (this.draggingGalleryIndex === null || isFileDragEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const fromIndex = this.draggingGalleryIndex;
+    this.draggingGalleryIndex = null;
+    this.dragOverGalleryIndex = null;
+    this.cdr.markForCheck();
+    this.moveGalleryItem(fromIndex, targetIndex);
+  }
+
+  onGalleryItemDragEnd(): void {
+    if (this.draggingGalleryIndex !== null || this.dragOverGalleryIndex !== null) {
+      this.draggingGalleryIndex = null;
+      this.dragOverGalleryIndex = null;
+      this.cdr.markForCheck();
+    }
+  }
+
+  onGalleryTouchStart(event: TouchEvent, index: number): void {
+    if (this.isPastEvent || this.submitting || this._galleryItems.length <= 1) return;
+    const target = event.target as HTMLElement | null;
+    if (target && target.closest('button')) return;
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    this.touchStartX = touch.clientX;
+    this.touchStartY = touch.clientY;
+    if (this.touchDragTimer) clearTimeout(this.touchDragTimer);
+    this.touchDragTimer = setTimeout(() => {
+      this.touchDragActive = true;
+      this.draggingGalleryIndex = index;
+      this.dragOverGalleryIndex = index;
+      this.cdr.markForCheck();
+    }, 180);
+  }
+
+  onGalleryTouchMove(event: TouchEvent): void {
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    if (!this.touchDragActive) {
+      if (
+        this.touchDragTimer &&
+        (Math.abs(touch.clientX - this.touchStartX) > 10 || Math.abs(touch.clientY - this.touchStartY) > 10)
+      ) {
+        clearTimeout(this.touchDragTimer);
+        this.touchDragTimer = null;
+      }
+      return;
+    }
+    if (event.cancelable) event.preventDefault();
+    if (typeof document !== 'undefined' && typeof document.elementFromPoint === 'function') {
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      const card = el?.closest?.('[data-gallery-index]') as HTMLElement | null;
+      if (card) {
+        const overIdx = Number(card.getAttribute('data-gallery-index'));
+        if (Number.isInteger(overIdx) && overIdx !== this.dragOverGalleryIndex) {
+          this.dragOverGalleryIndex = overIdx;
+          this.cdr.markForCheck();
+        }
+      }
+    }
+  }
+
+  onGalleryTouchEnd(): void {
+    if (this.touchDragTimer) {
+      clearTimeout(this.touchDragTimer);
+      this.touchDragTimer = null;
+    }
+    if (this.touchDragActive && this.draggingGalleryIndex !== null && this.dragOverGalleryIndex !== null) {
+      const fromIdx = this.draggingGalleryIndex;
+      const toIdx = this.dragOverGalleryIndex;
+      this.touchDragActive = false;
+      this.draggingGalleryIndex = null;
+      this.dragOverGalleryIndex = null;
+      this.cdr.markForCheck();
+      this.moveGalleryItem(fromIdx, toIdx);
+      return;
+    }
+    if (this.touchDragActive || this.draggingGalleryIndex !== null || this.dragOverGalleryIndex !== null) {
+      this.touchDragActive = false;
+      this.draggingGalleryIndex = null;
+      this.dragOverGalleryIndex = null;
+      this.cdr.markForCheck();
+    }
+  }
+
+  onGalleryTouchCancel(): void {
+    if (this.touchDragTimer) {
+      clearTimeout(this.touchDragTimer);
+      this.touchDragTimer = null;
+    }
+    this.touchDragActive = false;
+    this.draggingGalleryIndex = null;
+    this.dragOverGalleryIndex = null;
+    this.cdr.markForCheck();
+  }
+
+  removeGalleryItem(index: number): void {
+    const item = this._galleryItems[index];
+    if (!item) return;
+    if (item.kind === 'existing' && item.junctionId != null) {
+      this.removedImageJunctionIds.push(item.junctionId);
+    } else if (item.kind === 'new' && item.url) {
+      try {
+        URL.revokeObjectURL(item.url);
+      } catch {}
+    }
+    this._galleryItems.splice(index, 1);
+    this.syncArraysFromGallery();
+    if (this.selectedPreviewImageUrl === item.url) {
+      this.selectedPreviewImageUrl = null;
     }
     this.markDirty();
     this.cdr.markForCheck();
   }
 
   removeNewFile(index: number): void {
-    const removedPreview = this.newFilePreviews[index];
-    URL.revokeObjectURL(removedPreview);
-    this.selectedNewFiles.splice(index, 1);
-    this.newFilePreviews.splice(index, 1);
-    if (this.selectedPreviewImageUrl === removedPreview) {
-      this.selectedPreviewImageUrl = null;
+    const targetUrl = this._newFilePreviews[index];
+    const galleryIdx = this._galleryItems.findIndex((g) => g.kind === 'new' && g.url === targetUrl);
+    if (galleryIdx >= 0) {
+      this.removeGalleryItem(galleryIdx);
     }
-    this.markDirty();
   }
 
   removeExistingImage(img: ExistingImage): void {
-    this.removedImageJunctionIds.push(img.junctionId);
-    this.existingImages = this.existingImages.filter((i) => i.junctionId !== img.junctionId);
-    if (this.selectedPreviewImageUrl === img.url) {
-      this.selectedPreviewImageUrl = null;
+    const galleryIdx = this._galleryItems.findIndex(
+      (g) => g.kind === 'existing' && g.junctionId === img.junctionId
+    );
+    if (galleryIdx >= 0) {
+      this.removeGalleryItem(galleryIdx);
+    } else {
+      this.removedImageJunctionIds.push(img.junctionId);
+      this.existingImages = this._existingImages.filter((i) => i.junctionId !== img.junctionId);
+      if (this.selectedPreviewImageUrl === img.url) {
+        this.selectedPreviewImageUrl = null;
+      }
+      this.markDirty();
     }
-    this.markDirty();
+  }
+
+  getOrderedEventImages(): OrderedEventImage[] {
+    return this._galleryItems.map((g) => ({
+      ...(g.junctionId != null ? { junctionId: g.junctionId } : {}),
+      ...(g.file ? { file: g.file } : {}),
+      url: g.url,
+    }));
   }
 
   validateForm(forPublish: boolean): boolean {
@@ -3584,29 +4119,70 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
       const areaIds = this.selectedAreaId ? [this.selectedAreaId] : [];
 
+      const shouldPassOrderedImages =
+        this.imageOrderModified ||
+        (this.isEditMode
+          ? (this._galleryItems.length > 1 &&
+              (this._selectedNewFiles.length > 0 || this.removedImageJunctionIds.length > 0))
+          : this._selectedNewFiles.length > 1);
+      const orderedImagesArg = shouldPassOrderedImages ? this.getOrderedEventImages() : undefined;
+
       let saved: VamoEvent;
       if (this.isEditMode && this.eventId) {
-        saved = await this.businessService.updateEvent(
-          this.eventId,
-          payload,
-          this.selectedNewFiles,
-          this.removedImageJunctionIds,
-          areaIds,
-          this.existingAreaJunctionIds,
-          this.originalEvent || undefined
-        );
+        saved = orderedImagesArg !== undefined
+          ? await this.businessService.updateEvent(
+              this.eventId,
+              payload,
+              this.selectedNewFiles,
+              this.removedImageJunctionIds,
+              areaIds,
+              this.existingAreaJunctionIds,
+              this.originalEvent || undefined,
+              orderedImagesArg
+            )
+          : await this.businessService.updateEvent(
+              this.eventId,
+              payload,
+              this.selectedNewFiles,
+              this.removedImageJunctionIds,
+              areaIds,
+              this.existingAreaJunctionIds,
+              this.originalEvent || undefined
+            );
       } else {
-        saved = await this.businessService.createEvent(
-          payload,
-          this.selectedNewFiles,
-          areaIds
-        );
+        saved = orderedImagesArg !== undefined
+          ? await this.businessService.createEvent(
+              payload,
+              this.selectedNewFiles,
+              areaIds,
+              orderedImagesArg
+            )
+          : await this.businessService.createEvent(
+              payload,
+              this.selectedNewFiles,
+              areaIds
+            );
       }
 
       this.eventId = saved.id;
       this.isEditMode = true;
       this.isDraft = status === 'draft';
       this.originalEvent = saved;
+      if (Array.isArray(saved.images) && saved.images.length > 0) {
+        this._selectedNewFiles = [];
+        this._newFilePreviews = [];
+        this._galleryItems = [];
+        this.removedImageJunctionIds = [];
+        this.existingImages = saved.images
+          .map((img: any) => {
+            const fileId = typeof img.directus_files_id === 'string'
+              ? img.directus_files_id
+              : img.directus_files_id?.id;
+            return fileId ? { junctionId: img.id, url: this.businessService.getAssetUrl(fileId) } : null;
+          })
+          .filter(Boolean) as ExistingImage[];
+      }
+      this.imageOrderModified = false;
       this.isDirty = false;
       this.clearDraftRecovery();
       if (billingReason) {
@@ -3713,7 +4289,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   hasPreviewImage(): boolean {
-    return this.newFilePreviews.length > 0 || this.existingImages.length > 0;
+    return this._galleryItems.length > 0;
   }
 
   isPreviewImageSelected(url: string): boolean {
@@ -3722,17 +4298,13 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
 
   getPreviewImageUrl(): string {
     if (this.selectedPreviewImageUrl) {
-      const matchesNew = this.newFilePreviews.includes(this.selectedPreviewImageUrl);
-      const matchesExisting = this.existingImages.some((img) => img.url === this.selectedPreviewImageUrl);
-      if (matchesNew || matchesExisting) {
+      const matchesGallery = this._galleryItems.some((g) => g.url === this.selectedPreviewImageUrl);
+      if (matchesGallery) {
         return this.selectedPreviewImageUrl;
       }
     }
-    if (this.newFilePreviews.length > 0) {
-      return this.newFilePreviews[0];
-    }
-    if (this.existingImages.length > 0) {
-      return this.existingImages[0].url;
+    if (this._galleryItems.length > 0) {
+      return this._galleryItems[0].url;
     }
     return '/assets/placeholder.png';
   }

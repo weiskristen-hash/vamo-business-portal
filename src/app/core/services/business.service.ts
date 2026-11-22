@@ -3,7 +3,7 @@ import { createItem, deleteItem, readItem, readItems, updateItem, uploadFiles } 
 import { directusClient } from '../directus/directus-client';
 import { runtimeConfig } from '../config/runtime-config';
 import { Provider } from '../models/provider.model';
-import { VamoEvent, ProviderEventStats, Area } from '../models/event.model';
+import { VamoEvent, ProviderEventStats, Area, OrderedEventImage } from '../models/event.model';
 import { AuthService } from './auth.service';
 import {
   calculateSharedEventStats,
@@ -480,6 +480,7 @@ export class BusinessService {
     'date_created',
     'date_updated',
     'images.id',
+    'images.sort',
     'images.directus_files_id',
     'areas.id',
     'areas.areas_id.id',
@@ -508,6 +509,16 @@ export class BusinessService {
     }
     if (!event.recurring || !Array.isArray((event.recurring as any).days)) {
       event.recurring = { days: [] };
+    }
+    if (Array.isArray(event.images) && event.images.some((img: any) => typeof img?.sort === 'number')) {
+      event.images = event.images
+        .map((img, idx) => ({ img, idx }))
+        .sort((a, b) => {
+          const sa = typeof a.img?.sort === 'number' ? a.img.sort : Number.MAX_SAFE_INTEGER;
+          const sb = typeof b.img?.sort === 'number' ? b.img.sort : Number.MAX_SAFE_INTEGER;
+          return sa !== sb ? sa - sb : a.idx - b.idx;
+        })
+        .map((entry) => entry.img);
     }
     // Derive openEnd from (!to && !allDay) since openEnd is not a Directus schema field
     if (event.openEnd === undefined) {
@@ -598,7 +609,8 @@ export class BusinessService {
   async createEvent(
     data: Partial<VamoEvent>,
     files: File[] = [],
-    areaIds: string[] = []
+    areaIds: string[] = [],
+    orderedImages?: OrderedEventImage[]
   ): Promise<VamoEvent> {
     return this.authService.safeRequest(async () => {
       const isAllDay = Boolean(data.allDay);
@@ -634,7 +646,7 @@ export class BusinessService {
             from: normalizedFrom,
             to: normalizedTo,
           },
-          { hasImages: files.length > 0, areaIds }
+          { hasImages: files.length > 0 || Boolean(orderedImages && orderedImages.length > 0), areaIds }
         );
         if (!validation.valid) throw new Error(validation.errorCode || 'INCOMPLETE_EVENT_DRAFT');
       }
@@ -684,8 +696,30 @@ export class BusinessService {
       const created = await directusClient.request<any>(createItem('events', payload as any));
       if (!created?.id) throw new Error('Failed to create event in Directus');
 
-      // Upload and attach images if any
-      if (files.length > 0) {
+      // Upload and attach images if any (preserving explicit sort order when orderedImages provided)
+      if (orderedImages && orderedImages.length > 0) {
+        const filesToUpload = orderedImages.filter((img) => img.file).map((img) => img.file!);
+        const fileIds = filesToUpload.length > 0 ? await this.uploadEventImages(filesToUpload) : [];
+        let uploadIdx = 0;
+        const create = orderedImages
+          .map((img, sort) => {
+            if (img.file) {
+              const fid = fileIds[uploadIdx++];
+              return fid ? { directus_files_id: fid, events_id: created.id, sort } : null;
+            }
+            return null;
+          })
+          .filter(Boolean);
+        if (create.length > 0) {
+          await directusClient.request(updateItem('events', created.id, {
+            images: {
+              create,
+              update: [],
+              delete: [],
+            },
+          } as any));
+        }
+      } else if (files.length > 0) {
         const fileIds = await this.uploadEventImages(files);
         if (fileIds.length > 0) {
           await directusClient.request(updateItem('events', created.id, {
@@ -727,7 +761,8 @@ export class BusinessService {
     removedImageJunctionIds: (number | string)[] = [],
     areaIds?: string[],
     existingAreaJunctionIds: (number | string)[] = [],
-    _deprecatedExistingEvent?: VamoEvent
+    _deprecatedExistingEvent?: VamoEvent,
+    orderedImages?: OrderedEventImage[]
   ): Promise<VamoEvent> {
     if (!eventId) throw new Error('Event ID is required');
 
@@ -864,8 +899,33 @@ export class BusinessService {
       // 1. Primary write: update event record with metadata (including status, triggering Translate Event Flow if published)
       await directusClient.request(updateItem('events', eventId, payload as any));
 
-      // 2. Secondary write: attach/delete images junction records if needed (matching canonical saveEventWithImages)
-      if (files.length > 0 || removedImageJunctionIds.length > 0) {
+      // 2. Secondary write: attach/reorder/delete images junction records matching canonical saveEventWithImages
+      if (orderedImages !== undefined) {
+        if (orderedImages.length > 0 || removedImageJunctionIds.length > 0) {
+          const filesToUpload = orderedImages.filter((img) => img.file).map((img) => img.file!);
+          const newFileIds = filesToUpload.length > 0 ? await this.uploadEventImages(filesToUpload) : [];
+          let uploadIdx = 0;
+          const create: { directus_files_id: string; events_id: string; sort: number }[] = [];
+          const update: { id: number | string; sort: number }[] = [];
+          orderedImages.forEach((img, sort) => {
+            if (img.junctionId != null) {
+              update.push({ id: img.junctionId, sort });
+            } else if (img.file) {
+              const fid = newFileIds[uploadIdx++];
+              if (fid) {
+                create.push({ directus_files_id: fid, events_id: eventId, sort });
+              }
+            }
+          });
+          await directusClient.request(updateItem('events', eventId, {
+            images: {
+              create,
+              update,
+              delete: removedImageJunctionIds,
+            },
+          } as any));
+        }
+      } else if (files.length > 0 || removedImageJunctionIds.length > 0) {
         const newFileIds = files.length > 0 ? await this.uploadEventImages(files) : [];
         await directusClient.request(updateItem('events', eventId, {
           images: {
@@ -992,9 +1052,10 @@ export class BusinessService {
       if (fileIds.length > 0) {
         await directusClient.request(updateItem('events', newEvent.id, {
           images: {
-            create: fileIds.map((fileId: string) => ({
+            create: fileIds.map((fileId: string, sort: number) => ({
               directus_files_id: fileId,
               events_id: newEvent.id,
+              ...(fileIds.length > 1 ? { sort } : {}),
             })),
             update: [],
             delete: [],

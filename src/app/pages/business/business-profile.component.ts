@@ -187,8 +187,12 @@ export interface OfferingOption {
                   <label class="form-label" for="field-desc">
                     {{ 'PORTAL.PROFILE.DESC_LABEL' | translate }} <span class="required-star">*</span>
                   </label>
+                  <div id="profile-desc-tip" class="vamo-tip-box" role="note">
+                    {{ 'PORTAL.PROFILE.DESC_TIP' | translate }}
+                  </div>
                   <textarea
                     id="field-desc"
+                    aria-describedby="profile-desc-tip"
                     class="form-control form-textarea"
                     [class.is-invalid]="touched.description && !form().description.trim()"
                     [(ngModel)]="form().description"

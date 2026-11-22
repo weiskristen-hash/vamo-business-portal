@@ -166,7 +166,8 @@ import { I18nService } from '../../../core/i18n/i18n.service';
       }
 
       .phone-national-input::placeholder {
-        color: #94a3b8;
+        color: var(--vamo-input-placeholder, #94a3b8);
+        font-style: var(--vamo-input-placeholder-style, normal);
       }
     `,
   ],

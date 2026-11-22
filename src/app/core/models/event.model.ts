@@ -66,7 +66,7 @@ export interface VamoEvent {
   promotionStart?: string | null;
   location_point?: { type: 'Point'; coordinates: [number, number] } | null;
   address?: string | null;
-  images?: { id?: number | string; events_id?: string; directus_files_id: DirectusFile | string }[];
+  images?: { id?: number | string; sort?: number | null; events_id?: string; directus_files_id: DirectusFile | string }[];
   areas?: { id?: number; events_id?: string; areas_id: Area | string }[];
   provider?: Provider | string | null;
   is_main_banner?: boolean;
@@ -77,6 +77,12 @@ export interface VamoEvent {
   addon_expires_at?: string | null;
   date_created?: string;
   date_updated?: string;
+}
+
+export interface OrderedEventImage {
+  junctionId?: number | string;
+  file?: File;
+  url: string;
 }
 
 export interface ProviderEventStats {

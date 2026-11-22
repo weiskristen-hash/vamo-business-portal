@@ -2693,6 +2693,249 @@ describe('ListingEditorComponent', () => {
       expect(component.activeCategoryTooltip).toBeNull();
     });
 
+    it('renders accessible EN/ES info popovers for Post Definition, Post Title, Description, and Weekly Recurring without triggering unrelated controls', () => {
+      i18nService.setLang('en');
+      component.draft.mode = 'single';
+      component.isDirty = false;
+      fixture.detectChanges();
+
+      // 1. Post Definition info button beside Create New Post heading
+      const postDefBtn = fixture.nativeElement.querySelector(
+        '.post-def-info .info-popover-trigger'
+      ) as HTMLButtonElement;
+      expect(postDefBtn).toBeTruthy();
+      expect(postDefBtn.getAttribute('aria-label')).toBe('What is a VAMO Post?');
+      postDefBtn.click();
+      fixture.detectChanges();
+      let panel = fixture.nativeElement.querySelector('.post-def-info .info-popover-panel') as HTMLElement;
+      expect(panel).toBeTruthy();
+      expect(panel.textContent).toContain('What is a VAMO Post?');
+      expect(panel.textContent).toContain(
+        'A post is how you promote something happening at your business on VAMO.'
+      );
+      expect(panel.textContent).toContain(
+        'For example: A restaurant can create a post for Friday night live music or a weekly happy hour.'
+      );
+
+      // 2. Post Title info button opens and auto-closes previous popover while preserving 100-char maxlength
+      const titleInfoBtn = fixture.nativeElement.querySelector(
+        '.post-title-info .info-popover-trigger'
+      ) as HTMLButtonElement;
+      const titleInput = fixture.nativeElement.querySelector('#event-name') as HTMLInputElement;
+      expect(titleInput.getAttribute('maxlength')).toBe('100');
+      titleInfoBtn.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.post-def-info .info-popover-panel')).toBeNull();
+      panel = fixture.nativeElement.querySelector('.post-title-info .info-popover-panel') as HTMLElement;
+      expect(panel.textContent).toContain('VAMO Tip: Choosing a Post Title');
+      expect(panel.textContent).toContain(
+        'Examples: Friday Night Live Music; Sunset Happy Hour; Samaná Whale Watching Tour.'
+      );
+      expect(panel.textContent).toContain('Avoid generic titles like “Special Event” or “Great Offer.”');
+
+      // 3. Description info button
+      const descInfoBtn = fixture.nativeElement.querySelector(
+        '.post-desc-info .info-popover-trigger'
+      ) as HTMLButtonElement;
+      descInfoBtn.click();
+      fixture.detectChanges();
+      panel = fixture.nativeElement.querySelector('.post-desc-info .info-popover-panel') as HTMLElement;
+      expect(panel.textContent).toContain('VAMO Tip: Writing a Great Description');
+      expect(panel.textContent).toContain(
+        'Example: Join us every Friday for live music by the beach! Enjoy tropical cocktails, great food, and sunset views. Music starts at 6 PM. Everyone is welcome!'
+      );
+
+      // 4. Weekly Recurring info button opens WITHOUT switching mode from single to recurring or marking dirty
+      const recInfoBtn = fixture.nativeElement.querySelector(
+        '.recurring-info .info-popover-trigger'
+      ) as HTMLButtonElement;
+      recInfoBtn.click();
+      fixture.detectChanges();
+      expect(component.draft.mode).toBe('single');
+      expect(component.isDirty).toBe(false);
+      panel = fixture.nativeElement.querySelector('.recurring-info .info-popover-panel') as HTMLElement;
+      expect(panel.textContent).toContain('VAMO Tip: Weekly Recurring Posts');
+      expect(panel.textContent).toContain(
+        'Examples: Happy Hour every Friday; Yoga classes every Monday and Wednesday; Live music every Saturday night.'
+      );
+
+      // Switch to Spanish while open and verify localized Spanish copy
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      expect(panel.textContent).toContain('Consejo VAMO: Publicaciones recurrentes semanales');
+      expect(panel.textContent).toContain(
+        'Ejemplos: Happy Hour todos los viernes; Clases de yoga todos los lunes y miércoles; Música en vivo todos los sábados por la noche.'
+      );
+
+      // Dismiss with Escape
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.recurring-info .info-popover-panel')).toBeNull();
+
+      // Clicking the Weekly Recurring tab button itself still switches mode normally
+      const recurringTabBtn = fixture.nativeElement.querySelector(
+        '.type-tab-with-info .type-tab-btn'
+      ) as HTMLButtonElement;
+      recurringTabBtn.click();
+      fixture.detectChanges();
+      expect(component.draft.mode).toBe('recurring');
+    });
+
+    it('renders the Media & Photos VAMO Tip above uploads and supports mouse, touch, keyboard, and button image reordering with immediate Cover Photo sync and persistence', async () => {
+      i18nService.setLang('en');
+      fixture.detectChanges();
+
+      // Req 7: Media & Photos Tip + Req 8 helper text
+      const photoTip = fixture.nativeElement.querySelector('.photo-attention-tip') as HTMLElement;
+      const reorderHint = fixture.nativeElement.querySelector('.photo-reorder-hint') as HTMLElement;
+      expect(photoTip).toBeTruthy();
+      expect(photoTip.textContent).toContain('VAMO Tip: Great Photos Get More Attention!');
+      expect(photoTip.textContent).toContain(
+        'Upload your best, high-quality photos that showcase your event, activity, or experience.'
+      );
+      expect(reorderHint.textContent?.trim()).toBe(
+        'Drag photos to rearrange their order. The first photo will be your cover image.'
+      );
+
+      i18nService.setLang('es');
+      fixture.detectChanges();
+      expect(photoTip.textContent).toContain('Consejo VAMO: ¡Las buenas fotos llaman más la atención!');
+      expect(reorderHint.textContent?.trim()).toBe(
+        'Arrastra las fotos para cambiar su orden. La primera foto será tu imagen de portada.'
+      );
+      i18nService.setLang('en');
+
+      // Load existing event with 2 images
+      component.isEditMode = true;
+      component.eventId = 'ev-gallery-reorder';
+      component.draft.name = 'Beach Bonfire Night';
+      component.draft.category = 'live';
+      component.draft.description = 'Live acoustic music and cocktails under the stars.';
+      component.draft.address = 'Playa Bonita';
+      component.draft.startDate = '2026-11-20';
+      component.existingImages = [
+        { junctionId: 101, url: 'https://api.vamo-app.com/assets/photo-1.jpg' },
+        { junctionId: 102, url: 'https://api.vamo-app.com/assets/photo-2.jpg' },
+      ];
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+
+      // Initially photo-1 is Cover Photo and phone preview cover
+      let cards = fixture.nativeElement.querySelectorAll('.photo-preview-card') as NodeListOf<HTMLElement>;
+      expect(cards.length).toBe(2);
+      expect(cards[0].querySelector('.cover-badge')?.textContent?.trim()).toBe('Cover Photo');
+      expect(cards[1].querySelector('.cover-badge')).toBeNull();
+      expect(component.getPreviewImageUrl()).toBe('https://api.vamo-app.com/assets/photo-1.jpg');
+
+      // 1. Mouse Drag-and-Drop: drag index 1 -> drop on index 0
+      const dragStartEvt = {
+        preventDefault: vi.fn(),
+        dataTransfer: { effectAllowed: '', setData: vi.fn(), types: ['application/x-vamo-gallery-index'] },
+      } as unknown as DragEvent;
+      const dragOverEvt = {
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+        dataTransfer: { dropEffect: '', types: ['application/x-vamo-gallery-index'] },
+      } as unknown as DragEvent;
+      const dropEvt = {
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+        dataTransfer: { types: ['application/x-vamo-gallery-index'] },
+      } as unknown as DragEvent;
+
+      component.onGalleryItemDragStart(dragStartEvt, 1);
+      component.onGalleryItemDragOver(dragOverEvt, 0);
+      component.onGalleryItemDrop(dropEvt, 0);
+      fixture.detectChanges();
+
+      expect(component.existingImages.map((i) => i.junctionId)).toEqual([102, 101]);
+      expect(component.getPreviewImageUrl()).toBe('https://api.vamo-app.com/assets/photo-2.jpg');
+      cards = fixture.nativeElement.querySelectorAll('.photo-preview-card');
+      expect(cards[0].querySelector('.cover-badge')?.textContent?.trim()).toBe('Cover Photo');
+      expect(cards[1].querySelector('.cover-badge')).toBeNull();
+
+      // 2. Keyboard ArrowRight on index 0 moves photo-2 back to index 1 (photo-1 becomes Cover again)
+      const keyRight = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true });
+      cards[0].dispatchEvent(keyRight);
+      fixture.detectChanges();
+      cards = fixture.nativeElement.querySelectorAll('.photo-preview-card');
+      expect(component.existingImages.map((i) => i.junctionId)).toEqual([101, 102]);
+      expect(component.getPreviewImageUrl()).toBe('https://api.vamo-app.com/assets/photo-1.jpg');
+
+      // 3. Touch reorder: long-press on index 1 and drag onto index 0
+      vi.useFakeTimers();
+      try {
+        const origElementFromPoint = document.elementFromPoint;
+        (document as any).elementFromPoint = vi.fn().mockReturnValue(cards[0]);
+        component.onGalleryTouchStart({ touches: [{ clientX: 120, clientY: 50 }], target: cards[1] } as any, 1);
+        vi.advanceTimersByTime(200);
+        component.onGalleryTouchMove({
+          cancelable: true,
+          preventDefault: vi.fn(),
+          touches: [{ clientX: 20, clientY: 50 }],
+        } as any);
+        component.onGalleryTouchEnd();
+        (document as any).elementFromPoint = origElementFromPoint;
+      } finally {
+        vi.useRealTimers();
+      }
+      fixture.detectChanges();
+      expect(component.existingImages.map((i) => i.junctionId)).toEqual([102, 101]);
+      expect(component.getPreviewImageUrl()).toBe('https://api.vamo-app.com/assets/photo-2.jpg');
+
+      // 4. Add a new local photo, then move it to cover (index 0), then delete it and verify next image becomes Cover
+      const newFile = new File(['bytes'], 'fresh.png', { type: 'image/png' });
+      component.handleSelectedFiles([newFile]);
+      fixture.detectChanges();
+      expect(component.galleryItems.length).toBe(3);
+      component.moveGalleryItem(2, 0);
+      fixture.detectChanges();
+      expect(component.galleryItems[0].kind).toBe('new');
+      expect(component.getPreviewImageUrl()).toBe(component.newFilePreviews[0]);
+
+      // Removing the cover photo immediately promotes index 1 (junctionId 102) back to Cover
+      component.removeGalleryItem(0);
+      fixture.detectChanges();
+      expect(component.selectedNewFiles.length).toBe(0);
+      expect(component.galleryItems.length).toBe(2);
+      expect(component.existingImages.map((i) => i.junctionId)).toEqual([102, 101]);
+      expect(component.getPreviewImageUrl()).toBe('https://api.vamo-app.com/assets/photo-2.jpg');
+
+      // 5. Saving passes orderedImages to updateEvent without re-uploading existing files
+      businessServiceSpy.getEventById.mockResolvedValueOnce({
+        ...mockExistingEvent,
+        id: 'ev-gallery-reorder',
+        status: 'published',
+        images: [
+          { id: 101, sort: 0, directus_files_id: 'photo-1.jpg' },
+          { id: 102, sort: 1, directus_files_id: 'photo-2.jpg' },
+        ],
+      });
+      businessServiceSpy.updateEvent.mockResolvedValueOnce({
+        ...mockExistingEvent,
+        id: 'ev-gallery-reorder',
+        images: [
+          { id: 102, sort: 0, directus_files_id: 'photo-2.jpg' },
+          { id: 101, sort: 1, directus_files_id: 'photo-1.jpg' },
+        ],
+      });
+
+      await component.publishListing();
+      expect(businessServiceSpy.updateEvent).toHaveBeenCalledWith(
+        'ev-gallery-reorder',
+        expect.objectContaining({ name: 'Beach Bonfire Night', status: 'published' }),
+        [],
+        [],
+        ['area-1'],
+        [],
+        undefined,
+        [
+          { junctionId: 102, url: 'https://api.vamo-app.com/assets/photo-2.jpg' },
+          { junctionId: 101, url: 'https://api.vamo-app.com/assets/photo-1.jpg' },
+        ]
+      );
+    });
+
     it('renames Wellness & Beauty to Yoga & Wellness with updated tooltip examples in EN and ES while preserving wellness ID, lotus icon, position, and other categories', () => {
       i18nService.setLang('en');
       fixture.detectChanges();

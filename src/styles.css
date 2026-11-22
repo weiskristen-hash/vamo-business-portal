@@ -70,6 +70,8 @@
   --vamo-error-bg: rgba(239, 68, 68, 0.1);
   --vamo-info: #0AB2DC;
   --vamo-info-bg: rgba(10, 178, 220, 0.1);
+  --vamo-helper-blue: #0369a1;
+  --vamo-placeholder-blue: #1d6fa5;
 
   /* Status Tokens */
   --vamo-status-published: #10b981;
@@ -490,6 +492,25 @@ textarea:focus-visible {
   background: rgba(10, 178, 220, 0.08);
   border-color: rgba(10, 178, 220, 0.3);
   color: #0c6a83;
+}
+
+.vamo-tip-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 13px;
+  border-radius: var(--vamo-radius-sm);
+  background: rgba(10, 178, 220, 0.08);
+  border: 1px solid rgba(10, 178, 220, 0.28);
+  border-left: 3px solid var(--vamo-info);
+  color: #0c546e;
+  font-size: 0.82rem;
+  line-height: 1.48;
+}
+
+.vamo-tip-box strong {
+  color: var(--vamo-helper-blue);
+  font-weight: 700;
 }
 
 /* ==========================================================================
