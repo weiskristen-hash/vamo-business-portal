@@ -822,6 +822,125 @@ describe('BusinessService', () => {
     });
   });
 
+  describe('Event Image Ordering & Cover Persistence via Directus events_files.sort', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('includes images.sort in eventFields and normalizes event.images ascending by sort', () => {
+      expect((service.eventFields as readonly string[]).includes('images.sort')).toBe(true);
+
+      const raw = {
+        id: 'ev-sorted',
+        name: 'Sorted Gallery',
+        status: 'published',
+        images: [
+          { id: 101, sort: 2, directus_files_id: 'file-third' },
+          { id: 102, sort: 0, directus_files_id: 'file-cover' },
+          { id: 103, sort: 1, directus_files_id: 'file-second' },
+        ],
+      };
+      const normalized = service.normalizeEvent(raw);
+      expect(normalized.images?.map((i) => i.directus_files_id)).toEqual([
+        'file-cover',
+        'file-second',
+        'file-third',
+      ]);
+    });
+
+    it('persists reordered existing images in updateEvent via events_files.sort without re-uploading or deleting files', async () => {
+      const persisted: VamoEvent = {
+        id: 'ev-reorder-1',
+        name: 'Beach Sunset',
+        status: 'published',
+        category: 'live',
+        description: 'Live acoustic music right on the beach.',
+        address: 'Playa Bonita',
+        mode: 'recurring',
+        recurring: { days: ['fri'] },
+        allDay: true,
+        isFree: true,
+        areas: [{ id: 1, areas_id: 'area-lt' }],
+        images: [
+          { id: 10, sort: 0, directus_files_id: 'file-a' },
+          { id: 11, sort: 1, directus_files_id: 'file-b' },
+        ],
+      };
+      vi.spyOn(service, 'getEventById').mockResolvedValue(persisted);
+      const uploadSpy = vi.spyOn(service, 'uploadEventImages');
+      const requestSpy = vi.spyOn(directusClient, 'request').mockResolvedValue({ id: 'ev-reorder-1' } as any);
+
+      await service.updateEvent(
+        'ev-reorder-1',
+        { name: 'Beach Sunset', status: 'published' },
+        [],
+        [],
+        ['area-lt'],
+        [1],
+        persisted,
+        [
+          { junctionId: 11, url: 'https://api.vamo-app.com/assets/file-b' },
+          { junctionId: 10, url: 'https://api.vamo-app.com/assets/file-a' },
+        ]
+      );
+
+      expect(uploadSpy).not.toHaveBeenCalled();
+      expect(requestSpy).toHaveBeenCalledTimes(2);
+      const imagePatchArg = requestSpy.mock.calls[1][0] as any;
+      const resolved = typeof imagePatchArg === 'function' ? imagePatchArg() : imagePatchArg;
+      const body = typeof resolved.body === 'string' ? JSON.parse(resolved.body) : resolved.body;
+      expect(body.images).toEqual({
+        create: [],
+        update: [
+          { id: 11, sort: 0 },
+          { id: 10, sort: 1 },
+        ],
+        delete: [],
+      });
+    });
+
+    it('uploads only new files and assigns unified sort positions across interleaved new and existing images', async () => {
+      const persisted: VamoEvent = {
+        id: 'ev-interleave-1',
+        name: 'Catamaran Day',
+        status: 'draft',
+        mode: 'single',
+        startDate: '2027-01-15',
+        allDay: true,
+        images: [{ id: 20, sort: 0, directus_files_id: 'file-existing' }],
+      };
+      vi.spyOn(service, 'getEventById').mockResolvedValue(persisted);
+      const newFile = new File(['bytes'], 'new-cover.jpg', { type: 'image/jpeg' });
+      const uploadSpy = vi.spyOn(service, 'uploadEventImages').mockResolvedValueOnce(['file-new-cover']);
+      const requestSpy = vi.spyOn(directusClient, 'request').mockResolvedValue({ id: 'ev-interleave-1' } as any);
+
+      await service.updateEvent(
+        'ev-interleave-1',
+        { name: 'Catamaran Day', status: 'draft' },
+        [newFile],
+        [],
+        ['area-lt'],
+        [],
+        persisted,
+        [
+          { file: newFile, url: 'blob:new-cover' },
+          { junctionId: 20, url: 'https://api.vamo-app.com/assets/file-existing' },
+        ]
+      );
+
+      expect(uploadSpy).toHaveBeenCalledOnce();
+      expect(uploadSpy).toHaveBeenCalledWith([newFile]);
+      const imagePatchArg = requestSpy.mock.calls[1][0] as any;
+      const resolved = typeof imagePatchArg === 'function' ? imagePatchArg() : imagePatchArg;
+      const body = typeof resolved.body === 'string' ? JSON.parse(resolved.body) : resolved.body;
+      expect(body.images).toEqual({
+        create: [{ directus_files_id: 'file-new-cover', events_id: 'ev-interleave-1', sort: 0 }],
+        update: [{ id: 20, sort: 1 }],
+        delete: [],
+      });
+    });
+  });
+
 });
 
 

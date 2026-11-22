@@ -425,5 +425,35 @@ describe('RegisterComponent (Canonical Source Parity)', () => {
     );
     i18n.setLang('en');
   });
+
+  it('19. renders personal account heading, subtitle, and email supporting copy in EN and ES', () => {
+    const i18n = TestBed.inject(I18nService);
+    i18n.setLang('en');
+    fixture.detectChanges();
+
+    const title = fixture.nativeElement.querySelector('.card-title') as HTMLElement;
+    const subtitle = fixture.nativeElement.querySelector('.card-subtitle') as HTMLElement;
+    const emailHint = fixture.nativeElement.querySelector('#reg-personal-email-hint') as HTMLElement;
+
+    expect(title.textContent?.trim()).toBe('Create your personal account');
+    expect(subtitle.textContent?.trim()).toBe(
+      'Enter your personal information below. You’ll add your business details in the next steps.'
+    );
+    expect(emailHint.textContent?.trim()).toBe(
+      'Use your own email address. Your business contact information can be added separately.'
+    );
+
+    i18n.setLang('es');
+    fixture.detectChanges();
+
+    expect(title.textContent?.trim()).toBe('Crea tu cuenta personal');
+    expect(subtitle.textContent?.trim()).toBe(
+      'Ingresa tu información personal a continuación. Agregarás los datos de tu negocio en los siguientes pasos.'
+    );
+    expect(emailHint.textContent?.trim()).toBe(
+      'Usa tu propio correo electrónico. La información de contacto de tu negocio se puede agregar por separado.'
+    );
+    i18n.setLang('en');
+  });
 });
 

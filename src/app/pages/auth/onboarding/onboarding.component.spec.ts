@@ -760,5 +760,102 @@ describe('OnboardingComponent (Canonical Source Parity)', () => {
     });
   });
 
+  describe('Onboarding UX Improvements — Personal Account, Location & Profile Helpers', () => {
+    afterEach(() => {
+      component.i18n.setLang('en');
+    });
+
+    it('Req 1: displays personal account title, description, and email supporting helper in EN and ES', () => {
+      component.currentStep.set('business-register');
+      component.i18n.setLang('en');
+      fixture.detectChanges();
+
+      const title = fixture.nativeElement.querySelector('.ob-title') as HTMLElement;
+      const subtitle = fixture.nativeElement.querySelector('.ob-subtitle') as HTMLElement;
+      const emailHint = fixture.nativeElement.querySelector('#ob-personal-email-hint') as HTMLElement;
+      const emailInput = fixture.nativeElement.querySelector('#email') as HTMLInputElement;
+
+      expect(title.textContent?.trim()).toBe('Create your personal account');
+      expect(subtitle.textContent?.trim()).toBe(
+        'Enter your personal information below. You’ll add your business details in the next steps.'
+      );
+      expect(emailHint.textContent?.trim()).toBe(
+        'Use your own email address. Your business contact information can be added separately.'
+      );
+      expect(emailInput.getAttribute('aria-describedby')).toBe('ob-personal-email-hint');
+      expect(emailInput.getAttribute('placeholder')).toBe('you@example.com');
+
+      component.i18n.setLang('es');
+      fixture.detectChanges();
+
+      expect(title.textContent?.trim()).toBe('Crea tu cuenta personal');
+      expect(subtitle.textContent?.trim()).toBe(
+        'Ingresa tu información personal a continuación. Agregarás los datos de tu negocio en los siguientes pasos.'
+      );
+      expect(emailHint.textContent?.trim()).toBe(
+        'Usa tu propio correo electrónico. La información de contacto de tu negocio se puede agregar por separado.'
+      );
+      expect(emailInput.getAttribute('placeholder')).toBe('tunombre@correo.com');
+    });
+
+    it('Req 2: displays business-specific location title, subtitle, and "Use my current location" button in EN and ES', () => {
+      component.currentStep.set('area');
+      component.i18n.setLang('en');
+      fixture.detectChanges();
+
+      const title = fixture.nativeElement.querySelector('.ob-title') as HTMLElement;
+      const subtitle = fixture.nativeElement.querySelector('.ob-subtitle') as HTMLElement;
+      const locBtn = fixture.nativeElement.querySelector('.ob-footer .btn-ghost') as HTMLButtonElement;
+
+      expect(title.textContent?.trim()).toBe('Where is your business located?');
+      expect(subtitle.textContent?.trim()).toBe('Select the area where your business operates.');
+      expect(locBtn.textContent?.trim()).toBe('Use my current location');
+
+      component.i18n.setLang('es');
+      fixture.detectChanges();
+
+      expect(title.textContent?.trim()).toBe('¿Dónde está ubicado tu negocio?');
+      expect(subtitle.textContent?.trim()).toBe('Selecciona la zona donde opera tu negocio.');
+      expect(locBtn.textContent?.trim()).toBe('Usar mi ubicación actual');
+    });
+
+    it('Req 3: displays visible blue VAMO Tip on Business Description, updated EN/ES placeholders, and preserves min-20 validation', () => {
+      component.selectedArea.set(mockAreas[0]);
+      component.currentStep.set('business-details');
+      component.i18n.setLang('en');
+      fixture.detectChanges();
+
+      const descTip = fixture.nativeElement.querySelector('#ob-business-desc-tip') as HTMLElement;
+      const descTextarea = fixture.nativeElement.querySelector('#businessDescription') as HTMLTextAreaElement;
+      const nameInput = fixture.nativeElement.querySelector('#businessName') as HTMLInputElement;
+      const addrInput = fixture.nativeElement.querySelector('#businessAddress') as HTMLInputElement;
+
+      expect(descTip).toBeTruthy();
+      expect(descTip.classList.contains('vamo-tip-box')).toBe(true);
+      expect(descTip.textContent?.trim()).toBe(
+        'VAMO Tip: This is what customers will see on your business profile, so describe your business clearly and simply.'
+      );
+      expect(descTextarea.getAttribute('aria-describedby')).toBe('ob-business-desc-tip');
+      expect(descTextarea.getAttribute('placeholder')).toBe(
+        'Describe your business, what you offer, and what customers can expect.'
+      );
+      expect(nameInput.getAttribute('placeholder')).toBe('e.g. Las Terrenas Beach Club');
+      expect(addrInput.getAttribute('placeholder')).toBe('e.g. Calle Principal #14, Las Terrenas');
+
+      // Switch to Spanish
+      component.i18n.setLang('es');
+      fixture.detectChanges();
+
+      expect(descTip.textContent?.trim()).toBe(
+        'Consejo VAMO: Esto es lo que verán los clientes en el perfil de tu negocio, así que descríbelo de forma clara y sencilla.'
+      );
+      expect(descTextarea.getAttribute('placeholder')).toBe(
+        'Describe tu negocio, lo que ofreces y lo que los clientes pueden esperar.'
+      );
+      expect(nameInput.getAttribute('placeholder')).toBe('ej. Las Terrenas Beach Club');
+      expect(addrInput.getAttribute('placeholder')).toBe('ej. Calle Principal #14, Las Terrenas');
+    });
+  });
+
 });
 
