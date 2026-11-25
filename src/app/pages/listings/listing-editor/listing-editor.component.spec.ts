@@ -1232,7 +1232,7 @@ describe('ListingEditorComponent', () => {
       await fixture.whenStable();
     });
 
-    it('highlights dropzone on file dragenter/dragover, handles nested dragenter/dragleave without flickering, and resets on drop', () => {
+    it('highlights dropzone on file dragenter/dragover, handles nested dragenter/dragleave without flickering, and resets on drop', async () => {
       const fileDragEvent = () => {
         const preventDefault = vi.fn();
         const stopPropagation = vi.fn();
@@ -1278,12 +1278,15 @@ describe('ListingEditorComponent', () => {
       const dropzoneEl = fixture.nativeElement.querySelector('.upload-dropzone-btn');
       expect(dropzoneEl.classList.contains('drag-over')).toBe(true);
 
-      // Drop resets highlight, prevents browser navigation, and adds file to selectedNewFiles
+      // Drop resets highlight, prevents browser navigation, opens image editor, and adds file on apply
       const dropEvt = fileDragEvent();
       component.onPhotoDrop(dropEvt);
       expect(dropEvt.preventDefault).toHaveBeenCalled();
       expect(dropEvt.stopPropagation).toHaveBeenCalled();
       expect(component.isPhotoDragOver).toBe(false);
+      expect(component.activeImageEditor).toBeTruthy();
+      component.onImageEditorApplied({ file: component.activeImageEditor!.file, mode: 'full' });
+      await Promise.resolve();
       expect(component.selectedNewFiles.length).toBe(1);
       expect(component.selectedNewFiles[0].name).toBe('flyer.jpg');
       expect(component.isDirty).toBe(true);
@@ -1442,7 +1445,7 @@ describe('ListingEditorComponent', () => {
       await fixture.whenStable();
     });
 
-    it('renders concise EN and ES event photo size and safe-area guidance without rejecting non-3:2 images', () => {
+    it('renders concise EN and ES event photo size and safe-area guidance without rejecting non-square images', async () => {
       i18nService.setLang('en');
       fixture.detectChanges();
 
@@ -1450,22 +1453,25 @@ describe('ListingEditorComponent', () => {
       const safeAreaEl = fixture.nativeElement.querySelector('.photo-guidance-safe-area') as HTMLElement;
       expect(sizeEl).toBeTruthy();
       expect(safeAreaEl).toBeTruthy();
-      expect(sizeEl.textContent?.trim()).toBe('Recommended: 1200 × 800 px (3:2 landscape).');
+      expect(sizeEl.textContent?.trim()).toBe('Ideal: square photos (1:1), at least 1200 × 1200 px. Other sizes work too.');
       expect(safeAreaEl.textContent?.trim()).toBe(
-        'Keep text, logos, and important subjects near the center. Images may be cropped depending on placement and screen size.'
+        'Crop to a square or keep the full image (shown over a blurred copy so text is never cut off). Click the crop button on a new photo to adjust it anytime.'
       );
 
       i18nService.setLang('es');
       fixture.detectChanges();
 
-      expect(sizeEl.textContent?.trim()).toBe('Recomendado: 1200 × 800 px (formato horizontal 3:2).');
+      expect(sizeEl.textContent?.trim()).toBe('Ideal: fotos cuadradas (1:1), mínimo 1200 × 1200 px. Otros tamaños también funcionan.');
       expect(safeAreaEl.textContent?.trim()).toBe(
-        'Mantén el texto, los logos y los elementos importantes cerca del centro. Las imágenes pueden recortarse según la ubicación y el tamaño de la pantalla.'
+        'Recorta en cuadrado o mantén la imagen completa (se muestra sobre una copia difuminada para no cortar el texto). Haz clic en el botón de recorte de una foto nueva para ajustarla.'
       );
 
-      // Guidance is advisory only: uploading valid images does not enforce 1200x800 or 3:2
+      // Guidance is advisory only: uploading non-square images opens editor and accepts full image
       const portraitOrSquareFile = new File(['img-bytes'], 'portrait-poster.png', { type: 'image/png' });
-      component.handleSelectedFiles([portraitOrSquareFile]);
+      const pending = component.handleSelectedFiles([portraitOrSquareFile]);
+      expect(component.activeImageEditor).toBeTruthy();
+      component.onImageEditorApplied({ file: portraitOrSquareFile, mode: 'full' });
+      await pending;
       expect(component.errorMessage).toBeNull();
       expect(component.selectedNewFiles.length).toBe(1);
     });
@@ -2883,9 +2889,12 @@ describe('ListingEditorComponent', () => {
       expect(component.existingImages.map((i) => i.junctionId)).toEqual([102, 101]);
       expect(component.getPreviewImageUrl()).toBe('https://api.vamo-app.com/assets/photo-2.jpg');
 
-      // 4. Add a new local photo, then move it to cover (index 0), then delete it and verify next image becomes Cover
+      // 4. Add a new local photo through the editor, then move it to cover (index 0), then delete it and verify next image becomes Cover
       const newFile = new File(['bytes'], 'fresh.png', { type: 'image/png' });
-      component.handleSelectedFiles([newFile]);
+      const pendingAdd = component.handleSelectedFiles([newFile]);
+      expect(component.activeImageEditor).toBeTruthy();
+      component.onImageEditorApplied({ file: newFile, mode: 'full' });
+      await pendingAdd;
       fixture.detectChanges();
       expect(component.galleryItems.length).toBe(3);
       component.moveGalleryItem(2, 0);
@@ -3010,6 +3019,81 @@ describe('ListingEditorComponent', () => {
         'Pádel, clases de fitness, senderismo, torneos'
       );
       expect(sportsExamples.textContent?.toLowerCase()).not.toContain('yoga');
+    });
+  });
+
+  describe('Image Editor Parity & Sequential Gallery Workflow', () => {
+    beforeEach(async () => {
+      sessionStorage.clear();
+      fixture = TestBed.createComponent(ListingEditorComponent);
+      component = fixture.componentInstance;
+      await component.ngOnInit();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    });
+
+    it('processes multiple selected images sequentially and skips individually cancelled images without cancelling remaining selections', async () => {
+      const f1 = new File(['a'], 'first.jpg', { type: 'image/jpeg' });
+      const f2 = new File(['b'], 'second.png', { type: 'image/png' });
+      const f3 = new File(['c'], 'third.webp', { type: 'image/webp' });
+      const croppedFirst = new File(['a-crop'], 'first-square.jpg', { type: 'image/jpeg' });
+
+      const editSpy = vi.spyOn(component as any, 'editImageWithModal')
+        .mockResolvedValueOnce({ file: croppedFirst, mode: 'crop' })
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ file: f3, mode: 'full' });
+
+      await component.handleSelectedFiles([f1, f2, f3]);
+      fixture.detectChanges();
+
+      expect(editSpy).toHaveBeenCalledTimes(3);
+      expect(editSpy).toHaveBeenNthCalledWith(1, f1, undefined, 1, 3);
+      expect(editSpy).toHaveBeenNthCalledWith(2, f2, undefined, 2, 3);
+      expect(editSpy).toHaveBeenNthCalledWith(3, f3, undefined, 3, 3);
+      expect(component.galleryItems.length).toBe(2);
+      expect(component.galleryItems[0].file).toBe(croppedFirst);
+      expect(component.galleryItems[0].original).toBe(f1);
+      expect(component.galleryItems[0].fit).toBe('crop');
+      expect(component.galleryItems[1].file).toBe(f3);
+      expect(component.galleryItems[1].original).toBe(f3);
+      expect(component.galleryItems[1].fit).toBe('full');
+    });
+
+    it('allows re-editing a pending local image from its original file while preserving gallery position and never editing existing Directus images', async () => {
+      const existing = { junctionId: 77, url: 'https://api.vamo-app.com/assets/stored.jpg' };
+      component.existingImages = [existing];
+      const orig = new File(['orig'], 'flyer.png', { type: 'image/png' });
+      const cropped = new File(['crop'], 'flyer-square.jpg', { type: 'image/jpeg' });
+
+      const editSpy = vi.spyOn(component as any, 'editImageWithModal')
+        .mockResolvedValueOnce({ file: orig, mode: 'full' })
+        .mockResolvedValueOnce({ file: cropped, mode: 'crop' });
+
+      await component.handleSelectedFiles([orig]);
+      fixture.detectChanges();
+      expect(component.galleryItems.length).toBe(2);
+      const oldBlobUrl = component.galleryItems[1].url;
+      component.selectPreviewImage(oldBlobUrl);
+
+      // Existing image at index 0 has no edit button and ignores editGalleryItem(0)
+      const editButtons = fixture.nativeElement.querySelectorAll('.edit-photo-btn');
+      expect(editButtons.length).toBe(1);
+      await component.editGalleryItem(0);
+      expect(editSpy).toHaveBeenCalledTimes(1);
+
+      // Re-edit pending image at index 1
+      const revokeSpy = vi.spyOn(URL, 'revokeObjectURL');
+      await component.editGalleryItem(1);
+      fixture.detectChanges();
+
+      expect(editSpy).toHaveBeenNthCalledWith(2, orig, 'full');
+      expect(component.galleryItems.length).toBe(2);
+      expect(component.galleryItems[0].junctionId).toBe(77);
+      expect(component.galleryItems[1].file).toBe(cropped);
+      expect(component.galleryItems[1].original).toBe(orig);
+      expect(component.galleryItems[1].fit).toBe('crop');
+      expect(revokeSpy).toHaveBeenCalledWith(oldBlobUrl);
+      expect(component.selectedPreviewImageUrl).toBe(component.galleryItems[1].url);
     });
   });
 

@@ -18,6 +18,10 @@ import {
   ScheduleClassificationOptions,
 } from '../utils/event-display.util';
 import { normalizeWebsiteForStorage } from '../utils/website-url.util';
+import imageCompression from 'browser-image-compression';
+
+/** Types every browser can display, so the original may be uploaded if compressing it fails. */
+const DISPLAYABLE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 @Injectable({
   providedIn: 'root',
@@ -323,12 +327,14 @@ export class BusinessService {
   }
 
   /**
-   * Client-side HTML5 canvas image compression.
+   * Client-side image compression matching VAMO mobile app (maxSizeMB: 0.6, maxWidthOrHeight: 1200).
+   * Falls back to the original file when compression fails only if the format is displayable in browsers;
+   * throws for unsupported/undisplayable formats (e.g. HEIC when browser cannot decode it).
    */
-  private async compressImage(
+  protected async compressImage(
     file: File,
     maxDimension = 1200,
-    quality = 0.85
+    maxSizeMB = 0.6
   ): Promise<File> {
     if (
       typeof window === 'undefined' ||
@@ -338,41 +344,29 @@ export class BusinessService {
       return file;
     }
 
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          let { width, height } = img;
-          if (width > maxDimension || height > maxDimension) {
-            if (width > height) {
-              height = Math.round((height * maxDimension) / width);
-              width = maxDimension;
-            } else {
-              width = Math.round((width * maxDimension) / height);
-              height = maxDimension;
-            }
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return resolve(file);
-          ctx.drawImage(img, 0, 0, width, height);
-          canvas.toBlob(
-            (blob) => {
-              if (!blob) return resolve(file);
-              resolve(new File([blob], file.name, { type: blob.type }));
-            },
-            file.type === 'image/png' ? 'image/png' : 'image/jpeg',
-            quality
-          );
-        };
-        img.onerror = () => resolve(file);
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = () => resolve(file);
-      reader.readAsDataURL(file);
+    try {
+      const compressed = await this.runImageCompression(file, maxDimension, maxSizeMB);
+      if (compressed instanceof File) {
+        return compressed;
+      }
+      return new File([compressed], file.name, { type: compressed.type || file.type });
+    } catch (err) {
+      if (DISPLAYABLE_IMAGE_TYPES.includes(file.type)) {
+        return file;
+      }
+      throw err;
+    }
+  }
+
+  protected runImageCompression(
+    file: File,
+    maxWidthOrHeight = 1200,
+    maxSizeMB = 0.6
+  ): Promise<Blob> {
+    return imageCompression(file, {
+      maxSizeMB,
+      maxWidthOrHeight,
+      useWebWorker: true,
     });
   }
 

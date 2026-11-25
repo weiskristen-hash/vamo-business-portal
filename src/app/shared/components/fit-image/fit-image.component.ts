@@ -11,10 +11,11 @@ import {
 
 /**
  * Renders an image inside a fixed-aspect container with smart fitting matching the VAMO mobile app:
- * - Landscape / near-matching ratio → `object-fit: cover` (fills the box cleanly).
- * - Narrow / portrait image (e.g. a flyer) that would lose >15% of its height when cover-cropped →
- *   `object-fit: contain` over a blurred copy of the same image so the whole image is readable
- *   and there are no empty bars.
+ * - Images close to the container's aspect ratio (within 15% crop tolerance) -> `object-fit: cover`.
+ * - Images whose shape clearly differs (portrait flyers OR wide landscape photos in a 1:1 square
+ *   container where cover-cropping would remove >15% of the width or height) -> `object-fit: contain`
+ *   over a blurred copy of the same image (`blur(18px) brightness(0.85)`, `scale(1.2)`) so the whole
+ *   image and promotional text remain readable with no empty bars.
  */
 @Component({
   selector: 'app-fit-image',
@@ -83,7 +84,7 @@ export class FitImageComponent implements OnChanges {
 
   private host = inject(ElementRef<HTMLElement>);
 
-  /** Max fraction of image height we're willing to crop before switching to contain. */
+  /** Max fraction of image width or height we're willing to crop before switching to contain. */
   private static readonly MAX_CROP = 0.15;
 
   contain = signal(false);
@@ -104,10 +105,13 @@ export class FitImageComponent implements OnChanges {
     const boxW = hostEl.clientWidth;
     const boxH = hostEl.clientHeight;
     const imgRatio = img.naturalWidth / img.naturalHeight;
-    const boxRatio = boxW > 0 && boxH > 0 ? boxW / boxH : 16 / 9;
+    // Match VAMO mobile app: default to 1:1 square when host box is not laid out yet.
+    const boxRatio = boxW > 0 && boxH > 0 ? boxW / boxH : 1;
 
-    // If the image is narrower than the container beyond the crop tolerance, show it whole.
-    this.contain.set(imgRatio < boxRatio * (1 - FitImageComponent.MAX_CROP));
+    // Contain once cover would crop away more than 15% of the image's width or height.
+    const tooNarrow = imgRatio < boxRatio * (1 - FitImageComponent.MAX_CROP);
+    const tooWide = imgRatio * (1 - FitImageComponent.MAX_CROP) > boxRatio;
+    this.contain.set(tooNarrow || tooWide);
   }
 
   onError(): void {
