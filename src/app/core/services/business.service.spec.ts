@@ -941,6 +941,32 @@ describe('BusinessService', () => {
     });
   });
 
+  describe('Downstream Image Upload Compression Parity', () => {
+    it('compresses uploaded images with maxSizeMB 0.6 and maxWidthOrHeight 1200', async () => {
+      const orig = new File(['big-image-bytes'], 'flyer.jpg', { type: 'image/jpeg' });
+      const compressedBlob = new Blob(['small'], { type: 'image/jpeg' });
+      const runSpy = vi.spyOn(service as any, 'runImageCompression').mockResolvedValueOnce(compressedBlob);
+      const result = await (service as any).compressImage(orig);
+      expect(runSpy).toHaveBeenCalledWith(orig, 1200, 0.6);
+      expect(result).toBeInstanceOf(File);
+      expect(result.name).toBe('flyer.jpg');
+      expect(result.type).toBe('image/jpeg');
+    });
+
+    it('falls back to original file when compression fails for browser-displayable formats', async () => {
+      const orig = new File(['png-bytes'], 'poster.png', { type: 'image/png' });
+      vi.spyOn(service as any, 'runImageCompression').mockRejectedValueOnce(new Error('worker failed'));
+      const result = await (service as any).compressImage(orig);
+      expect(result).toBe(orig);
+    });
+
+    it('throws when compression fails for undisplayable formats like HEIC', async () => {
+      const heic = new File(['heic-bytes'], 'iphone.heic', { type: 'image/heic' });
+      vi.spyOn(service as any, 'runImageCompression').mockRejectedValueOnce(new Error('unsupported'));
+      await expect((service as any).compressImage(heic)).rejects.toThrow('unsupported');
+    });
+  });
+
 });
 
 

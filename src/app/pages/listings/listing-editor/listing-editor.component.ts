@@ -25,6 +25,11 @@ import { getDrCurrentDateTime } from '../../../core/utils/date-validation.util';
 import { PublishingAccessService } from '../../../core/services/publishing-access.service';
 import { FitImageComponent } from '../../../shared/components/fit-image/fit-image.component';
 import { InfoPopoverComponent } from '../../../shared/components/info-popover/info-popover.component';
+import {
+  ImageEditorComponent,
+  ImageEditorMode,
+  ImageEditorResult,
+} from '../../../shared/components/image-editor/image-editor.component';
 
 export interface ExistingImage {
   junctionId: number | string;
@@ -37,12 +42,16 @@ export interface EditorGalleryItem {
   url: string;
   junctionId?: number | string;
   file?: File;
+  /** Original local file kept so pending images can be re-edited before saving. */
+  original?: File;
+  /** How the local image was fitted in the editor: cropped to 1:1 or kept full. */
+  fit?: ImageEditorMode;
 }
 
 @Component({
   selector: 'app-listing-editor',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, TranslatePipe, FitImageComponent, InfoPopoverComponent],
+  imports: [CommonModule, RouterModule, FormsModule, TranslatePipe, FitImageComponent, InfoPopoverComponent, ImageEditorComponent],
   template: `
     <div class="editor-page">
       <!-- Top Navigation & Action Header -->
@@ -342,6 +351,20 @@ export interface EditorGalleryItem {
                       (click)="$event.stopPropagation(); moveGalleryItem(idx, idx + 1)"
                     >›</button>
                   </div>
+                  <button
+                    *ngIf="item.kind === 'new' && item.original && !isPastEvent"
+                    type="button"
+                    class="edit-photo-btn"
+                    [disabled]="submitting"
+                    [attr.aria-label]="'PORTAL.EVENT_EDITOR.EDIT_PHOTO' | translate"
+                    [title]="'PORTAL.EVENT_EDITOR.EDIT_PHOTO' | translate"
+                    (click)="$event.stopPropagation(); editGalleryItem(idx)"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"></path>
+                      <path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"></path>
+                    </svg>
+                  </button>
                   <button type="button" class="remove-photo-btn" (click)="$event.stopPropagation(); removeGalleryItem(idx)" [disabled]="isPastEvent" [attr.aria-label]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate" [title]="'PORTAL.EVENT_EDITOR.REMOVE_PHOTO' | translate">✕</button>
                 </div>
 
@@ -1324,6 +1347,17 @@ export interface EditorGalleryItem {
         <p>{{ 'PORTAL.EVENT_EDITOR.LOADING_DETAILS' | translate }}</p>
       </div>
 
+      <!-- Reusable Post Image Editor Modal -->
+      <app-image-editor
+        *ngIf="activeImageEditor"
+        [file]="activeImageEditor.file"
+        [initialMode]="activeImageEditor.initialMode"
+        [queueIndex]="activeImageEditor.queueIndex"
+        [queueTotal]="activeImageEditor.queueTotal"
+        (applied)="onImageEditorApplied($event)"
+        (cancelled)="onImageEditorCancelled()"
+      ></app-image-editor>
+
       <!-- Discard Changes Modal Dialog -->
       <div *ngIf="showCancelConfirmModal" class="modal-backdrop" role="dialog" aria-modal="true">
         <div class="modal-dialog">
@@ -1723,7 +1757,7 @@ export interface EditorGalleryItem {
 
     .photo-preview-card {
       position: relative;
-      height: 110px;
+      aspect-ratio: 1 / 1;
       border-radius: var(--vamo-radius-md);
       overflow: hidden;
       border: 1px solid var(--vamo-border);
@@ -1823,6 +1857,35 @@ export interface EditorGalleryItem {
       z-index: 2;
     }
 
+    .edit-photo-btn {
+      position: absolute;
+      bottom: 6px;
+      right: 6px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(15, 23, 42, 0.82);
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 3;
+      transition: background 0.15s ease, transform 0.15s ease;
+    }
+
+    .edit-photo-btn:hover:not(:disabled) {
+      background: var(--vamo-secondary, #F93CAD);
+      border-color: var(--vamo-secondary, #F93CAD);
+      transform: scale(1.06);
+    }
+
+    .edit-photo-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
     .remove-photo-btn {
       position: absolute;
       top: 6px;
@@ -1842,7 +1905,8 @@ export interface EditorGalleryItem {
     }
 
     .upload-dropzone-btn {
-      min-height: 110px;
+      aspect-ratio: 1 / 1;
+      min-height: 130px;
       padding: 8px;
       border: 2px dashed var(--vamo-border-hover);
       border-radius: var(--vamo-radius-md);
@@ -2465,8 +2529,8 @@ export interface EditorGalleryItem {
     .phone-view { display: flex; flex-direction: column; min-height: 100%; width: 100%; box-sizing: border-box; background: linear-gradient(160deg, #0d0d1e 0%, #1a0812 60%, #0d0d1e 100%); }
     .phone-view-event-details { padding-bottom: 24px; }
     .phone-card-image-wrap { position: relative; box-sizing: border-box; background: #16162a; overflow: hidden; flex-shrink: 0; }
-    .phone-card-image-wrap.placement-image-event_details, .phone-card-image-wrap.placement-image-main_banner { width: 100%; height: 288px; min-height: 288px; max-height: 288px; margin: 0; border-radius: 0; }
-    .phone-card-image-wrap.placement-image-whats_hot { width: 220px; min-width: 220px; max-width: 220px; height: 140px; min-height: 140px; max-height: 140px; margin: 0; border-radius: 0; }
+    .phone-card-image-wrap.placement-image-event_details, .phone-card-image-wrap.placement-image-main_banner { width: 100%; aspect-ratio: 1 / 1; height: 330px; min-height: 330px; max-height: 330px; margin: 0; border-radius: 0; }
+    .phone-card-image-wrap.placement-image-whats_hot { width: 240px; min-width: 240px; max-width: 240px; aspect-ratio: 1 / 1; height: 240px; min-height: 240px; max-height: 240px; margin: 0; border-radius: 0; }
     .phone-cover-img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
     .phone-image-empty-state { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 16px; box-sizing: border-box; text-align: center; color: rgba(255, 255, 255, 0.55); background: linear-gradient(145deg, #12122a 0%, #241023 100%); }
     .phone-image-empty-state .empty-state-title { font-size: 0.76rem; font-weight: 600; color: #fff; }
@@ -2474,7 +2538,7 @@ export interface EditorGalleryItem {
     .phone-image-empty-state--compact { padding: 8px 10px; gap: 2px; }
     .phone-image-empty-state--compact .empty-state-title { font-size: 0.68rem; }
     .phone-image-empty-state--compact .empty-state-hint { font-size: 0.6rem; line-height: 1.2; }
-    .phone-hero-gradient { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.1) 50%, transparent 100%); pointer-events: none; z-index: 1; }
+    .phone-hero-gradient { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.4) 0%, transparent 55%, transparent 100%); pointer-events: none; z-index: 1; }
     .phone-hero-badges { position: absolute; bottom: 12px; left: 12px; display: flex; gap: 6px; pointer-events: none; z-index: 2; }
     .hero-badge { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; letter-spacing: 0.02em; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
     .hero-badge--banner { background: rgba(254, 57, 127, 0.25); color: #fe397f; border: 1px solid rgba(254, 57, 127, 0.4); }
@@ -2510,7 +2574,7 @@ export interface EditorGalleryItem {
     .phone-home-section-title { font-size: 18px; font-weight: 700; color: #fff; padding: 0 16px; margin: 0 0 12px; line-height: 1.3; }
     .phone-whats-hot-section { padding: 8px 0 16px; }
     .phone-whats-hot-row { display: flex; padding: 0 16px 8px; gap: 16px; overflow-x: auto; scrollbar-width: none; }
-    .phone-whats-hot-card { width: 220px; min-width: 220px; max-width: 220px; border-radius: 18px; overflow: hidden; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); display: flex; flex-direction: column; flex-shrink: 0; box-sizing: border-box; }
+    .phone-whats-hot-card { width: 240px; min-width: 240px; max-width: 240px; border-radius: 18px; overflow: hidden; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); display: flex; flex-direction: column; flex-shrink: 0; box-sizing: border-box; }
     .whats-hot-promo-badge { position: absolute; bottom: 8px; left: 8px; width: 34px; height: 34px; border-radius: 50%; background: rgba(234, 179, 8, 0.95); border: 2px solid rgba(255, 255, 255, 0.5); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; color: #fff; z-index: 2; }
     .whats-hot-card-body { padding: 12px 12px 14px; display: flex; flex-direction: column; flex: 1; box-sizing: border-box; min-width: 0; }
     .whats-hot-card-title { font-size: 13px; font-weight: 700; color: #fe397f; line-height: 1.3; margin: 0 0 2px; }
@@ -2816,6 +2880,13 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   removedImageJunctionIds: (number | string)[] = [];
+  activeImageEditor: {
+    file: File;
+    initialMode?: ImageEditorMode;
+    queueIndex?: number;
+    queueTotal?: number;
+    resolve: (result: ImageEditorResult | null) => void;
+  } | null = null;
   isPhotoDragOver = false;
   private photoDragDepth = 0;
 
@@ -2899,6 +2970,18 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
         this.previewResizeObserver.disconnect();
       } catch {}
       this.previewResizeObserver = null;
+    }
+    if (this.activeImageEditor) {
+      const resolve = this.activeImageEditor.resolve;
+      this.activeImageEditor = null;
+      resolve(null);
+    }
+    for (const item of this._galleryItems) {
+      if (item.kind === 'new' && item.url && item.url.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(item.url);
+        } catch {}
+      }
     }
     if (this.map) {
       try {
@@ -3647,7 +3730,7 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       this.cdr.markForCheck();
       return;
     }
-    this.handleSelectedFiles(files);
+    void this.handleSelectedFiles(files);
   }
 
   onFilesSelected(event: Event): void {
@@ -3657,10 +3740,10 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
       input.value = '';
     }
     if (!files.length) return;
-    this.handleSelectedFiles(files);
+    void this.handleSelectedFiles(files);
   }
 
-  handleSelectedFiles(files: File[]): void {
+  async handleSelectedFiles(files: File[]): Promise<void> {
     if (this.isPastEvent || this.submitting || !files.length) return;
 
     const validation = validateImageUploadFiles(files, { allowSvg: false });
@@ -3673,18 +3756,87 @@ export class ListingEditorComponent implements OnInit, AfterViewInit, OnDestroy 
     }
 
     this.errorMessage = null;
-    for (const file of files) {
-      const previewUrl = URL.createObjectURL(file);
+    for (let i = 0; i < files.length; i++) {
+      const original = files[i];
+      const result = await this.editImageWithModal(original, undefined, i + 1, files.length);
+      if (!result) continue;
+      const previewUrl = URL.createObjectURL(result.file);
       this._galleryItems.push({
         key: `new-${++this.nextGalleryKeySeq}`,
         kind: 'new',
-        file,
+        file: result.file,
+        original,
+        fit: result.mode,
         url: previewUrl,
       });
+      this.syncArraysFromGallery();
+      this.markDirty();
+      this.cdr.markForCheck();
     }
+  }
+
+  /** Re-open the image editor for a pending (not yet uploaded) local photo, preserving its gallery position. */
+  async editGalleryItem(index: number): Promise<void> {
+    if (this.isPastEvent || this.submitting) return;
+    const item = this._galleryItems[index];
+    if (!item || item.kind !== 'new' || !item.original) return;
+
+    const result = await this.editImageWithModal(item.original, item.fit);
+    if (!result) return;
+
+    const nextUrl = URL.createObjectURL(result.file);
+    const previousUrl = item.url;
+    if (this.selectedPreviewImageUrl === previousUrl) {
+      this.selectedPreviewImageUrl = nextUrl;
+    }
+    if (previousUrl && previousUrl.startsWith('blob:')) {
+      try {
+        URL.revokeObjectURL(previousUrl);
+      } catch {}
+    }
+    const next = [...this._galleryItems];
+    next[index] = {
+      ...item,
+      file: result.file,
+      fit: result.mode,
+      url: nextUrl,
+    };
+    this._galleryItems = next;
     this.syncArraysFromGallery();
     this.markDirty();
     this.cdr.markForCheck();
+  }
+
+  protected editImageWithModal(
+    file: File,
+    initialMode?: ImageEditorMode,
+    queueIndex?: number,
+    queueTotal?: number
+  ): Promise<ImageEditorResult | null> {
+    return new Promise((resolve) => {
+      this.activeImageEditor = {
+        file,
+        initialMode,
+        queueIndex,
+        queueTotal,
+        resolve,
+      };
+      this.cdr.markForCheck();
+    });
+  }
+
+  onImageEditorApplied(result: ImageEditorResult): void {
+    const active = this.activeImageEditor;
+    this.activeImageEditor = null;
+    try { this.cdr.detectChanges(); } catch { this.cdr.markForCheck(); }
+    active?.resolve(result);
+  }
+
+  onImageEditorCancelled(): void {
+    const active = this.activeImageEditor;
+    this.activeImageEditor = null;
+    try { this.cdr.detectChanges(); } catch { this.cdr.markForCheck(); }
+    active?.resolve(null);
   }
 
   private syncArraysFromGallery(): void {

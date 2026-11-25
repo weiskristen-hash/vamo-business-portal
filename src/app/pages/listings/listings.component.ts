@@ -688,7 +688,7 @@ import { FitImageComponent } from '../../shared/components/fit-image/fit-image.c
     .listing-media {
       position: relative;
       width: 100%;
-      height: 190px;
+      aspect-ratio: 1 / 1;
       background: var(--vamo-slate-800);
       overflow: hidden;
     }
